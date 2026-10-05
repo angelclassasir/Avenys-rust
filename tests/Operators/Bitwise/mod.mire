@@ -88,3 +88,39 @@ pub fn bitcast_i32_to_f32_keeps_width: () :bool {
     // Bit pattern 3 as f32 is a denormal, far below any normal float.
     return as_float > 0.0 && as_float < 0.0000001
 }
+
+// ── Arithmetic vs logical right shift ────────────────────────────────
+// Regression: `>>` used to be lowered to LLVM `lshr`, so shifting a negative
+// value filled with zeros instead of ones and produced garbage that still
+// looked like a valid number. These four cases all failed before the fix.
+
+// -16 is 0xFFFF...F0. An arithmetic shift right by 2 keeps the sign bit:
+// -16 >> 2 == -4. A logical shift would have given 0x3FFF...FC.
+
+@[test]
+pub fn shift_right_of_negative_is_arithmetic: () :bool {
+    set value = -16
+    return (value >> 2) == -4
+}
+
+@[test]
+pub fn shift_right_of_all_ones_stays_all_ones: () :bool {
+    // -1 >> 1 is -1 under an arithmetic shift; under `lshr` it was
+    // 9223372036854775807.
+    set value = -1
+    return (value >> 1) == -1
+}
+
+@[test]
+pub fn shift_right_of_negative_fills_with_ones: () :bool {
+    set value = -1
+    return (value >> 60) == -1
+}
+
+@[test]
+pub fn shift_right_of_positive_is_unchanged: () :bool {
+    // The positive case was already correct and must stay correct: it is what
+    // made the negative bug easy to miss.
+    set value = 16
+    return (value >> 2) == 4 && (value >> 40) == 0
+}

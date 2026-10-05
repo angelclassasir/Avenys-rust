@@ -4,6 +4,7 @@
 // dragging helpers.c's PAL-dependent file/process/crypto functions.
 
 #include <stdint.h>
+#include <limits.h>
 #include <stdlib.h>
 #include "runtime.h"
 
@@ -17,6 +18,35 @@ void *rt_alloc_raw(int64_t size) {
 }
 void rt_free_raw(void *ptr) {
     if (ptr) free(ptr);
+}
+
+// ── Pointer arithmetic ─────────────────────────────────────────────
+// Address computation for raw buffers.
+//
+// Why this exists as a call and not as `ptr + n` in Mire: the compiler routes
+// `+` on a ptr operand to rt_string_concat (mir/codegen/expr.rs, MirOp::Add
+// checks `lt == "ptr" || rt == "ptr"` and emits a string concatenation). So the
+// obvious spelling silently means "concatenate two strings" and there is no way
+// to reach byte N of a raw buffer. Byte-at-a-time work (WebSocket framing,
+// binary protocols, image headers) therefore needed a hand-written C helper in
+// every project.
+//
+// With this, a byte buffer is expressible in pure Mire:
+//     extern fn rt_alloc_raw: (size :i64) :ptr
+//     extern fn rt_ptr_add:    (ptr :ptr, delta :i64) :ptr
+//     extern fn rt_write_u8:   (ptr :ptr, value :i64)
+//     extern fn rt_managed_from_slice: (src :ptr, len :i64) :str
+//
+// Delta is in bytes and may be negative; a NULL base yields NULL so a caller
+// that forgot to allocate gets a NULL rather than a wild pointer.
+void *rt_ptr_add(void *ptr, int64_t delta) {
+    if (ptr == NULL) return NULL;
+    // Guard the arithmetic itself. Pointer overflow is undefined behaviour in
+    // C, and this is reachable from Mire with any i64 the program likes, so it
+    // has to be checked rather than trusted.
+    if (delta > 0 && (uintptr_t)delta > (uintptr_t)INT64_MAX) return NULL;
+    if (delta < 0 && (uintptr_t)(-delta) > (uintptr_t)INT64_MAX) return NULL;
+    return (void *)((char *)ptr + delta);
 }
 
 // ── Raw memory readers (little-endian) ────────────────────────────

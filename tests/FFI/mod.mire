@@ -15,3 +15,69 @@ pub fn ffi_abs_negative: () :bool {
 // Tests C extern abs function with negative value
     return result == 42
 }
+// ── Raw buffers: allocation, pointer arithmetic, byte writes ─────────
+// This is the path that lets a project manipulate bytes from pure Mire instead
+// of hand-writing a C helper. It depends on two things that did not work before:
+// rt_ptr_add (no pointer arithmetic at all) and a working null check.
+
+// Regression: `ptr == 0` was lowered to strcmp against an inttoptr'd literal,
+// which dereferenced the null pointer. Every null check on a raw allocation
+// segfaulted the process.
+
+extern fn rt_alloc_raw: (size :i64) :ptr lib "c"
+extern fn rt_free_raw: (ptr :ptr) lib "c"
+extern fn rt_ptr_add: (ptr :ptr, delta :i64) :ptr lib "c"
+extern fn rt_write_u8: (ptr :ptr, value :i64) lib "c"
+extern fn rt_read_u8: (ptr :ptr) :i64 lib "c"
+extern fn rt_managed_from_slice: (src :ptr, len :i64) :str lib "c"
+extern fn rt_managed_len: (value :&str) :i64 lib "c"
+
+@[test]
+pub fn ffi_null_check_on_raw_pointer: () :bool {
+    // Must not crash, and must be true: rt_alloc_raw(8) is never NULL.
+    set buffer = rt_alloc_raw(8)
+    if buffer == 0 {
+        return false
+    }
+    rt_free_raw(buffer)
+    return true
+}
+
+@[test]
+pub fn ffi_write_and_read_byte_at_offset: () :bool {
+    set buffer = rt_alloc_raw(4)
+    if buffer == 0 {
+        return false
+    }
+    // Byte 0 stays untouched while byte 3 is written: this only holds if
+    // rt_ptr_add computes a real address rather than re-reading offset 0.
+    rt_write_u8(buffer 0x41)
+    rt_write_u8(rt_ptr_add(buffer 3) 0xFA)
+    set ok = rt_read_u8(buffer) == 0x41 && rt_read_u8(rt_ptr_add(buffer 3)) == 0xFA
+    rt_free_raw(buffer)
+    return ok
+}
+
+@[test]
+pub fn ffi_raw_buffer_to_managed_string_keeps_embedded_nul: () :bool {
+    set buffer = rt_alloc_raw(4)
+    if buffer == 0 {
+        return false
+    }
+    rt_write_u8(buffer 0x41)
+    rt_write_u8(rt_ptr_add(buffer 1) 0x00)
+    rt_write_u8(rt_ptr_add(buffer 2) 0x42)
+    rt_write_u8(rt_ptr_add(buffer 3) 0x43)
+    set as_str = rt_managed_from_slice(buffer 4)
+    // Length 4, not 2: a strlen-based copy would have stopped at the NUL.
+    set ok = rt_managed_len(as_str) == 4
+    rt_free_raw(buffer)
+    return ok
+}
+
+@[test]
+pub fn ffi_ptr_add_of_null_stays_null: () :bool {
+    // rt_ptr_add must propagate NULL rather than building an address from it.
+    set nothing = rt_ptr_add(0 8)
+    return nothing == 0
+}

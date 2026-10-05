@@ -242,6 +242,11 @@ int64_t rt_channel_recv_into(int64_t ch_handle, char *buf, int64_t capacity);
 void   *rt_alloc_raw(int64_t size);
 void    rt_free_raw(void *ptr);
 
+// Address arithmetic on a raw buffer, in bytes; delta may be negative and a
+// NULL base yields NULL. Needed because Mire's `+` on a ptr operand means
+// string concatenation, so byte-at-a-time work has no spelling otherwise.
+void   *rt_ptr_add(void *ptr, int64_t delta);
+
 // ── Raw memory readers (little-endian) ──────────────────────────────
 // Used by FFI bindings to decode C structs (SDL_Event, SDL_Rect, ...).
 int64_t rt_read_u8(const void *ptr);

@@ -211,7 +211,11 @@ pub(crate) fn compile_inst(inst: &MirInst, ctx: &mut LlvmCtx) -> Vec<String> {
             let (l, _lt) = resolve_typed(l, ctx);
             let (r, _) = resolve_typed(r, ctx);
             let result = tmp_result(ctx, "i64", inst.result);
-            format!("%t{} = lshr i64 {}, {}", result, l, r)
+            // ashr, not lshr: `>>` on a negative value has to sign-extend, or
+            // -1 >> 1 yields 9223372036854775807 instead of -1. Every other
+            // language with a signed i64 shifts arithmetically, so lshr here was
+            // simply wrong, and wrong silently.
+            format!("%t{} = ashr i64 {}, {}", result, l, r)
         }
         MirOp::Xor(l, r) => {
             let (l, _lt) = resolve_typed(l, ctx);
@@ -283,28 +287,38 @@ pub(crate) fn compile_inst(inst: &MirInst, ctx: &mut LlvmCtx) -> Vec<String> {
                     MirCmp::Ne => "ne",
                     _ => "eq",
                 };
-                // Ensure both sides are ptr
-                let l_ptr = if lt != "ptr" {
-                    let conv = tmp_extra(ctx, "ptr");
-                    extra.push(format!("{} = inttoptr i64 {} to ptr", conv, l_str));
-                    conv
+                if lt == "ptr" && rt == "ptr" {
+                    // Both sides are pointers: this is string equality, so compare
+                    // contents with strcmp. (Note this is content equality, not
+                    // address equality: "a" == "a" is true for distinct buffers.)
+                    let scmp = tmp_extra(ctx, "i32");
+                    extra.push(format!(
+                        "{} = call i32 @strcmp(ptr {}, ptr {})",
+                        scmp, l_str, r_str
+                    ));
+                    format!("%t{} = icmp {} i32 {}, 0", result, cond, scmp)
                 } else {
-                    l_str.clone()
-                };
-                let r_ptr = if rt != "ptr" {
-                    let conv = tmp_extra(ctx, "ptr");
-                    extra.push(format!("{} = inttoptr i64 {} to ptr", conv, r_str));
-                    conv
-                } else {
-                    r_str.clone()
-                };
-                // Use strcmp for Eq/Ne on pointer types (strings)
-                let scmp = tmp_extra(ctx, "i32");
-                extra.push(format!(
-                    "{} = call i32 @strcmp(ptr {}, ptr {})",
-                    scmp, l_ptr, r_ptr
-                ));
-                format!("%t{} = icmp {} i32 {}, 0", result, cond, scmp)
+                    // Pointer against an integer: an address comparison. This is
+                    // the null check, `if ptr == 0`, and it used to be lowered to
+                    // strcmp with an inttoptr'd literal, which dereferenced the
+                    // null pointer and segfaulted. Any `ptr` used with a raw
+                    // allocation (rt_alloc_raw) needs this to be a plain icmp.
+                    let l_ptr = if lt != "ptr" {
+                        let conv = tmp_extra(ctx, "ptr");
+                        extra.push(format!("{} = inttoptr i64 {} to ptr", conv, l_str));
+                        conv
+                    } else {
+                        l_str.clone()
+                    };
+                    let r_ptr = if rt != "ptr" {
+                        let conv = tmp_extra(ctx, "ptr");
+                        extra.push(format!("{} = inttoptr i64 {} to ptr", conv, r_str));
+                        conv
+                    } else {
+                        r_str.clone()
+                    };
+                    format!("%t{} = icmp {} ptr {}, {}", result, cond, l_ptr, r_ptr)
+                }
             } else {
                 let cond = match cmp {
                     MirCmp::Eq => "eq",

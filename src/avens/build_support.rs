@@ -1099,6 +1099,7 @@ fn runtime_symbol_to_c_file(sym: &str) -> Option<&'static str> {
         Some("helpers.c")
     } else if sym.starts_with("rt_alloc_raw")
         || sym.starts_with("rt_free_raw")
+        || sym.starts_with("rt_ptr_")
         || sym.starts_with("rt_blend_")
         || sym.starts_with("rt_read_")
         || sym.starts_with("rt_write_")
