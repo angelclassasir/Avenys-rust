@@ -27,7 +27,11 @@
 use crate::parser::ast::DataType;
 
 /// Bit width of an actual Mire integer/float type (None for non-scalar types).
-#[allow(dead_code)]
+// Bit width per integer type, used by the codegen tests to pin the mapping.
+// Narrower than a general utility on purpose: nothing in the compiler asks for
+// this today, and a #[allow(dead_code)] here would also silence a real future
+// caller that forgot to wire it up.
+#[cfg(test)]
 pub(crate) fn integer_bit_width(dt: &DataType) -> Option<u32> {
     match dt {
         DataType::I8 | DataType::U8 => Some(8),
@@ -44,11 +48,6 @@ pub(crate) fn integer_bit_width(dt: &DataType) -> Option<u32> {
 }
 
 /// Is the type floating point?
-#[allow(dead_code)]
-pub(crate) fn is_float_type(dt: &DataType) -> bool {
-    matches!(dt, DataType::F32 | DataType::F64)
-}
-
 /// Maps a `DataType` to its LLVM IR scalar type (string).
 ///
 /// For composite types (`Array`, `Slice`, `Pointer`, `Struct`, `Closure`, etc.),

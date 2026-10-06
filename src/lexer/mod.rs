@@ -253,7 +253,40 @@ impl<'a> Lexer<'a> {
                 break;
             }
         }
+        // An exponent, the 1e16 in 1.5e-3 or 2e0. It is only taken when an
+        // optional sign and at least one digit follow it, so a name that merely
+        // begins with e is still lexed as its own token rather than being
+        // swallowed into the number that precedes it.
+        if matches!(self.peek(0), Some('e' | 'E')) {
+            let mut lookahead = 1;
+            if matches!(self.peek(lookahead), Some('+' | '-')) {
+                lookahead += 1;
+            }
+            if self.peek(lookahead).is_some_and(|n| n.is_ascii_digit()) {
+                result.push(self.advance().unwrap());
+                if matches!(self.peek(0), Some('+' | '-')) {
+                    result.push(self.advance().unwrap());
+                }
+                while let Some(d) = self.peek(0) {
+                    if d.is_ascii_digit() {
+                        result.push(self.advance().unwrap());
+                    } else {
+                        break;
+                    }
+                }
+            }
+        }
         result
+    }
+
+    /// Whether a lexed number is a float rather than an int.
+    ///
+    /// A decimal point is the usual marker but not the only one: `1e16` has no
+    /// dot and is still a float. Based integers are safe to test this way
+    /// because read_based_integer hands back the decimal spelling of the value,
+    /// so its result is digits and at most a leading minus.
+    fn literal_is_float(num: &str) -> bool {
+        num.contains('.') || num.contains('e') || num.contains('E')
     }
 
     fn read_based_integer(&mut self) -> Result<String> {
@@ -533,7 +566,7 @@ impl<'a> Lexer<'a> {
                 } else {
                     self.read_number()
                 };
-                let token = if num.contains('.') {
+                let token = if Self::literal_is_float(&num) {
                     Token::new(TokenType::FloatLit, self.line, self.column - num.len())
                 } else {
                     Token::new(TokenType::IntLit, self.line, self.column - num.len())
@@ -601,9 +634,10 @@ impl<'a> Lexer<'a> {
                         } else {
                             self.read_number()
                         };
-                        // A negative literal with a decimal point is a float, not
-                        // an int (e.g. `-2.0` must lex as FloatLit, not IntLit).
-                        let (ttype, value) = if num.contains('.') {
+                        // A negative literal with a decimal point or an exponent
+                        // is a float, not an int (e.g. `-2.0` and `-1e16` must lex
+                        // as FloatLit, not IntLit).
+                        let (ttype, value) = if Self::literal_is_float(&num) {
                             (TokenType::FloatLit, format!("-{num}"))
                         } else {
                             (TokenType::IntLit, format!("-{num}"))

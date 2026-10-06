@@ -81,3 +81,49 @@ pub fn vector_searches_and_slices_values: () :bool {
     }
     return vec::get::i64(selected 0) == 3
 }
+
+@[test]
+pub fn vector_clone_copies_the_length: () :bool {
+    set source = [5 1 3] :vec[i64]
+    set copy = vec::clone(source)
+    return vec::len(copy) == 3
+}
+
+@[test]
+pub fn vector_clone_copies_every_element: () :bool {
+    set source = [5 1 3] :vec[i64]
+    set copy = vec::clone(source)
+    if vec::get::i64(copy 0) != 5 { return false }
+    if vec::get::i64(copy 1) != 1 { return false }
+    return vec::get::i64(copy 2) == 3
+}
+
+@[test]
+pub fn vector_clone_of_a_single_element_keeps_that_element: () :bool {
+    // The length is stored immediately before the first element, so a clone of
+    // one element is where an off-by-one-word in the copy lands on top of the
+    // data it just wrote.
+    set source = [42] :vec[i64]
+    set copy = vec::clone(source)
+    return vec::len(copy) == 1 && vec::get::i64(copy 0) == 42
+}
+
+@[test]
+pub fn vector_clone_of_an_empty_vector_is_empty: () :bool {
+    set source = [] :vec[i64]
+    set copy = vec::clone(source)
+    return vec::len(copy) == 0
+}
+
+@[test]
+pub fn vector_clone_is_independent_of_the_original: () :bool {
+    // The copy has its own storage: growing it must not move the source, and
+    // the source must keep the length it started with.
+    set source = [1 2] :vec[i64]
+    set copy = vec::clone(source) :vec[i64] mut
+    set copy = vec::push::i64(copy 99)
+    if vec::len(source) != 2 { return false }
+    if vec::len(copy) != 3 { return false }
+    if vec::get::i64(source 0) != 1 { return false }
+    return vec::get::i64(copy 2) == 99
+}

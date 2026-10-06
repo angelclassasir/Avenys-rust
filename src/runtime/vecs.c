@@ -342,12 +342,12 @@ void *rt_vecs_clone(void *vec) {
     if (!vec) return NULL;
     int64_t len = rt_list_len(vec);
     if (len == 0) return rt_list_create(0, 8);
-    int64_t cap = list_cap((void *)vec);
-    int64_t elem_size = 8;
     void *new_vec = rt_list_create(len, 8);
     if (!new_vec) return NULL;
-    memcpy(((char *)new_vec) + 16, ((char *)vec) + 16, (size_t)len * 8);
-    ((int64_t *)new_vec)[1] = len;
+    // A list pointer addresses the length word: len is at offset 0, the
+    // capacity sits immediately before it, and the first element is at offset 8.
+    memcpy(((char *)new_vec) + 8, ((char *)vec) + 8, (size_t)len * 8);
+    ((int64_t *)new_vec)[0] = len;
     return new_vec;
 }
 

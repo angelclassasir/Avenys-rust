@@ -1058,119 +1058,6 @@ fn failed_test_count(cwd: &Path, display: &str) -> u32 {
     declared_test_count(cwd, display).max(1)
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn write_unit(dir: &Path, name: &str, body: &str) {
-        fs::write(dir.join(name), body).expect("write unit");
-    }
-
-    #[test]
-    fn a_failing_unit_without_test_declarations_still_counts_as_one() {
-        let dir = std::env::temp_dir().join(format!(
-            "mire_failed_count_{}",
-            std::process::id()
-        ));
-        fs::create_dir_all(&dir).unwrap();
-        // The shape owl's suite uses: a plain main asserting through a helper,
-        // with no @[test] declarations anywhere.
-        write_unit(
-            &dir,
-            "script.mr",
-            "pub fn main: () { if 1 != 2 { exit(1) } }",
-        );
-        // A conventional unit declaring three cases, one of which failed.
-        write_unit(
-            &dir,
-            "declared.mr",
-            "@[test] pub fn a: () :bool { return true }\n\
-             @[test] pub fn b: () :bool { return false }\n\
-             @[test] pub fn c: () :bool { return true }",
-        );
-
-        // Zero declarations, but a failure is still one failure.
-        assert_eq!(declared_test_count(&dir, "script.mr"), 0);
-        assert_eq!(failed_test_count(&dir, "script.mr"), 1);
-        // Declared units keep their real count rather than being floored to one.
-        assert_eq!(declared_test_count(&dir, "declared.mr"), 3);
-        assert_eq!(failed_test_count(&dir, "declared.mr"), 3);
-        // A unit that cannot even be read must not vanish either.
-        assert_eq!(failed_test_count(&dir, "missing.mr"), 1);
-
-        fs::remove_dir_all(&dir).ok();
-    }
-
-    #[test]
-    fn script_style_units_run_unless_they_are_a_swept_up_program() {
-        let tests_dir = Path::new("/proj/tests");
-        let configured = vec![tests_dir.to_path_buf()];
-
-        // The case that was broken: a `main` asserting through a helper, with
-        // no @[test] anywhere, living in a configured test directory. This is
-        // owl's entire suite. It must execute, or the suite is vacuously green.
-        assert!(!should_skip_run(
-            &tests_dir.join("06_math.mr"),
-            true,
-            false,
-            &configured,
-            &[]
-        ));
-
-        // A conventional unit declares its cases and always runs.
-        assert!(!should_skip_run(
-            &tests_dir.join("ok.mr"),
-            false,
-            true,
-            &configured,
-            &[]
-        ));
-
-        // What the skip is actually for: `code/main.mr` has a main, declares
-        // nothing, and was reached by walking the project directory. Running it
-        // would execute a program for its side effects, so it stays skipped.
-        assert!(should_skip_run(
-            Path::new("/proj/code/main.mr"),
-            true,
-            false,
-            &configured,
-            &[]
-        ));
-
-        // Naming the file outright is a request to test it, so it runs even
-        // though it looks exactly like a swept-up program.
-        assert!(!should_skip_run(
-            Path::new("/proj/code/main.mr"),
-            true,
-            false,
-            &configured,
-            &[PathBuf::from("/proj/code/main.mr")]
-        ));
-
-        // A bare main outside the test tree, with nothing configured and
-        // nothing named, keeps the original conservative behaviour.
-        assert!(should_skip_run(
-            Path::new("/proj/main.mr"),
-            true,
-            false,
-            &[],
-            &[]
-        ));
-    }
-
-    #[test]
-    fn a_non_zero_exit_fails_a_unit_even_without_a_fail_marker() {
-        // A helper that exits non-zero without printing `[FAIL]` must not be
-        // reported as a pass. The exit status is the last line of defence: it
-        // holds even if the wording of a failure message changes.
-        let failed = Command::new("/bin/sh").arg("-c").arg("exit 3").status().unwrap();
-        assert!(!failed.success());
-        assert_eq!(describe_status(&failed), "exited with code 3");
-
-        let ok = Command::new("/bin/sh").arg("-c").arg("exit 0").status().unwrap();
-        assert!(ok.success());
-    }
-}
 
 fn family_log_name(name: &str) -> String {
     if name.eq_ignore_ascii_case("POO") {
@@ -1339,4 +1226,118 @@ pub(crate) fn kv_string(line: &str, key: &str) -> Option<String> {
         }
     }
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn write_unit(dir: &Path, name: &str, body: &str) {
+        fs::write(dir.join(name), body).expect("write unit");
+    }
+
+    #[test]
+    fn a_failing_unit_without_test_declarations_still_counts_as_one() {
+        let dir = std::env::temp_dir().join(format!(
+            "mire_failed_count_{}",
+            std::process::id()
+        ));
+        fs::create_dir_all(&dir).unwrap();
+        // The shape owl's suite uses: a plain main asserting through a helper,
+        // with no @[test] declarations anywhere.
+        write_unit(
+            &dir,
+            "script.mr",
+            "pub fn main: () { if 1 != 2 { exit(1) } }",
+        );
+        // A conventional unit declaring three cases, one of which failed.
+        write_unit(
+            &dir,
+            "declared.mr",
+            "@[test] pub fn a: () :bool { return true }\n\
+             @[test] pub fn b: () :bool { return false }\n\
+             @[test] pub fn c: () :bool { return true }",
+        );
+
+        // Zero declarations, but a failure is still one failure.
+        assert_eq!(declared_test_count(&dir, "script.mr"), 0);
+        assert_eq!(failed_test_count(&dir, "script.mr"), 1);
+        // Declared units keep their real count rather than being floored to one.
+        assert_eq!(declared_test_count(&dir, "declared.mr"), 3);
+        assert_eq!(failed_test_count(&dir, "declared.mr"), 3);
+        // A unit that cannot even be read must not vanish either.
+        assert_eq!(failed_test_count(&dir, "missing.mr"), 1);
+
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn script_style_units_run_unless_they_are_a_swept_up_program() {
+        let tests_dir = Path::new("/proj/tests");
+        let configured = vec![tests_dir.to_path_buf()];
+
+        // The case that was broken: a `main` asserting through a helper, with
+        // no @[test] anywhere, living in a configured test directory. This is
+        // owl's entire suite. It must execute, or the suite is vacuously green.
+        assert!(!should_skip_run(
+            &tests_dir.join("06_math.mr"),
+            true,
+            false,
+            &configured,
+            &[]
+        ));
+
+        // A conventional unit declares its cases and always runs.
+        assert!(!should_skip_run(
+            &tests_dir.join("ok.mr"),
+            false,
+            true,
+            &configured,
+            &[]
+        ));
+
+        // What the skip is actually for: `code/main.mr` has a main, declares
+        // nothing, and was reached by walking the project directory. Running it
+        // would execute a program for its side effects, so it stays skipped.
+        assert!(should_skip_run(
+            Path::new("/proj/code/main.mr"),
+            true,
+            false,
+            &configured,
+            &[]
+        ));
+
+        // Naming the file outright is a request to test it, so it runs even
+        // though it looks exactly like a swept-up program.
+        assert!(!should_skip_run(
+            Path::new("/proj/code/main.mr"),
+            true,
+            false,
+            &configured,
+            &[PathBuf::from("/proj/code/main.mr")]
+        ));
+
+        // A bare main outside the test tree, with nothing configured and
+        // nothing named, keeps the original conservative behaviour.
+        assert!(should_skip_run(
+            Path::new("/proj/main.mr"),
+            true,
+            false,
+            &[],
+            &[]
+        ));
+    }
+
+    #[test]
+    fn a_non_zero_exit_fails_a_unit_even_without_a_fail_marker() {
+        // A helper that exits non-zero without printing `[FAIL]` must not be
+        // reported as a pass. The exit status is the last line of defence: it
+        // holds even if the wording of a failure message changes.
+        let failed = Command::new("/bin/sh").arg("-c").arg("exit 3").status().unwrap();
+        assert!(!failed.success());
+        assert_eq!(describe_status(&failed), "exited with code 3");
+
+        let ok = Command::new("/bin/sh").arg("-c").arg("exit 0").status().unwrap();
+        assert!(ok.success());
+    }
 }

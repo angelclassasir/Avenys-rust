@@ -29,3 +29,31 @@ pub fn grouped_expression: () :bool { return (2 + 3) * 4 == 20 }
 
 @[test]
 pub fn nested_grouping: () :bool { return ((8 - 3) * 2) == 10 }
+
+@[test]
+pub fn literal_float_exponent: () :bool {
+    set plain = 1.5e3 :f64
+    set whole = 2.0e2 :f64
+    return plain == 1500.0 && whole == 200.0
+}
+
+@[test]
+pub fn literal_float_exponent_signed: () :bool {
+    set up = 1.0e+2 :f64
+    set down = 1.0e-2 :f64
+    return up == 100.0 && down == 0.01
+}
+
+@[test]
+pub fn literal_float_exponent_uppercase: () :bool {
+    set value = 1.0E2 :f64
+    return value == 100.0
+}
+
+@[test]
+pub fn literal_float_exponent_without_point: () :bool {
+    // No decimal point, so the exponent alone is what makes this a float. Lexed
+    // as an int it would be 2 followed by the name e3 and would not compile.
+    set value = 2e3 :f64
+    return value == 2000.0
+}

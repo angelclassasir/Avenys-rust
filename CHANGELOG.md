@@ -2,6 +2,68 @@
 
 All notable changes to Avenys will be documented in this file.
 
+## 4.3.3 - 2026-10-06
+
+### Added
+- **Path sandbox in the PAL** — every absolute-path entry point now consults
+  `pal_sbx_permit` before reaching the kernel. This is a security control rather
+  than a lint, and that distinction is the whole reason it sits in the PAL: a
+  policy enforced by the language layer is advisory, because a program can
+  declare its own extern and call the kernel directly. `pal_root_open` was
+  ungated before, which handed out a capability for the whole filesystem to
+  anyone who asked for `/` and made the relative API's confinement meaningless.
+  The default root is the working directory, captured lazily. Three stages run
+  against it: lexical normalisation of `.` and `..`, a prefix test that requires
+  the separator, and a `realpath(3)` re-check of the deepest *existing* ancestor
+  so a symlink planted inside the root cannot point at `/etc`. The last stage
+  needs the deepest-existing-ancestor trick because `realpath(3)` fails outright
+  on a path that does not exist yet, and creating a file through a symlinked
+  parent is exactly the case worth catching.
+- **`pal_sbx_set_tool_home()` — a second authorised root.** A tool that keeps a
+  store which must outlive any one project needs a home outside the project
+  tree: a project tree cannot be shared between checkouts, and copying every
+  dependency per project defeats the point of having a registry. The home is
+  authorised *separately* rather than folded into the main root, because widening
+  the root would give every program in every project write access to the whole
+  home directory. Exactly one directory is granted, to the one program that asks
+  for it, and it is never inferred from the environment — a project must not be
+  able to widen its own sandbox by exporting a variable. The grant authorises no
+  execution either: a file dropped into the store is inert data, and the
+  installer only activates a package whose contents match the registry hash.
+- **`pal_proc_shell()`, runtime-gated.** A shell takes a string, so every
+  metacharacter in it is a command-injection vector. The symbol is compiled in
+  but denied unless the calling thread holds an open unsafe scope, so a program
+  can be deployed once and decide per call site. The default answer is no.
+
+
+
+### Fixed
+- **`rt_sbx_*` did not link on the minimal runtime tier.** `rt_sbx_get_root` and
+  friends are declared in `helpers.c`, but the tier only extends the C source
+  list with `pal/core` when the IR mentions a `pal_*` symbol. A program declaring
+  an `rt_sbx_` extern on its own therefore failed to link with an undefined
+  reference even though the symbol was sitting in a file it already had. The
+  symbol-to-file map now has an explicit `rt_sbx_` arm.
+
+### Changed
+- **Removed `check_command` and `lsp_command`.** Neither was reachable from the
+  dispatch and neither had a test, so both sat behind `#[allow(dead_code)]`,
+  which is a way of asking the compiler to stop reporting a question rather than
+  an answer. `lsp_command` in particular was 170 lines parsing a `--lsp` flag
+  that no command-line entry point accepted. Deleted rather than left parked;
+  the LSP surface has to arrive with its dispatch and its tests.
+- **`integer_bit_width` is `#[cfg(test)]`.** It was reachable only from
+  `src/types/tests/`, and the module-level `#[allow(dead_code)]` would also have
+  silenced a real future caller that forgot to wire it up.
+- **`is_float_type`, `llvm_version` and the unused `#[allow(dead_code)]` on
+  `collect_c_files` are gone.** The first two had no callers at all; the third
+  was suppressing a warning for a function that is used, recursively, on its
+  second line.
+- **`src/cli/test.rs`: the test module moved to the end of the file.** Clippy's
+  `items_after_test_module` was correct — the module was followed by five
+  functions that belong with it.
+---
+
 ## 4.3.2 - 2026-09-29
 A patch release fixing a data race in the incremental cache that only shows up
 when several compiler threads initialise a cold cache at once, which is exactly

@@ -147,6 +147,7 @@ impl<'a> ImportResolver<'a> {
     /// - **`Statement::Load`** → `load` submodule (package resolution)
     /// - **`Statement::LoadLocal`** → `lload` submodule (local resolution)
     /// - Everything else → pass through
+    ///
     /// Collect the dependency candidates of the whole import graph *before* any
     /// reachable selection runs.
     ///

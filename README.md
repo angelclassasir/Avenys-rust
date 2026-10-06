@@ -1,4 +1,4 @@
-# Avenys v4.2.0
+# Avenys v4.3.3
 
 **A compiled, ownership-aware systems language with an LLVM backend.**
 
@@ -10,6 +10,34 @@ overhead beyond what you ask for.
 The compiler, Avenys, translates Mire source through a multi-stage pipeline into
 native binaries via LLVM. It ships with Kioto, a standard library covering
 strings, collections, math, filesystem, processes, and more.
+
+## Recent Changes (v4.3.3)
+- **Path sandbox**: every absolute-path entry point in the PAL consults one
+  policy before reaching the kernel, instead of trusting a check in the language
+  layer where a program could declare its own extern and call the kernel anyway.
+  The default root is the working directory; three stages run against it —
+  lexical normalisation, a prefix test, and a `realpath(3)` re-check of the
+  deepest existing ancestor — so neither `..` nor a symlink planted inside the
+  root can escape. `pal_proc_shell` is compiled in but denied unless the calling
+  thread has an open unsafe scope, which keeps the capability available to
+  programs that genuinely need it while the default answer is no.
+- **A second authorised root for the tool's own home**: a program can declare one
+  extra writable subtree — `~/.owl`, for the package store — without the sandbox
+  root being widened to the whole home directory. The grant is never read from
+  the environment, so a project cannot widen its own sandbox by setting a
+  variable, and it authorises no execution: a file dropped into the store is
+  inert data that the installer only activates when it matches the registry hash.
+- **`[c]` and `[security]` as CLI flags**: `--c-source`, `--c-include`,
+  `--cflag`, `--c-lib`, `--define`, `--security-mode`, `--extern`,
+  `--extern-lib`, `--allow-macro`, `--allow-unsafe` and `--macro`. An
+  orchestrator now forwards a project's C and security settings directly, with
+  no generated TOML in between, and strict mode is available without a config
+  file at all.
+- **`>>` is an arithmetic shift**: it was lowering to `lshr`, so a negative value
+  shifted right kept its sign bits inverted. `>>>` is the logical shift.
+- **`ptr == 0` no longer segfaults**: a null comparison lowered to `strcmp`
+  against an `inttoptr`'d literal and dereferenced the pointer. `rt_ptr_add` was
+  added alongside it, so pointer arithmetic no longer needs a C helper.
 
 ## Recent Changes (v4.3.0)
 - **`bits::<T>(x)` bit-level reinterpretation**: a same-width scalar bitcast

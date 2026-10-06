@@ -101,6 +101,7 @@ char *rt_websocket_text_frame(const char *payload) {
  * reads or paths to the HTTP layer. The caller owns the fixed log location. */
 int64_t rt_web_log_append(const char *path, const char *line) {
     if (!path || !line) return -1;
+    if (!pal_sbx_permit_or_error(path)) return -1;
     FILE *file = fopen(path, "ab");
     if (!file) return -1;
     size_t length = strlen(line);
@@ -150,6 +151,7 @@ char *rt_crypto_sha512_hex(const char *s) {
 // the caller owns the buffer. Returns NULL on any failure.
 static unsigned char *rt_read_file_raw(const char *path, size_t *out_len) {
     if (!path) return NULL;
+    if (!pal_sbx_permit_or_error(path)) return NULL;
     FILE *file = fopen(path, "rb");
     if (!file) return NULL;
     if (fseek(file, 0, SEEK_END) != 0) { fclose(file); return NULL; }
@@ -345,7 +347,15 @@ char *rt_crypto_ed25519_pubkey_raw_b64(const char *pem_path) {
 }
 
 // Read an entire file as a managed string (binary-safe).
+//
+// Gated by the sandbox policy. This is the primitive fs::read is built on, so
+// the check lives here rather than in the caller: gating the one function that
+// opens files is what stops a new caller from being added later without one.
+// A denied read returns NULL, which the managed wrapper turns into the empty
+// string — the same shape as "file not found", with last_error() carrying the
+// real reason.
 char *rt_read_bytes(const char *path) {
+    if (!pal_sbx_permit_or_error(path)) return NULL;
     FILE *f = fopen(path, "rb");
     if (!f) return NULL;
     fseek(f, 0, SEEK_END);
@@ -376,6 +386,7 @@ char *rt_fs_read_bytes(const char *path) {
 // Decode a hex string and write the raw bytes to a file.
 int rt_hex_to_file(const char *path, const char *hex) {
     if (!path || !hex) return 0;
+    if (!pal_sbx_permit_or_error(path)) return 0;
     size_t hex_len = strlen(hex);
     size_t bin_len = hex_len / 2;
     char *bin = (char *)malloc(bin_len);
@@ -839,4 +850,92 @@ int64_t rt_font_get_pixel(int64_t ch, int64_t col, int64_t row) {
         }
     }
     return (s_font5x7['?' - 32][col] >> row) & 1;
+}
+
+// ── Sandbox bridges ────────────────────────────────────────────
+// Why these exist instead of calling the PAL directly from Mire:
+//
+// The compiler has exactly one rule for a `:str` returned by an extern —
+// if the name starts with `pal_`, it assumes a malloc'd buffer, copies it with
+// rt_managed_from_cstr and then calls free() on it. That is right for an
+// owned buffer and catastrophic for a borrowed one: freeing a static buffer
+// is undefined behaviour, and the compiler would do it on every call.
+//
+// So anything the PAL hands back as [BORROWED] crosses into Mire through an
+// `rt_` bridge instead. `rt_`-prefixed str returns take the other branch
+// (rt_managed_ensure_managed, copy without free), which is what a borrowed
+// pointer needs. This keeps the ownership correct without adding an ownership
+// annotation to the language, which would be a compiler change.
+//
+// If a compiler ever grows a `borrowed` marker on extern signatures, these
+// bridges can be deleted and the PAL called directly.
+
+// [BORROWED] Process-wide static / thread-local; the compiler makes the copy.
+const char *rt_sbx_get_root(void) {
+    return pal_sbx_get_root();
+}
+
+// [BORROWED] Thread-local; the compiler makes the copy.
+const char *rt_sbx_reason_text(void) {
+    return pal_sbx_reason_text();
+}
+
+// [BORROWED] Thread-local; the compiler makes the copy.
+const char *rt_sbx_detail(void) {
+    return pal_sbx_detail();
+}
+
+// The sandbox root captured at startup, before any program code runs, so that
+// a program cannot widen its own sandbox by being the first to ask. NULL
+// means "defer to the lazy working-directory capture".
+void rt_sbx_init(void) {
+    pal_sbx_set_root(NULL);
+}
+
+void rt_sbx_set_tool_home(const char *path) {
+    pal_sbx_set_tool_home(path);
+}
+
+const char *rt_sbx_get_tool_home(void) {
+    return pal_sbx_get_tool_home();
+}
+
+// ── Shell bridge ───────────────────────────────────────────────
+// pal_proc_shell returns [PAL-OWNED] malloc'd output. Freeing it from codegen
+// would hit the missing-@free-declaration path described above, so the copy
+// and the free both happen here, where they are explicit: the PAL buffer is
+// released, and what crosses into Mire is a borrowed thread-local copy.
+static _Thread_local char g_shell_out[1];
+static _Thread_local char *g_shell_buf = NULL;
+static _Thread_local size_t g_shell_buf_cap = 0;
+
+const char *rt_proc_shell(const char *command) {
+    char *owned = pal_proc_shell(command);
+    if (!owned) {
+        g_shell_out[0] = '\0';
+        return g_shell_out; // denial or failure; last_error() says which
+    }
+    // Keep one buffer per thread and grow it, so a shell in a loop does not
+    // malloc on every call but a longer result is still not truncated. The
+    // guard compares against the size actually reserved, never against a
+    // constant: a fixed ceiling lets the first result size the buffer and
+    // then copies every later, longer result past its end.
+    size_t need = strlen(owned) + 1;
+    if (need > g_shell_buf_cap) {
+        char *grown = realloc(g_shell_buf, need);
+        if (!grown) {
+            free(owned);
+            g_shell_out[0] = '\0';
+            return g_shell_out;
+        }
+        g_shell_buf = grown;
+        g_shell_buf_cap = need;
+    }
+    memcpy(g_shell_buf, owned, need);
+    free(owned);
+    return g_shell_buf;
+}
+
+int64_t rt_proc_shell_status(void) {
+    return pal_proc_shell_status();
 }

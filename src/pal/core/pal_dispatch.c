@@ -40,6 +40,11 @@ void pal_dispatch_set_ops(const pal_ops_t *backend_ops) {
 
 pal_root_t pal_root_open(const char *path) {
     pal_ensure_init();
+    // A root handle is the anchor for every relative operation below it, so
+    // an ungated pal_root_open("/") would hand out a capability for the whole
+    // filesystem and make the relative API's confinement meaningless. Gate it
+    // like every other absolute-path entry point.
+    if (!pal_sbx_permit_or_error(path)) return PAL_ROOT_NULL;
     if (!ops || !ops->root_open) { pal_set_error(PAL_ERR_UNSUPPORTED, "no backend"); return PAL_ROOT_NULL; }
     int64_t internal = ops->root_open(path);
     if (internal <= 0) { pal_set_error(pal_core_errno_map(errno), "root_open failed"); return PAL_ROOT_NULL; }
@@ -589,19 +594,23 @@ void pal_secure_free(void *ptr) {
 #if PAL_ALLOW_UNSANDBOXED
 
 bool pal_fs_exists(const char *path) {
+    if (!pal_sbx_permit(path)) return false;
     struct stat st;
     return stat(path, &st) == 0;
 }
 
 bool pal_fs_mkdir(const char *path) {
+    if (!pal_sbx_permit_or_error(path)) return false;
     return mkdir(path, 0755) == 0;
 }
 
 bool pal_fs_rmdir(const char *path) {
+    if (!pal_sbx_permit_or_error(path)) return false;
     return rmdir(path) == 0;
 }
 
 bool pal_fs_unlink(const char *path) {
+    if (!pal_sbx_permit_or_error(path)) return false;
     return unlink(path) == 0;
 }
 
@@ -612,6 +621,7 @@ bool pal_fs_remove(const char *path) {
         pal_set_error(PAL_ERR_INVALID, "null or empty path");
         return false;
     }
+    if (!pal_sbx_permit_or_error(path)) return false;
     if (remove(path) == 0) return true;
     pal_set_error(pal_core_errno_map(errno), "remove failed");
     return false;
@@ -621,6 +631,7 @@ bool pal_fs_remove(const char *path) {
 // Returns NULL on error (never a string literal — a literal cannot be freed).
 const char *pal_fs_read_file(const char *path) {
     if (!path) return NULL;
+    if (!pal_sbx_permit_or_error(path)) return NULL;
     FILE *f = fopen(path, "rb");
     if (!f) return NULL;
     fseek(f, 0, SEEK_END);
@@ -677,6 +688,106 @@ const char *pal_proc_capture_output(const char *cmd) {
 }
 
 #endif // PAL_ALLOW_LEGACY_SHELL
+
+// ── Runtime-gated shell ─────────────────────────────────────────
+// Unlike the compile-time-gated functions above, this one is always compiled:
+// the decision to expose it is a RUNTIME policy, not a build flag, so that a
+// program can be deployed once and decide per call site. The default is deny.
+//
+// A shell takes a string, so every metacharacter in it is a command
+// injection surface. That is the point of the symbol, and it is why it is
+// gated rather than simply removed: a shell is a real capability that some
+// programs genuinely need, and the useful question is who decided to grant
+// it, not whether it exists.
+//
+// Calling this requires an open unsafe scope on the calling thread
+// (pal_sbx_set_unsafe(1)). Without one it is denied and the reason is
+// reported through the normal error surface.
+
+static __thread int64_t t_shell_status = -1;
+
+int64_t pal_proc_shell_status(void) { return t_shell_status; }
+
+const char *pal_proc_shell(const char *command) {
+    t_shell_status = -1;
+    if (!command || command[0] == '\0') {
+        pal_set_error(PAL_ERR_INVALID, "null or empty shell command");
+        return NULL;
+    }
+    if (pal_sbx_unsafe_depth() <= 0) {
+        pal_set_error(PAL_ERR_PERMISSION,
+                      "proc::shell requires an explicit unsafe scope "
+                      "(open it with fs::unsafe::enter, close it with fs::unsafe::exit)");
+        return NULL;
+    }
+
+    int fds[2];
+    if (pipe(fds) != 0) {
+        pal_set_error(pal_core_errno_map(errno), "pipe failed");
+        return NULL;
+    }
+
+    pid_t pid = fork();
+    if (pid < 0) {
+        close(fds[0]);
+        close(fds[1]);
+        pal_set_error(pal_core_errno_map(errno), "fork failed");
+        return NULL;
+    }
+
+    if (pid == 0) {
+        // Child: stdout and stderr both land in the capture pipe so that a
+        // failing command's diagnostics are not silently lost.
+        close(fds[0]);
+        dup2(fds[1], STDOUT_FILENO);
+        dup2(fds[1], STDERR_FILENO);
+        close(fds[1]);
+        // -c means "this argument is a command", not "this argument is an
+        // option"; without it a command starting with - would be eaten.
+        execl("/bin/sh", "sh", "-c", command, (char *)NULL);
+        _exit(127);
+    }
+
+    close(fds[1]);
+    char *buf = NULL;
+    size_t cap = 0, n = 0;
+    for (;;) {
+        if (n + 4096 + 1 > cap) {
+            size_t ncap = cap ? cap * 2 : 8192;
+            char *grown = realloc(buf, ncap);
+            if (!grown) { free(buf); close(fds[0]); waitpid(pid, NULL, 0); return NULL; }
+            buf = grown;
+            cap = ncap;
+        }
+        ssize_t got = read(fds[0], buf + n, 4096);
+        if (got < 0) {
+            if (errno == EINTR) continue;
+            free(buf);
+            close(fds[0]);
+            waitpid(pid, NULL, 0);
+            return NULL;
+        }
+        if (got == 0) break;
+        n += (size_t)got;
+    }
+    close(fds[0]);
+    if (!buf) {
+        buf = malloc(1);
+        if (!buf) { waitpid(pid, NULL, 0); return NULL; }
+    }
+    buf[n] = '\0';
+
+    int status = 0;
+    waitpid(pid, &status, 0);
+    if (WIFEXITED(status)) {
+        t_shell_status = WEXITSTATUS(status);
+    } else if (WIFSIGNALED(status)) {
+        t_shell_status = 128 + WTERMSIG(status);
+    } else {
+        t_shell_status = -1;
+    }
+    return buf; // [PAL-OWNED] caller must pal_free()
+}
 
 int64_t pal_proc_wait_pid(int64_t pid) {
     if (pid <= 0) return -1;
@@ -756,21 +867,25 @@ const char *pal_fs_name(const char *path) {
 }
 
 bool pal_fs_is_file(const char *path) {
+    if (!pal_sbx_permit(path)) return false;
     if (!ops || !ops->fs_is_file) return false;
     return ops->fs_is_file(path);
 }
 
 bool pal_fs_copy(const char *src, const char *dst) {
+    if (!pal_sbx_permit_or_error(src) || !pal_sbx_permit_or_error(dst)) return false;
     if (!ops || !ops->fs_copy) return false;
     return ops->fs_copy(src, dst);
 }
 
 bool pal_fs_move(const char *src, const char *dst) {
+    if (!pal_sbx_permit_or_error(src) || !pal_sbx_permit_or_error(dst)) return false;
     if (!ops || !ops->fs_move) return false;
     return ops->fs_move(src, dst);
 }
 
 bool pal_fs_chmod(const char *path, const char *mode) {
+    if (!pal_sbx_permit_or_error(path)) return false;
     if (!ops || !ops->fs_chmod) return false;
     return ops->fs_chmod(path, mode);
 }

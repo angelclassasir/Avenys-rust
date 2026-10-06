@@ -1270,11 +1270,39 @@ impl MirLower {
                     );
                     let push_fn = match element_type.as_ref() {
                         DataType::I64 | DataType::U64 | DataType::Char => "rt_list_push_i64",
+                        // An f64 occupies the same 8-byte slot as an i64, but the
+                        // slot holds a raw 64-bit pattern, so the element is
+                        // bitcast before the push. This used to fall through to
+                        // push_ptr, which stored the double as a pointer: a
+                        // literal like [1.0 2.0] :vec[f64] compiled cleanly and
+                        // then read back as all zeros, with the correct length,
+                        // so nothing about the program said it was broken.
+                        // f32 vectors are still unsupported and keep the
+                        // catch-all: a 4-byte element has no 8-byte slot push,
+                        // and fixing that needs a matching read path.
+                        DataType::F64 => "rt_list_push_i64",
                         DataType::Bool => "rt_list_push_scalar",
                         _ => "rt_list_push_ptr",
                     };
                     for elem in elements {
                         let elem_val = self.lower_expression(elem);
+                        let elem_val = if matches!(element_type.as_ref(), DataType::F64) {
+                            let bits = self.new_temp();
+                            let last = self.current_block;
+                            self.func.blocks[last].push(
+                                Some(bits),
+                                MirOp::BitCast(
+                                    elem_val,
+                                    MirType {
+                                        data_type: DataType::I64,
+                                    },
+                                ),
+                                loc,
+                            );
+                            MirValue::temp(bits)
+                        } else {
+                            elem_val
+                        };
                         let last = self.current_block;
                         let loaded = self.new_temp();
                         self.func.blocks[last].push(

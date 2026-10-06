@@ -234,6 +234,26 @@ char   *rt_read_tty(void);
 // Read an entire file as a runtime-managed string.
 char   *rt_fs_read_bytes(const char *path);
 
+// ── Sandbox policy bridges ──
+// The `pal_sbx_*` accessors are [BORROWED]; these `rt_` wrappers exist so they
+// cross into Mire without the compiler treating them as owned buffers. See the
+// long explanation in helpers.c. All three return borrowed storage.
+const char *rt_sbx_get_root(void);
+const char *rt_sbx_reason_text(void);
+const char *rt_sbx_detail(void);
+void        rt_sbx_init(void);
+
+// Authorise a second writable subtree (~/.owl for the package store) in addition
+// to the project root. A tool that manages its own store calls this once at
+// startup; every other program never gets the capability. Passing NULL revokes.
+void        rt_sbx_set_tool_home(const char *path);
+const char *rt_sbx_get_tool_home(void);
+
+// Runtime-gated shell. Returns borrowed thread-local storage (empty on denial
+// or failure — check last_error); the exit status is separate.
+const char *rt_proc_shell(const char *command);
+int64_t     rt_proc_shell_status(void);
+
 // Safe channel receive into a caller-owned buffer (no PAL bytes handoff).
 int64_t rt_channel_recv_into(int64_t ch_handle, char *buf, int64_t capacity);
 

@@ -235,8 +235,11 @@ pub(crate) fn coerce_to(
     let to_w = int_width(to_ty);
     if from_w > 0 && to_w > 0 {
         if to_w > from_w {
-            // Asumimos extensión con signo para los casos de coerción en llamadas;
-            // los literales con ascripción ya emiten zext/sext explicitos en el lower.
+            // Sign extension for an implicit widening in a call: a value with no
+            // ascribed type carries no signedness, so sext is the only choice that
+            // cannot turn a negative into a large positive. A literal WITH an
+            // ascribed type already emits an explicit zext/sext while lowering, so
+            // that case never reaches here.
             let conv = tmp_extra(ctx, to_ty);
             extra.push(format!(
                 "{} = sext {} {} to {}",

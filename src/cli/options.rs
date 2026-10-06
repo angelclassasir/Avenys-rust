@@ -817,8 +817,10 @@ mod tests {
 
     #[test]
     fn cli_extends_an_existing_allowlist_without_dropping_it() {
-        let mut existing = mire::SecurityConfig::default();
-        existing.externs = vec!["rt_*".to_string()];
+        let existing = mire::SecurityConfig {
+            externs: vec!["rt_*".to_string()],
+            ..Default::default()
+        };
         let opts = parse(&["--extern", "mire_*"]);
         let cfg = apply_cli_security(Some(existing), &opts).expect("merged");
         // An orchestrator forwarding a project manifest plus its own additions

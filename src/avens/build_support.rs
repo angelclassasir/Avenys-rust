@@ -1042,6 +1042,7 @@ pub(super) fn strip_unused_decls(ir: &str, used: &UsedSymbols) -> String {
 /// Returns the filename (relative to `runtime/`) or `None` if unknown.
 fn runtime_symbol_to_c_file(sym: &str) -> Option<&'static str> {
     // Order matters: more specific prefixes first.
+    //
     if sym.starts_with("rt_math_random") {
         Some("random.c")
     } else if sym.starts_with("rt_math_") {
@@ -1109,6 +1110,15 @@ fn runtime_symbol_to_c_file(sym: &str) -> Option<&'static str> {
     } else if sym.starts_with("rt_thread_") {
         Some("thread.c")
     } else if sym.starts_with("rt_get_args") || sym.starts_with("rt_free_argv") {
+        Some("helpers.c")
+    } else if sym.starts_with("rt_sbx_") {
+        // Sandbox bridges. They live in helpers.c rather than beside the policy in
+        // pal_sandbox.c so that a program declaring one still resolves them on the
+        // minimal runtime tier: that tier only extends the C source list with
+        // pal/core when the IR mentions a pal_* symbol, and an rt_sbx_ declaration
+        // on its own would then leave these two undefined. helpers.c is already a
+        // dependency of most runtime builds and bridges into the PAL at the C
+        // level, so the symbol resolves on either tier.
         Some("helpers.c")
     } else {
         None

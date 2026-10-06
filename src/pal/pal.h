@@ -24,6 +24,83 @@
 #define PAL_ALLOW_LEGACY_SHELL 0
 #endif
 
+// ══ SANDBOX POLICY ═══════════════════════════════════════
+// The default-deny gate on absolute-path filesystem access. Every
+// pal_fs_* entry point consults pal_sbx_permit() before it reaches the
+// kernel, so the policy holds even for a program that declares its own
+// externs — a check in the language layer would be advisory only.
+//
+// The sandbox ROOT is process-wide and defaults to the working directory;
+// pal_sbx_set_root(NULL) denies every absolute path outright. The UNSAFE
+// DEPTH is per-thread and suspends the policy while positive; it is a
+// counter rather than a flag so that a nested scope which forgets to exit
+// cannot silently widen the hole. The escape hatch is a normal capability
+// (pal_proc_shell) or a call inside pal_sbx_set_unsafe — see pal_sandbox.c
+// for what the check does and, more importantly, what it does not do.
+
+typedef enum {
+    PAL_SBX_DENY_NONE = 0,   ///< allowed
+    PAL_SBX_DENY_NO_ROOT,    ///< no sandbox root configured
+    PAL_SBX_DENY_ABSOLUTE,   ///< absolute path outside the root
+    PAL_SBX_DENY_ESCAPE,     ///< `..` climbed out of the root
+    PAL_SBX_DENY_TRAVERSAL,  ///< malformed path (empty, or climbed past "/")
+    PAL_SBX_DENY_SYMLINK,    ///< resolves through a symlink out of the root
+} pal_sbx_reason_t;
+
+/// Set the sandbox root. The path is realpath'd, so symlinks in the argument
+/// are resolved once here. A root that does not exist is stored as empty,
+/// i.e. "deny everything" — a typo must fail closed. NULL also denies
+/// everything. Calling this more than once is a program-level decision, not
+/// a thread-safety concern: it is intentionally process-wide.
+void pal_sbx_set_root(const char *root);
+
+/// [BORROWED] Current sandbox root, captured from the working directory on
+/// first use. NULL when the sandbox denies all absolute paths. Do not free.
+const char *pal_sbx_get_root(void);
+
+/// Authorise a SECOND subtree in addition to the project root: the home
+/// directory of a tool that needs a store outliving any one project, such as
+/// ~/.owl for the package registry and installer.
+///
+/// Deliberately separate from pal_sbx_set_root rather than folded into it.
+/// Widening the main root would give every program in every project write
+/// access to the whole home directory; this grants exactly one subtree, to the
+/// one program that asks for it, and grants no execution from it. The same
+/// three-stage check applies, so traversal and symlink escapes out of the
+/// authorised subtree are rejected exactly as they are out of the project.
+///
+/// Never inferred from the environment: a project must not be able to widen its
+/// own sandbox by setting a variable. Pass NULL to revoke, which is the default
+/// for every program that does not call this.
+void pal_sbx_set_tool_home(const char *path);
+
+/// [BORROWED] The authorised tool home, or NULL when none was set. Do not free.
+const char *pal_sbx_get_tool_home(void);
+
+/// Suspend (depth > 0) or resume (depth == 0) the policy for this thread.
+/// Always returns true; the bool exists to match the rest of the surface.
+bool pal_sbx_set_unsafe(int depth);
+
+/// Unsafe depth for the calling thread.
+int pal_sbx_unsafe_depth(void);
+
+/// The policy decision. True = proceed. False = deny, and the reason below
+/// explains why. This is the function every gated entry point calls.
+bool pal_sbx_permit(const char *path);
+
+/// As pal_sbx_permit, but records PAL_ERR_PERMISSION with the reason text so
+/// the denial shows up in the normal error-reporting surface.
+bool pal_sbx_permit_or_error(const char *path);
+
+/// Why the most recent pal_sbx_permit() on this thread denied. Borrowed.
+pal_sbx_reason_t pal_sbx_reason(void);
+
+/// [BORROWED] Human-readable form of pal_sbx_reason(). Borrowed, per-thread.
+const char *pal_sbx_reason_text(void);
+
+/// [BORROWED] The path that was denied. Borrowed, per-thread, empty if none.
+const char *pal_sbx_detail(void);
+
 // ── Opaque Handle Types ──────────────────────────────────────
 // Each handle is {uint32_t index; uint32_t generation}.
 // The ABI exposes the struct definition so it has a known size (8 bytes).
@@ -279,6 +356,27 @@ int64_t pal_proc_system(const char *cmd);
 int64_t pal_proc_capture(const char *cmd, void *buf, int64_t capacity);
 const char *pal_proc_capture_output(const char *cmd);
 #endif // PAL_ALLOW_LEGACY_SHELL
+
+// ══ RUNTIME-GATED SHELL ══
+// pal_proc_shell runs `command` through `/bin/sh -c` and captures the child's
+// combined stdout+stderr. Unlike the compile-time-gated functions above it is
+// always built: the decision to expose a shell is a RUNTIME policy, so a
+// deployed binary can deny it everywhere except the call sites that asked for
+// it. Default is deny.
+//
+// The gate is pal_sbx_unsafe_depth() > 0 on the CALLING THREAD. A denied call
+// sets PAL_ERR_PERMISSION and returns NULL; it never silently no-ops.
+//
+// A shell takes a string, so any untrusted data concatenated into `command` is
+// a command-injection vector. Build the command from trusted fragments only,
+// and prefer pal_proc_create (argv, no shell) everywhere it will do.
+//
+// pal_proc_shell: [PAL-OWNED] malloc'd NUL-terminated captured output; caller
+// MUST pal_free(). NULL on denial or failure.
+// pal_proc_shell_status: exit status of the last shell on this thread, or -1.
+
+const char *pal_proc_shell(const char *command);
+int64_t pal_proc_shell_status(void);
 
 // pal_proc_wait_pid: PID-based waitpid for rare cases where you only
 // have a raw OS PID (e.g. from pal_proc_spawn's fork). Prefer
