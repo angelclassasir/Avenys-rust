@@ -16,8 +16,8 @@ output = "tests/log/bin"
 cache = "tests/log/bin/.cache"
 
 [dependencies]
-kioto = { path = "../kioto", version = "2.4.7" }
-mire = { path = "../mire", version = "0.0.7" }
+kioto = { path = "../kioto", version = "3.0.0" }
+mire = { path = "../mire", version = "1.2.0" }
 sqlite = { path = "../sqlite", version = "0.1.0" }
 
 [c]
