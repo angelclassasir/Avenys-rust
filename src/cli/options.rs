@@ -25,6 +25,28 @@ pub(crate) struct CommonOptions {
     pub(crate) runtime: Option<mire::RuntimeTier>,
     pub(crate) nostartfiles: bool,
     pub(crate) nostdlib: bool,
+    /// Native C sources, from `--c-source`. Repeated.
+    pub(crate) c_sources: Vec<String>,
+    /// Native C include dirs, from `--c-include`. Repeated.
+    pub(crate) c_includes: Vec<String>,
+    /// Raw C compiler flags, from `--cflag`. Repeated.
+    pub(crate) cflags: Vec<String>,
+    /// Native libraries to link, from `--c-lib`. Repeated.
+    pub(crate) c_libs: Vec<String>,
+    /// Preprocessor defines, from `--define name` or `--define name=value`.
+    pub(crate) defines: Vec<String>,
+    /// Security mode from `--security-mode open|strict`.
+    pub(crate) security_mode: Option<mire::SecurityMode>,
+    /// Extern allowlist patterns from `--extern`. Repeated, `*` suffix allowed.
+    pub(crate) externs: Vec<String>,
+    /// Allowed extern libraries from `--extern-lib`. Repeated.
+    pub(crate) extern_libs: Vec<String>,
+    /// Allowed macros from `--allow-macro`. Repeated.
+    pub(crate) allow_macros: Vec<String>,
+    /// `--allow-unsafe` permits unsafe blocks.
+    pub(crate) allow_unsafe: bool,
+    /// Macro file bindings, `--macro name=path`. Repeated.
+    pub(crate) macro_bindings: Vec<(String, String)>,
 }
 
 #[derive(Debug, Clone)]
@@ -92,6 +114,17 @@ pub(crate) fn parse_common_with_file(
     let mut runtime = None;
     let mut nostartfiles = false;
     let mut nostdlib = false;
+    let mut c_sources = Vec::new();
+    let mut c_includes = Vec::new();
+    let mut cflags = Vec::new();
+    let mut c_libs = Vec::new();
+    let mut defines = Vec::new();
+    let mut security_mode = None;
+    let mut externs = Vec::new();
+    let mut extern_libs = Vec::new();
+    let mut allow_macros = Vec::new();
+    let mut allow_unsafe = false;
+    let mut macro_bindings: Vec<(String, String)> = Vec::new();
 
     let mut i = 0;
     while i < args.len() {
@@ -252,6 +285,110 @@ pub(crate) fn parse_common_with_file(
             "--progress" => {
                 unsafe { std::env::set_var("OWL_PROGRESS", "1") };
             }
+            // ── Native C ──────────────────────────────────────────
+            // These exist so a build orchestrator can pass the project's [c]
+            // section without synthesising a TOML file for the compiler to read
+            // back. Repetition accumulates; there is no comma form, because a
+            // cflag may legitimately contain a comma.
+            "--c-source" => {
+                i += 1;
+                c_sources.push(
+                    args.get(i)
+                        .ok_or_else(|| cli_msg("Missing path after --c-source"))?
+                        .clone(),
+                );
+            }
+            "--c-include" => {
+                i += 1;
+                c_includes.push(
+                    args.get(i)
+                        .ok_or_else(|| cli_msg("Missing path after --c-include"))?
+                        .clone(),
+                );
+            }
+            "--cflag" => {
+                i += 1;
+                cflags.push(
+                    args.get(i)
+                        .ok_or_else(|| cli_msg("Missing flag after --cflag"))?
+                        .clone(),
+                );
+            }
+            "--c-lib" => {
+                i += 1;
+                c_libs.push(
+                    args.get(i)
+                        .ok_or_else(|| cli_msg("Missing library after --c-lib"))?
+                        .clone(),
+                );
+            }
+            "--define" => {
+                i += 1;
+                defines.push(
+                    args.get(i)
+                        .ok_or_else(|| cli_msg("Missing name after --define"))?
+                        .clone(),
+                );
+            }
+            // ── Security ──────────────────────────────────────────
+            "--security-mode" => {
+                i += 1;
+                let value = args
+                    .get(i)
+                    .ok_or_else(|| cli_msg("Missing mode after --security-mode"))?;
+                security_mode = Some(
+                    match value.as_str() {
+                        "open" => mire::SecurityMode::Open,
+                        "strict" => mire::SecurityMode::Strict,
+                        other => {
+                            return Err(cli_msg(&format!(
+                                "Security mode must be open or strict, got '{other}'"
+                            )));
+                        }
+                    },
+                );
+            }
+            "--extern" => {
+                i += 1;
+                externs.push(
+                    args.get(i)
+                        .ok_or_else(|| cli_msg("Missing pattern after --extern"))?
+                        .clone(),
+                );
+            }
+            "--extern-lib" => {
+                i += 1;
+                extern_libs.push(
+                    args.get(i)
+                        .ok_or_else(|| cli_msg("Missing library after --extern-lib"))?
+                        .clone(),
+                );
+            }
+            "--allow-macro" => {
+                i += 1;
+                allow_macros.push(
+                    args.get(i)
+                        .ok_or_else(|| cli_msg("Missing macro after --allow-macro"))?
+                        .clone(),
+                );
+            }
+            "--allow-unsafe" => allow_unsafe = true,
+            "--macro" => {
+                i += 1;
+                let binding = args
+                    .get(i)
+                    .ok_or_else(|| cli_msg("Missing name=path after --macro"))?;
+                match binding.split_once('=') {
+                    Some((name, path)) if !name.is_empty() && !path.is_empty() => {
+                        macro_bindings.push((name.to_string(), path.to_string()));
+                    }
+                    _ => {
+                        return Err(cli_msg(&format!(
+                            "--macro expects name=path, got '{binding}'"
+                        )));
+                    }
+                }
+            }
             value if value.starts_with('-') => {
                 return Err(cli_msg(&format!("Unknown option: {value}")));
             }
@@ -301,6 +438,17 @@ pub(crate) fn parse_common_with_file(
             runtime,
             nostartfiles,
             nostdlib,
+            c_sources,
+            c_includes,
+            cflags,
+            c_libs,
+            defines,
+            security_mode,
+            externs,
+            extern_libs,
+            allow_macros,
+            allow_unsafe,
+            macro_bindings,
         },
         file,
     ))
@@ -337,6 +485,67 @@ pub(crate) fn apply_cli_c_defs(defs: &mut mire::CDefs, options: &CommonOptions) 
         defs.cflags.push(format!("-L{expanded}"));
     }
     defs.libs.extend(options.link_libs.iter().cloned());
+    // `--c-source` / `--c-lib` / `--cflag` / `--c-include` / `--define` carry the
+    // project's [c] section without a TOML round trip. They extend rather than
+    // replace, so an orchestrator can add a source without restating the ones
+    // the manifest already had.
+    defs.sources.extend(options.c_sources.iter().cloned());
+    defs.libs.extend(options.c_libs.iter().cloned());
+    defs.cflags.extend(options.cflags.iter().cloned());
+    defs
+        .include
+        .extend(options.c_includes.iter().map(PathBuf::from));
+    // CDefs has no dedicated defines list; a define is a -D flag, so that is
+    // what it becomes. `--define FOO` and `--define FOO=1` both work.
+    for define in &options.defines {
+        if define.contains('=') {
+            defs.cflags.push(format!("-D{}", define));
+        } else {
+            defs.cflags.push(format!("-D{}={}", define, "1"));
+        }
+    }
+}
+
+/// Applies the security-related command-line flags on top of whatever the
+/// manifest declared. Returns the effective configuration so the caller can use
+/// it without re-reading the file.
+///
+/// The allowlists extend the manifest's rather than replacing it: a build
+/// orchestrator that forwards a project manifest plus its own additions should
+/// not have to restate the project's entries.
+pub(crate) fn apply_cli_security(
+    security: Option<mire::SecurityConfig>,
+    options: &CommonOptions,
+) -> Option<mire::SecurityConfig> {
+    let touches_security = options.security_mode.is_some()
+        || !options.externs.is_empty()
+        || !options.extern_libs.is_empty()
+        || !options.allow_macros.is_empty()
+        || options.allow_unsafe;
+    if !touches_security {
+        return security;
+    }
+    let mut cfg = security.unwrap_or_default();
+    if let Some(mode) = options.security_mode {
+        cfg.mode = mode;
+    }
+    for pattern in &options.externs {
+        if !cfg.externs.contains(pattern) {
+            cfg.externs.push(pattern.clone());
+        }
+    }
+    for lib in &options.extern_libs {
+        if !cfg.extern_libs.contains(lib) {
+            cfg.extern_libs.push(lib.clone());
+        }
+    }
+    for mac in &options.allow_macros {
+        if !cfg.macros.contains(mac) {
+            cfg.macros.push(mac.clone());
+        }
+    }
+    cfg.unsafe_allowed |= options.allow_unsafe;
+    Some(cfg)
 }
 
 pub(crate) fn configure_build_paths(cwd: &Path, options: &CommonOptions, source: &Path) {
@@ -349,6 +558,34 @@ pub(crate) fn configure_build_paths(cwd: &Path, options: &CommonOptions, source:
         unsafe { std::env::set_var("MIRE_CONFIG", path) };
     } else {
         unsafe { std::env::remove_var("MIRE_CONFIG") };
+    }
+    // When security flags are given on the command line, the typechecker cannot
+    // read them from a TOML file (there may not be one). Publish the merged
+    // configuration as JSON in the environment instead; the typechecker prefers
+    // this over the file. This is the seam that lets an orchestrator drop
+    // `--config` entirely.
+    if options.security_mode.is_some()
+        || !options.externs.is_empty()
+        || !options.extern_libs.is_empty()
+        || !options.allow_macros.is_empty()
+        || options.allow_unsafe
+    {
+        let merged = apply_cli_security(None, options)
+            .expect("security flags present, so a config was produced");
+        if let Ok(json) = serde_json::to_string(&merged) {
+            unsafe { std::env::set_var("MIRE_SECURITY", json) };
+        }
+    } else {
+        unsafe { std::env::remove_var("MIRE_SECURITY") };
+    }
+    if !options.macro_bindings.is_empty() {
+        // Same idea for [macros]: name=path pairs that the loader needs before
+        // it can see the source.
+        if let Ok(json) = serde_json::to_string(&options.macro_bindings) {
+            unsafe { std::env::set_var("MIRE_MACROS", json) };
+        }
+    } else {
+        unsafe { std::env::remove_var("MIRE_MACROS") };
     }
     if let Some(cache_dir) = &options.cache_dir {
         let path = if cache_dir.is_absolute() {
@@ -497,5 +734,126 @@ pub(crate) fn parse_warning_code(value: &str) -> Result<DiagnosticCode, MireErro
         "W0039" => Ok(DiagnosticCode::W0039),
         "W0040" => Ok(DiagnosticCode::W0040),
         _ => Err(cli_msg("Warning code must look like W0001")),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn parse(args: &[&str]) -> CommonOptions {
+        let owned: Vec<String> = args.iter().map(|s| s.to_string()).collect();
+        parse_run_options(Path::new("."), &owned)
+            .expect("flags parse")
+            .0
+    }
+
+    // ── Native C flags ───────────────────────────────────────────
+    // These exist so an orchestrator can pass a project's [c] section without
+    // writing a TOML for the compiler to read back.
+
+    #[test]
+    fn c_sources_accumulate_across_repeats() {
+        let opts = parse(&["--c-source", "a.c", "--c-source", "b.c"]);
+        assert_eq!(opts.c_sources, vec!["a.c".to_string(), "b.c".to_string()]);
+    }
+
+    #[test]
+    fn c_libs_and_cflags_accumulate() {
+        let opts = parse(&["--c-lib", "sqlite3", "--cflag", "-O2"]);
+        assert_eq!(opts.c_libs, vec!["sqlite3".to_string()]);
+        assert_eq!(opts.cflags, vec!["-O2".to_string()]);
+    }
+
+    #[test]
+    fn c_source_without_value_is_an_error() {
+        let owned = vec!["--c-source".to_string()];
+        assert!(parse_run_options(Path::new("."), &owned).is_err());
+    }
+
+    // ── Security ─────────────────────────────────────────────────
+
+    #[test]
+    fn security_mode_parses_both_modes() {
+        assert_eq!(
+            parse(&["--security-mode", "strict"]).security_mode,
+            Some(mire::SecurityMode::Strict)
+        );
+        assert_eq!(
+            parse(&["--security-mode", "open"]).security_mode,
+            Some(mire::SecurityMode::Open)
+        );
+    }
+
+    #[test]
+    fn unknown_security_mode_is_rejected() {
+        let owned = vec!["--security-mode".to_string(), "yolo".to_string()];
+        assert!(parse_run_options(Path::new("."), &owned).is_err());
+    }
+
+    #[test]
+    fn extern_patterns_accumulate() {
+        let opts = parse(&["--extern", "mire_*", "--extern", "rt_*"]);
+        assert_eq!(opts.externs, vec!["mire_*".to_string(), "rt_*".to_string()]);
+    }
+
+    // This is the behaviour the whole flag set exists for: a strict allowlist
+    // that the caller controls without any file involved.
+    #[test]
+    fn strict_allowlist_is_built_from_flags_alone() {
+        let opts = parse(&[
+            "--security-mode",
+            "strict",
+            "--extern",
+            "rt_*",
+            "--extern-lib",
+            "c",
+        ]);
+        let cfg = apply_cli_security(None, &opts).expect("a config was produced");
+        assert_eq!(cfg.mode, mire::SecurityMode::Strict);
+        assert_eq!(cfg.externs, vec!["rt_*".to_string()]);
+        assert_eq!(cfg.extern_libs, vec!["c".to_string()]);
+    }
+
+    #[test]
+    fn cli_extends_an_existing_allowlist_without_dropping_it() {
+        let mut existing = mire::SecurityConfig::default();
+        existing.externs = vec!["rt_*".to_string()];
+        let opts = parse(&["--extern", "mire_*"]);
+        let cfg = apply_cli_security(Some(existing), &opts).expect("merged");
+        // An orchestrator forwarding a project manifest plus its own additions
+        // must not have to restate the project's entries.
+        assert_eq!(cfg.externs, vec!["rt_*".to_string(), "mire_*".to_string()]);
+    }
+
+    #[test]
+    fn no_security_flags_leaves_the_config_alone() {
+        let existing = mire::SecurityConfig {
+            mode: mire::SecurityMode::Strict,
+            ..Default::default()
+        };
+        let opts = parse(&["--c-source", "a.c"]);
+        let cfg = apply_cli_security(Some(existing), &opts).expect("passed through");
+        assert_eq!(cfg.mode, mire::SecurityMode::Strict);
+    }
+
+    #[test]
+    fn define_without_value_becomes_a_defined_one_flag() {
+        let opts = parse(&["--define", "DEBUG", "--define", "LEVEL=3"]);
+        let mut defs = mire::CDefs::default();
+        apply_cli_c_defs(&mut defs, &opts);
+        assert!(defs.cflags.contains(&"-DDEBUG=1".to_string()));
+        assert!(defs.cflags.contains(&"-DLEVEL=3".to_string()));
+    }
+
+    #[test]
+    fn macro_binding_requires_name_equals_path() {
+        let opts = parse(&["--macro", "assert=path/to/assert.mire"]);
+        assert_eq!(
+            opts.macro_bindings,
+            vec![("assert".to_string(), "path/to/assert.mire".to_string())]
+        );
+        let owned = vec!["--macro".to_string(), "nonsense".to_string()];
+        assert!(parse_run_options(Path::new("."), &owned).is_err());
     }
 }

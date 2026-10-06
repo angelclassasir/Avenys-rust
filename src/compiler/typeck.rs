@@ -223,14 +223,28 @@ impl TypeChecker {
         Some(builtins.allow.into_iter().collect())
     }
 
-    /// Loads the `[security]` configuration from the project's owl.toml.
-    /// When the section is absent, returns None (open mode, backward compatible).
+    /// Loads the `[security]` configuration.
+    ///
+    /// Two sources, in priority order:
+    ///   1. `MIRE_SECURITY`, JSON published by the CLI from `--security-mode`,
+    ///      `--extern`, `--extern-lib`, `--allow-macro` and `--allow-unsafe`.
+    ///      This is the path that lets a build orchestrator pass security
+    ///      without a config file, which is the point: it removes the last
+    ///      reason for the compiler to read a TOML it did not write.
+    ///   2. `MIRE_CONFIG`, the manifest's `[security]` section.
+    ///
+    /// When neither is present, returns None (open mode, backward compatible).
     fn load_security_config() -> Option<SecurityConfig> {
+        if let Ok(json) = std::env::var("MIRE_SECURITY")
+            && let Ok(cfg) = serde_json::from_str::<SecurityConfig>(&json)
+        {
+            return Some(cfg);
+        }
         if let Ok(config_path) = std::env::var("MIRE_CONFIG")
             && let Ok(manifest) = crate::avens::load_config_file(std::path::Path::new(&config_path))
-            {
-                return manifest.security;
-            }
+        {
+            return manifest.security;
+        }
         None
     }
 
