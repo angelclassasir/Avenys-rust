@@ -46,3 +46,26 @@ pub fn move_inside_a_loop_is_usable: () :bool {
     }
     return total == 3
 }
+
+@[test]
+pub fn find_loop_body_actually_runs: () :bool {
+    set seen = 0 mut
+    find x in [1 2 3] {
+        set seen += x
+    }
+    // `find` had no arm in the MIR lowering and fell through to a catch-all, so
+    // its body was never emitted. This built, linked and printed nothing at all.
+    return seen == 6
+}
+
+@[test]
+pub fn find_loop_returns_early: () :bool {
+    set hit = 0 mut
+    find x in [1 2 3] {
+        if x > 1 {
+            set hit = x
+            return true
+        }
+    }
+    return false
+}

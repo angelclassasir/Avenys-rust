@@ -2,6 +2,19 @@
 
 All notable changes to Avenys will be documented in this file.
 
+## 4.3.7 - 2026-10-07
+
+### Fixed
+- **`find` compiled to nothing.** The loop body was never lowered, so
+  `find x in [1 2 3] { dasu(x) }` built, linked, ran and printed nothing -- no
+  error at any stage, and an exit status of zero. It was the worst of the
+  silent bugs: the program was accepted, linked and run, and simply did the
+  wrong thing. `Statement::Find` has arms in the parser, in semantic, in
+  monomorphize and in both incremental passes, but none in the MIR lowering, so
+  it fell through to a catch-all.
+- **`find` and `for` are now one arm.** They differ only in `for`'s optional
+  index binding, so the loop is lowered once rather than twice.
+
 ## 4.3.6 - 2026-10-07
 
 ### Fixed

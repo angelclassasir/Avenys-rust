@@ -547,12 +547,29 @@ impl MirLower {
                 self.func.blocks[pre_while_block].terminator = MirTerminator::Br(cond_block);
                 self.current_block = end_block;
             }
+            // `find` is the same iteration as `for` -- bind the element, run
+            // the body, let `return` inside it exit early -- with no index to
+            // bind. It had no arm of its own and fell through to `_ => {}`, so
+            // the body was never lowered and the loop compiled to nothing at
+            // all: `find x in [1 2 3] { dasu(x) }` built and linked cleanly and
+            // printed nothing.
             Statement::For {
                 variable,
-                index,
+                index: _,
                 iterable,
                 body,
+            }
+            | Statement::Find {
+                variable,
+                iterable,
+                body,
+                ..
             } => {
+                // `for` carries an optional index binding; `find` does not.
+                let index = match stmt {
+                    Statement::For { index, .. } => index.clone(),
+                    _ => None,
+                };
                 let idx_ptr = self.new_temp();
 
                 self.func.blocks[self.current_block].push(
