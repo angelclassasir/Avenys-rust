@@ -708,7 +708,7 @@ static __thread int64_t t_shell_status = -1;
 
 int64_t pal_proc_shell_status(void) { return t_shell_status; }
 
-const char *pal_proc_shell(const char *command) {
+char *pal_proc_shell(const char *command) {
     t_shell_status = -1;
     if (!command || command[0] == '\0') {
         pal_set_error(PAL_ERR_INVALID, "null or empty shell command");

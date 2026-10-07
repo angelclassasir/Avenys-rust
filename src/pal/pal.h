@@ -375,7 +375,7 @@ const char *pal_proc_capture_output(const char *cmd);
 // MUST pal_free(). NULL on denial or failure.
 // pal_proc_shell_status: exit status of the last shell on this thread, or -1.
 
-const char *pal_proc_shell(const char *command);
+char *pal_proc_shell(const char *command);
 int64_t pal_proc_shell_status(void);
 
 // pal_proc_wait_pid: PID-based waitpid for rare cases where you only

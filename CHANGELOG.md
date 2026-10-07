@@ -2,6 +2,40 @@
 
 All notable changes to Avenys will be documented in this file.
 
+## 4.3.4 - 2026-10-07
+
+### Fixed
+- **A bare `return` in a function that declares a value was accepted, then
+  emitted invalid IR.** `unify_types` treats `DataType::None` as "no constraint,
+  adopt the other side", which is what statement inference wants and what a
+  return must not get, so `return` with no operand passed the type checker in a
+  `:u8` function. The function was then emitted with a `void` terminator against
+  an `i8` signature, and the only complaint came out of llc with no source
+  location and nothing pointing at the return that caused it. A bare return in a
+  void function is unaffected, so early exits keep working; both shapes are
+  pinned in `src/compiler/typeck_tests.rs`.
+- **An integer widened on the way out was emitted at its original width.** The
+  checker accepts `return small()` from a `:i64` function when `small` returns
+  `:u8`, and every other implicit conversion is materialised during lowering —
+  `set x = small() :i64` worked. Returns were the one that was not, so the value
+  reached the backend at its own width and llc rejected `ret i8` out of an `i64`
+  function with no source location. The conversion now happens in the lowering,
+  through the same `emit_convert` a `let` ascription uses, which is what keeps it
+  correct for unsigned values: the backend sees only LLVM type names, which carry
+  no signedness, so a widening applied there would sign-extend and turn 200u8
+  into -56. `tests/Functions/returns.mire` pins both the signed and the unsigned
+  direction.
+
+### Removed
+- **A leftover debug `eprintln!` in `check_program_types`.** It printed the
+  statement count on stderr for every compilation.
+
+### Fixed (build hygiene)
+- **`pal_proc_shell` was declared `const char *` but documented and used as
+  `[PAL-OWNED]` malloc'd memory.** The caller has to `free()` it, so assigning it
+  to a `char *` discarded the qualifier and clang warned on every build. The
+  declaration now matches what the function actually returns.
+
 ## 4.3.3 - 2026-10-06
 
 ### Added

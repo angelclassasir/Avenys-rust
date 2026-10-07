@@ -73,7 +73,6 @@ enum MethodKind {
 }
 
 pub fn check_program_types(program: &mut Program, source: &str) -> Result<()> {
-    eprintln!("[TYPECKDBG] check_program_types called, stmts={}", program.statements.len());
     let mut checker = TypeChecker::new(source);
     checker.collect_load_local_modules(&program.statements);
     checker

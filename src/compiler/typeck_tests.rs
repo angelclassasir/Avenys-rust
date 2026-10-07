@@ -963,3 +963,62 @@ fn allows_read_of_constant() {
     let mut program = parse(source).expect("parse should succeed");
     check_program_types(&mut program, source).expect("reading a constant should pass");
 }
+
+// ── A bare `return` in a function that declares a value ───────────────
+//
+// unify_types treats DataType::None as "no constraint, adopt the other side",
+// which is what statement inference wants and what a return must not get: it
+// made `return` with no operand legal in a `:u8` function. The function was then
+// emitted with a void terminator against an i8 signature, and the only
+// complaint came out of llc with no source location and nothing pointing at the
+// return. The void case has to keep working, or every early exit breaks.
+
+#[test]
+fn rejects_bare_return_in_a_function_that_returns_a_value() {
+    let source = "pub fn f: () :u8 {\nreturn\n}\n";
+    let mut program = parse(source).expect("parse should succeed");
+    let err = check_program_types(&mut program, source)
+        .expect_err("a bare return in a value-returning function should fail");
+    assert!(
+        err.diagnostic().message.contains("needs a value"),
+        "error should say the return needs a value: {}",
+        err.diagnostic().message
+    );
+}
+
+#[test]
+fn bare_return_stays_legal_in_a_void_function() {
+    let source = "pub fn f: () {\nreturn\n}\n";
+    let mut program = parse(source).expect("parse should succeed");
+    check_program_types(&mut program, source).expect("a bare return in a void function is fine");
+}
+
+#[test]
+fn bare_return_stays_legal_in_a_conditional_void_path() {
+    // The shape an early exit actually takes: one branch leaves, the other
+    // falls through. Only the value-returning version of this is an error.
+    let source =
+        "pub fn f: (stop :bool) {\nif stop { return }\nuse dasu(str(1))\n}\n";
+    let mut program = parse(source).expect("parse should succeed");
+    check_program_types(&mut program, source).expect("an early return in a void function is fine");
+}
+
+#[test]
+fn rejects_bare_return_in_a_conditional_value_path() {
+    let source = "pub fn f: (stop :bool) :i64 {\nif stop { return }\nreturn 0 :i64\n}\n";
+    let mut program = parse(source).expect("parse should succeed");
+    let err = check_program_types(&mut program, source)
+        .expect_err("the bare return is still wrong inside a branch");
+    assert!(
+        err.diagnostic().message.contains("needs a value"),
+        "error should say the return needs a value: {}",
+        err.diagnostic().message
+    );
+}
+
+#[test]
+fn a_return_with_a_value_is_unaffected() {
+    let source = "pub fn f: (v :i64) :i64 {\nreturn v\n}\n";
+    let mut program = parse(source).expect("parse should succeed");
+    check_program_types(&mut program, source).expect("returning a value is fine");
+}

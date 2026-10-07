@@ -26,3 +26,56 @@ pub fn return_comparison: () :bool { return identity_value(4) < identity_value(5
 
 @[test]
 pub fn return_boolean_result: () :bool { return choose_value(true) != choose_value(false) }
+
+// ── Integer widening on the way out ───────────────────────────────────
+//
+// The checker accepts an integer widening through a return -- a `:u8` value
+// returned from a `:i64` function is well typed, and every other implicit
+// conversion in the language is materialised during lowering. Returns were the
+// one that was not, so the value reached the backend at its own width and the
+// program emitted `ret i8` out of an `i64` function. llc rejected that with no
+// source location and nothing pointing at the return that caused it.
+//
+// The unsigned cases are the ones worth pinning. The backend cannot see
+// signedness -- LLVM type names carry none -- so a widening applied there would
+// sign-extend, turning 200u8 into -56. Going through the lowering's conversion
+// is what keeps the value exact.
+
+fn u8_source: () :u8 { return 200 :u8 }
+fn u8_to_i64: () :i64 { return u8_source() }
+
+fn i8_source: () :i8 { return -56 :i8 }
+fn i8_to_i64: () :i64 { return i8_source() }
+
+fn u32_source: () :u32 { return 4000000000 :u32 }
+fn u32_to_i64: () :i64 { return u32_source() }
+
+fn u8_to_i32: () :i32 { return u8_source() }
+
+@[test]
+pub fn return_widens_unsigned_small: () :bool { return u8_to_i64() == 200 }
+
+@[test]
+pub fn return_widens_signed_negative: () :bool { return i8_to_i64() == -56 }
+
+@[test]
+pub fn return_widens_unsigned_large: () :bool { return u32_to_i64() == 4000000000 }
+
+// A u8 of 200 has its high bit set. Sign-extending it would produce a negative
+// number, which is the specific way a wrong widening shows up rather than as an
+// obviously wrong magnitude.
+@[test]
+pub fn return_widening_keeps_the_unsigned_high_bit: () :bool {
+    set wide = u8_to_i64()
+    return wide > 0 && wide == 200
+}
+
+@[test]
+pub fn return_widens_into_i32: () :bool { return u8_to_i32() == 200 }
+
+@[test]
+pub fn return_widening_is_stable_across_repeats: () :bool {
+    set first = u8_to_i64()
+    set second = u8_to_i64()
+    return first == second && first == 200
+}

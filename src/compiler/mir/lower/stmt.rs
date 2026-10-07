@@ -443,7 +443,28 @@ impl MirLower {
             Statement::Return(val) => {
                 let ret_ty = self.func.ret_type.clone();
                 let loc = statement_location(&Statement::Return(val.clone())).to_tuple();
-                let v = val.as_ref().map(|e| self.lower_expression(e));
+                // Convert on the way out, exactly as a `let` with an ascription
+                // does. The checker lets an integer widen through a return --
+                // `return small()` from a `:i64` function where `small` returns
+                // `:u8` -- and every other implicit conversion is materialised
+                // during lowering. Returns were the one that was not: the value
+                // reached the terminator at its own width and the backend emitted
+                // `ret i8` out of an `i64` function, which llc rejected with no
+                // source location and nothing pointing at the return.
+                //
+                // This has to be emit_convert and not a widening in the backend:
+                // the backend only sees LLVM type names, which carry no
+                // signedness, so it cannot tell 200u8 (which must widen to 200)
+                // from a negative i8 (which must widen to -56).
+                let v = val.as_ref().map(|e| {
+                    let src_ty = extract_data_type(e);
+                    let lowered = self.lower_expression(e);
+                    if needs_convert(&src_ty, &ret_ty) {
+                        self.emit_convert(lowered, &src_ty, &ret_ty, loc)
+                    } else {
+                        lowered
+                    }
+                });
                 let last = self.current_block;
                 let v = v.map(|x| self.materialize_array_value(x, &ret_ty, loc));
                 self.func.blocks[last].terminator = MirTerminator::Ret(v);

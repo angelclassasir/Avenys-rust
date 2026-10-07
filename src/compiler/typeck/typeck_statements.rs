@@ -432,6 +432,31 @@ impl TypeChecker {
     }
 
     pub(super) fn check_return_statement(&mut self, expr: &mut Option<Expression>) -> Result<()> {
+        // A bare `return` in a function that declares a value is rejected here,
+        // before unification gets a chance to paper over it.
+        //
+        // unify_types treats DataType::None as "no constraint, adopt the other
+        // side", which is right for statement inference and wrong for returns:
+        // it made `return` with no operand legal in a `:u8` function, and the
+        // function was then emitted with a `void` terminator against an `i8`
+        // signature. The only complaint came from llc, with no source location
+        // and nothing pointing at the `return` that caused it.
+        //
+        // The void case stays legal, which is the whole point of a bare return.
+        if expr.is_none()
+            && let Some(current) = self.return_type_stack.last()
+            && !matches!(current, DataType::None | DataType::Unknown)
+        {
+            return Err(type_error_at_span(
+                self.current_span,
+                format!(
+                    "this function returns {:?}, so `return` needs a value; \
+                     return one, or drop the return type to make it void",
+                    current
+                ),
+            ));
+        }
+
         let return_type = if let Some(expression) = expr {
             self.check_expression(expression)?
         } else {
