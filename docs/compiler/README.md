@@ -2,7 +2,7 @@
 
 > Avenys compiler command-line interface, configuration, and pipeline internals.
 
-Version: **4.3.7**
+Version: **4.3.8**
 Status: **Stable**
 Date: **2026-09-12**
 

@@ -69,3 +69,18 @@ pub fn find_loop_returns_early: () :bool {
     }
     return false
 }
+
+@[test]
+pub fn a_runtime_pointer_can_be_passed_twice: () :bool {
+    // Every runtime and FFI signature is written `(ptr :ptr)`, and `ptr` is not
+    // a recognised type name, so it arrived at the borrow checker as an
+    // unresolved type and was treated as owning. Every raw pointer was then
+    // single-use: reading it once and then handing it to something else was
+    // rejected as a move, on the second call, with nothing in the message
+    // pointing at pointers.
+    set text = "borrowed twice"
+    set as_pointer = text :ptr
+    return read_len(as_pointer) == read_len(as_pointer)
+}
+
+fn read_len: (p :ptr) :i64 { return 14 }

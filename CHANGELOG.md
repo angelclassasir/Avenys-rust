@@ -2,6 +2,26 @@
 
 All notable changes to Avenys will be documented in this file.
 
+## 4.3.8 - 2026-10-07
+
+### Fixed
+- **Every raw pointer was single-use.** Passing a pointer to one function made it
+  moved, so reading it once and then handing it to anything else was rejected as
+  a use after move. The error landed on the second call and never mentioned
+  pointers.
+- **`result::is::ok(r)` followed by `result::unwrap::i64(r)` was a use after
+  move** -- the pattern the Result tests themselves use, split across two
+  functions so neither one tripped it. `is::ok` inspects a Result without
+  consuming it, and rejecting the pair made the module close to unusable.
+- Cause: `ptr` is not a recognised type name, so `(ptr :ptr)` parameters arrived
+  at the borrow checker as an unresolved type, and an unresolved parameter type
+  was being read as owning. A type the compiler does not know is not evidence
+  of ownership, and since ownership is static here and there are no
+  destructors, guessing "owned" only ever rejects correct programs.
+- `DataType::Pointer` joins the copy types, which it already should have been:
+  a raw pointer is a non-owning address, and ownership is tracked through
+  `Ref`/`RefMut` and the borrow checker rather than through pointers.
+
 ## 4.3.7 - 2026-10-07
 
 ### Fixed

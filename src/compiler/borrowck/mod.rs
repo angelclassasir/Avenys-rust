@@ -762,6 +762,23 @@ impl<'a> BorrowChecker<'a> {
                 | DataType::Char
                 | DataType::None
                 | DataType::Str
+                | DataType::Pointer(..)
+                // An unresolved parameter type is not evidence of ownership.
+                //
+                // Every runtime and FFI signature is written `(ptr :ptr)`, and
+                // `ptr` is not a recognised type name, so the borrow checker
+                // saw `Unknown` for those parameters and treated them as
+                // owning. That made each raw pointer single-use: asking whether
+                // a Result was ok and then unwrapping it -- the pattern the
+                // Result tests themselves use -- was rejected as a use after
+                // move, on the second call, with nothing in the message about
+                // pointers.
+                //
+                // Claiming a move out of a type the compiler does not know is
+                // the wrong way to be wrong here. Ownership is enforced
+                // statically and there are no destructors to double-run, so
+                // guessing "owned" only rejects correct programs.
+                | DataType::Unknown
                 | DataType::Ref { .. }
                 | DataType::RefMut { .. }
                 | DataType::Array { .. }
