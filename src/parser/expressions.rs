@@ -26,6 +26,40 @@ impl Parser {
         self.apply_type_ascription(expr, data_type)
     }
 
+    /// True when the cursor sits on something that continues the current
+    /// expression, meaning an ascription just parsed belongs to the operand
+    /// rather than to the whole expression.
+    fn at_operator_continuing_expression(&self) -> bool {
+        matches!(
+            self.peek().ttype,
+            TokenType::Plus
+                | TokenType::Minus
+                | TokenType::Star
+                | TokenType::Slash
+                | TokenType::Percent
+                | TokenType::Eq
+                | TokenType::Neq
+                | TokenType::Gt
+                | TokenType::Lt
+                | TokenType::Gte
+                | TokenType::Lte
+                | TokenType::AmpAmp
+                | TokenType::PipePipe
+                | TokenType::Xor
+                | TokenType::LShift
+                | TokenType::RShift
+                | TokenType::Pipeline
+                | TokenType::PipelineSafe
+                | TokenType::Dot
+                | TokenType::Question
+                | TokenType::PlusAssign
+                | TokenType::MinusAssign
+                | TokenType::StarAssign
+                | TokenType::SlashAssign
+                | TokenType::PercentAssign
+        )
+    }
+
     fn apply_type_ascription(
         &self,
         mut expr: Expression,
@@ -307,6 +341,63 @@ impl Parser {
                     };
                 }
                 continue;
+            }
+
+            // A type ascription binds to the OPERAND, not to the whole binary
+            // expression.
+            //
+            // It used to be parsed only at the outermost level, after every
+            // binary operator had been consumed, which made `10 :i64 / z` a
+            // syntax error: parse_or stopped at the `:` before ever seeing the
+            // `/`, the ascription took `10 :i64`, and the `/` was then left
+            // dangling. With `*` it was worse than a syntax error -- `*` in that
+            // position is a dereference, so `10 :i64 * z` failed with "cannot
+            // dereference non-reference type I64", which points at the literal
+            // rather than at the missing parentheses.
+            //
+            // Handling it here makes `a :T + b` parse as `(a :T) + b`, which is
+            // what a postfix type annotation means everywhere else. The
+            // outermost parse_optional_type_ascription is left in place: it is
+            // what ascribes a parenthesised or already-complete expression such
+            // as `(a + b) :u8`, where there is no operand left to bind to.
+            // A type ascription binds to the OPERAND when something continues
+            // the expression past it, and to the WHOLE expression otherwise.
+            //
+            // It used to be parsed only at the outermost level, after every
+            // binary operator had been consumed, which made `10 :i64 / z` a
+            // syntax error: parse_or stopped at the `:` before ever seeing the
+            // `/`, the ascription took `10 :i64`, and the `/` was left dangling.
+            // With `*` it was worse than a syntax error -- `*` in that position
+            // is a dereference, so `10 :i64 * z` failed with "cannot dereference
+            // non-reference type I64", pointing at the literal rather than at
+            // the missing parentheses.
+            //
+            // The two readings cannot simply be separated by precedence, because
+            // both are wanted depending on what follows:
+            //
+            //   10 :i64 / z      the ascription takes `10`, or `/ z` is orphaned
+            //   i == n :bool     the ascription takes the comparison, since
+            //                     ascribing `n` would compare an i64 with a bool
+            //   i == n :bool mut the `mut` belongs to the binding, not the expr
+            //
+            // So the colon is speculatively parsed here and the decision is made
+            // afterwards: if a binary operator follows, the ascription belonged
+            // to this operand and is kept; otherwise the tokens are put back and
+            // the enclosing level ascribes the whole expression, which is what
+            // it always did.
+            if self.check(TokenType::Colon) && self.key_value_literal_depth == 0 {
+                let resume_pos = self.pos;
+                let undecided = expr.clone();
+                self.advance();
+                let data_type = self.parse_type()?;
+                if let Ok(ascribed) = self.apply_type_ascription(expr, data_type)
+                    && self.at_operator_continuing_expression()
+                {
+                    expr = ascribed;
+                    continue;
+                }
+                self.pos = resume_pos;
+                expr = undecided;
             }
 
             break;
@@ -678,13 +769,23 @@ impl Parser {
             });
         }
 
-        let contains_comma = self.bracket_contains_top_level_comma();
-        if contains_comma {
+        let is_key_value = self.bracket_contains_top_level_colon();
+        if is_key_value {
             let mut entries = Vec::new();
             while !self.check(TokenType::Rbracket) && !self.is_at_end() {
+                self.key_value_literal_depth += 1;
                 let parsed_key = self.parse_pipeline_free_expression()?;
+                self.key_value_literal_depth -= 1;
                 let key = self.coerce_dict_key_to_string(parsed_key);
-                let value = self.parse_pipeline_free_expression()?;
+                // The separator is punctuation and has to be consumed here, the
+                // way the brace form does. Leaving it meant the value parse
+                // started on the colon.
+                self.expect(TokenType::Colon)?;
+                // parse_expression, not the pipeline-free variant: the postfix
+                // hands a trailing ascription back to the enclosing level when
+                // no operator follows it, and this level has to be one that
+                // applies it.
+                let value = self.parse_expression()?;
                 entries.push((key, value));
                 if self.check(TokenType::Comma) {
                     self.advance();
@@ -700,7 +801,22 @@ impl Parser {
         } else {
             let mut elements = Vec::new();
             while !self.check(TokenType::Rbracket) && !self.is_at_end() {
+                let before = self.pos;
                 elements.push(self.parse_expression()?);
+                // Both separators are accepted. The space-separated form
+                // `[1 2 3]` is the one the corpus is written in, and taking the
+                // comma as mandatory broke every one of those; the comma-
+                // separated form was the one that did not parse at all, because
+                // the loop parsed an element, stopped on the comma, and then
+                // tried to read the comma as the next element.
+                //
+                // The position guard is what keeps a malformed element from
+                // spinning the loop forever.
+                if self.check(TokenType::Comma) {
+                    self.advance();
+                } else if self.pos == before {
+                    break;
+                }
             }
             self.expect(TokenType::Rbracket)?;
             Ok(Expression::List {
@@ -716,10 +832,16 @@ impl Parser {
         let mut entries = Vec::new();
 
         while !self.check(TokenType::Rbrace) && !self.is_at_end() {
+            // Only the KEY is shielded. The colon after it is punctuation, but
+            // an ascription on the value is still an ascription, and a guard
+            // around the whole loop silently took that one too.
+            self.key_value_literal_depth += 1;
             let parsed_key = self.parse_pipeline_free_expression()?;
+            self.key_value_literal_depth -= 1;
             let key = self.coerce_dict_key_to_string(parsed_key);
             self.expect(TokenType::Colon)?;
-            let value = self.parse_pipeline_free_expression()?;
+            // See the bracket form above: the value needs the outer ascription.
+            let value = self.parse_expression()?;
             entries.push((key, value));
 
             if self.check(TokenType::Comma) {

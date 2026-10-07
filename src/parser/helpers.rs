@@ -126,22 +126,32 @@ impl Parser {
         self.error_at(token.line, token.column, message)
     }
 
-    pub(super) fn bracket_contains_top_level_comma(&self) -> bool {
+    /// Whether a bracketed literal is a `key: value` map rather than a list.
+    ///
+    /// The colon is the discriminator, not the comma. Both forms use commas, so
+    /// a comma test cannot tell `[1, 2, 3]` from `[a: 1, b: 2]`.
+    ///
+    /// It also has to be the colon: the old version tested for a comma at depth
+    /// one, which assumed the scan started at the opening `[`. The caller has
+    /// already consumed it, so depth never reached one, the test never fired,
+    /// and the `key: value` form was unreachable -- `[a: 1]` then failed with
+    /// "expected type", because the key's colon was read as a type ascription.
+    ///
+    /// Depth is relative to the literal's interior, so nested brackets and
+    /// parentheses do not contribute a top-level colon.
+    pub(super) fn bracket_contains_top_level_colon(&self) -> bool {
         let mut depth = 0usize;
         let mut index = self.pos;
         while let Some(token) = self.tokens.get(index) {
             match token.ttype {
-                TokenType::Lbracket | TokenType::Lparen => depth += 1,
-                TokenType::Rbracket | TokenType::Rparen => {
+                TokenType::Lbracket | TokenType::Lbrace | TokenType::Lparen => depth += 1,
+                TokenType::Rbracket | TokenType::Rbrace | TokenType::Rparen => {
                     if depth == 0 {
                         return false;
                     }
                     depth -= 1;
-                    if depth == 0 && token.ttype == TokenType::Rbracket {
-                        return false;
-                    }
                 }
-                TokenType::Comma if depth == 1 => return true,
+                TokenType::Colon if depth == 0 => return true,
                 _ => {}
             }
             index += 1;

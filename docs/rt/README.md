@@ -2,7 +2,7 @@
 
 > Runtime tiers, verified symbol reference, and configuration.
 
-Version: **4.3.4**
+Version: **4.3.5**
 Status: **Stable**
 Date: **2026-09-12**
 

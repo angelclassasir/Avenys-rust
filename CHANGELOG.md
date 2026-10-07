@@ -2,6 +2,41 @@
 
 All notable changes to Avenys will be documented in this file.
 
+## 4.3.5 - 2026-10-07
+
+### Fixed
+- **A type ascription followed by a binary operator was a syntax error.** `10 :i64
+  / z` did not parse: the ascription was only recognised at the outermost level,
+  after every binary operator had been consumed, so the parse stopped at the `:`
+  and the `/` was left dangling. With `*` it was worse than a syntax error --
+  `*` there is a dereference, so `10 :i64 * z` failed with "cannot dereference
+  non-reference type I64", pointing at the literal rather than at the missing
+  parentheses. The colon is now handled in the postfix chain.
+- **Which expression an ascription takes now depends on what follows it.** Both
+  readings are wanted, so precedence alone cannot decide: `10 :i64 / z` ascribes
+  the operand, while `i == n :bool` has to ascribe the comparison, because
+  ascribing `n` would compare an i64 with a bool. The colon is parsed
+  speculatively and the decision made afterwards -- an operator following means
+  the operand took it, otherwise the tokens are put back and the enclosing level
+  ascribes the whole expression, which is what it always did.
+- **A `:T mut` or `:T const` binding suffix is no longer read as an ascription.**
+  `set at_end = i == n :bool mut` declares a mutable bool; taken as an ascription
+  of the operand it became a comparison against a bool and the `mut` was left
+  stranded. This is what the speculative parse above keeps working.
+- **A comma-separated list literal was a syntax error.** `[1, 2, 3]` parsed one
+  element, stopped on the comma, and then tried to read the comma as the next
+  element; `[1]` worked, which is why it went unnoticed. Both separators are now
+  accepted, so `[1 2 3]` and `[1, 2, 3]` are the same list.
+- **A bracketed `key: value` literal could not be selected at all.** The test
+  that chose between list and map looked for a comma at bracket depth one, but
+  the caller had already consumed the opening bracket, so the depth never reached
+  one and the branch was unreachable -- `[a: 1]` failed with "expected type"
+  because the key's colon was read as an ascription. The discriminator is the
+  top-level colon, which is what actually differs between the two forms.
+- **The colon in `{a: 1}` is punctuation, not an ascription.** Once the postfix
+  handles colons, a key-value literal needs the key shielded from it. The guard
+  covers the key only, since an ascription on the value is still an ascription.
+
 ## 4.3.4 - 2026-10-07
 
 ### Fixed

@@ -77,6 +77,11 @@ pub struct Parser {
     method_context: usize,
     type_param_scopes: Vec<HashSet<String>>,
     function_body_depth: usize,
+    /// Non-zero while parsing the entries of a brace or bracket literal whose
+    /// `key: value` colon is punctuation rather than a type ascription. The
+    /// postfix ascription has to stand down there, or `{a: 1}` reads the colon
+    /// as "ascribe `a`" and then fails trying to parse `1` as a type.
+    key_value_literal_depth: usize,
     errors: Vec<MireError>,
     pending_attributes: Vec<Attribute>,
 }
@@ -102,6 +107,7 @@ impl Parser {
             method_context: 0,
             type_param_scopes: vec![HashSet::new()],
             function_body_depth: 0,
+            key_value_literal_depth: 0,
             errors: Vec::new(),
             pending_attributes: Vec::new(),
         }
@@ -139,6 +145,7 @@ impl Parser {
             method_context: 0,
             type_param_scopes: vec![HashSet::new()],
             function_body_depth: 0,
+            key_value_literal_depth: 0,
             errors: Vec::new(),
             pending_attributes: Vec::new(),
         }
@@ -361,6 +368,90 @@ mod tests {
             panic!("expected call expression");
         };
         assert_eq!(name, "dicts.set");
+    }
+
+    // ── Where a type ascription binds ────────────────────────────────
+    //
+    // `:T` is a postfix, but which expression it takes depends on what follows
+    // it. An operator after the type means the ascription belongs to the
+    // operand (`10 :i64 / z`); anything else means it belongs to the whole
+    // expression (`i == n :bool`), which is what the outermost parse has always
+    // done. Both readings are wanted, so neither can be chosen by precedence
+    // alone.
+    //
+    // Before the postfix handled the colon at all, the first form was a syntax
+    // error: parse_or stopped at the `:` and never saw the `/`, leaving it
+    // dangling. With `*` it produced a misleading "cannot dereference
+    // non-reference type I64" instead.
+
+    fn parses_expr(source: &str) -> bool {
+        parse(source).is_ok()
+    }
+
+    #[test]
+    fn ascription_binds_to_the_operand_before_an_operator() {
+        for op in ["+", "-", "*", "/", "%"] {
+            let source = format!("set a = 10 :i64 {op} 4\n");
+            assert!(
+                parses_expr(&source),
+                "`10 :i64 {op} 4` should parse: the ascription takes `10`"
+            );
+        }
+    }
+
+    #[test]
+    fn ascription_binds_to_the_whole_expression_otherwise() {
+        // Here ascribing `n` would compare an i64 with a bool, so the ascription
+        // has to describe the comparison itself.
+        assert!(parses_expr("set a = i == n :bool\n"));
+        assert!(parses_expr("set a = i == n :bool mut\n"));
+        assert!(parses_expr("set a = (i + n) :i64\n"));
+    }
+
+    #[test]
+    fn a_binding_modifier_is_not_an_ascription() {
+        // `mut` belongs to the let, not to the expression. Reading the colon as
+        // an ascription here left `mut` stranded and turned `i == n` into a
+        // comparison against a bool.
+        assert!(parses_expr("set a = i == n :bool mut\n"));
+        assert!(parses_expr("set a = 42 :i64 mut\n"));
+        assert!(parses_expr("set a = 42 :i64 const\n"));
+    }
+
+    // ── Bracketed literals ───────────────────────────────────────────
+    //
+    // A bracketed literal is a list or a key-value map, and the two are told
+    // apart by a top-level colon. Both list spellings are in use: `[1 2 3]` is
+    // what the corpus is written in, `[1, 2, 3]` is what everyone writes, and
+    // the comma-separated form used to be a syntax error outright.
+
+    #[test]
+    fn both_list_separators_are_accepted() {
+        assert!(parses_expr("set l = [1 2 3]\n"), "space separated");
+        assert!(parses_expr("set l = [1, 2, 3]\n"), "comma separated");
+        assert!(parses_expr("set l = [1,2,3]\n"), "comma separated, tight");
+        assert!(parses_expr("set l = [1]\n"), "single element");
+        assert!(parses_expr("set l = []\n"), "empty");
+    }
+
+    #[test]
+    fn a_top_level_colon_selects_the_key_value_form() {
+        // The colon is what distinguishes these; a comma cannot, because both
+        // forms use commas.
+        assert!(parses_expr("set m = {a: 1, b: 2}\n"));
+        assert!(parses_expr("set m = [a: 1, b: 2]\n"));
+        // A colon nested inside an element is not the key separator.
+        assert!(parses_expr("set l = [[a: 1] [b: 2]]\n"));
+    }
+
+    #[test]
+    fn ascription_inside_a_key_value_literal_is_not_confused() {
+        // The colon in `{a: 1}` is punctuation. Treated as an ascription it
+        // consumed the key and then failed trying to read `1` as a type.
+        assert!(parses_expr("set m = {a: 1, b: 2}\n"));
+        assert!(parses_expr("set m = [a: 1, b: 2]\n"));
+        // And an ascription on the value side still has to work.
+        assert!(parses_expr("set m = {a: 1 :i64}\n"));
     }
 
     #[test]
