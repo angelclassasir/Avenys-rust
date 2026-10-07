@@ -7,3 +7,42 @@ pub fn borrowed_string_is_readable: () :bool {
     set same = value == "ownership"
     return same
 }
+
+// `move::(src) to dst` reached the lowering's catch-all arm, so no slot was ever
+// created for `dst`. The borrow checker had already accepted and bound the name,
+// which made the failure surface as an llc error on an unrelated line:
+//
+//     llc: error: use of undefined value '@dst'
+//
+// pointing at the *use* of the moved value rather than at the move. These pin
+// the three shapes it can appear in.
+
+@[test]
+pub fn moved_binding_is_usable: () :bool {
+    set source = "moved"
+    move::(source) to destination
+    return destination == "moved"
+}
+
+@[test]
+pub fn move_overwrites_an_existing_binding: () :bool {
+    set source = "new"
+    set destination = "old"
+    move::(source) to destination
+    // Before the fix this still compared equal to "old": the destination kept
+    // the value it already had, because nothing was ever stored into it.
+    return destination == "new"
+}
+
+@[test]
+pub fn move_inside_a_loop_is_usable: () :bool {
+    set total = 0 mut
+    set i = 0 mut
+    while i < 3 {
+        set value = i :i64
+        move::(value) to carried
+        set total += carried
+        set i += 1
+    }
+    return total == 3
+}

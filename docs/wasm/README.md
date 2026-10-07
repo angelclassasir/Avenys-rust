@@ -2,7 +2,7 @@
 
 > Compiling Mire programs to WebAssembly via WASI Preview 1.
 
-Version: **4.3.5**
+Version: **4.3.6**
 Status: **Stable**
 Date: **2026-09-12**
 

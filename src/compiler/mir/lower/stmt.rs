@@ -907,7 +907,75 @@ impl MirLower {
                     self.current_block = self.new_block("after_continue");
                 }
             }
+            // `move::(src) to dst` was silently dropped here: it reached the
+            // catch-all, so no slot was ever created for `dst` and the borrow
+            // checker's binding referred to a name codegen had never defined.
+            // The symptom was an llc error, `use of undefined value '@dst'`,
+            // pointing at a use *after* a correct move.
+            //
+            // It lowers like `set dst = src`: the value is shallowly
+            // transferred. No destructor is emitted for the source, because
+            // there are none anywhere in the lowering -- the borrow checker is
+            // what makes the source unusable, so nulling it here would be
+            // ceremony for a state the compiler has already proven unreachable.
+            Statement::Move { target, value } => {
+                let data_type = self
+                    .var_types
+                    .get(value_name(value))
+                    .cloned()
+                    .or_else(|| self.var_types.get(target.as_str()).cloned())
+                    .unwrap_or(DataType::Unknown);
+
+                if self.globals.contains_key(target) {
+                    if self.func.blocks.is_empty() {
+                        self.func.push_block("entry".to_string());
+                    }
+                    let v = self.lower_expression(value);
+                    let last = self.current_block;
+                    self.func.blocks[last].push(
+                        None,
+                        MirOp::Store(MirValue::Global(target.clone()), v),
+                        loc,
+                    );
+                    return;
+                }
+
+                if self.func.blocks.is_empty() {
+                    self.func.push_block("entry".to_string());
+                }
+                let last = self.current_block;
+                let ptr = self.new_temp();
+                self.func.blocks[last].push(
+                    Some(ptr),
+                    MirOp::Alloca(MirType {
+                        data_type: data_type.clone(),
+                    }),
+                    loc,
+                );
+                self.vars.insert(target.clone(), ptr);
+                self.var_types.insert(target.clone(), data_type.clone());
+
+                let mut v = self.lower_expression(value);
+                let val_ty = extract_data_type(value);
+                if needs_convert(&val_ty, &data_type) {
+                    v = self.emit_convert(v, &val_ty, &data_type, loc);
+                }
+                let last = self.current_block;
+                self.func.blocks[last].push(None, MirOp::Store(MirValue::temp(ptr), v), loc);
+            }
             _ => {}
         }
+    }
+}
+
+/// The name a move source refers to, when it is a plain identifier.
+///
+/// `move::(a) to b` moves a binding, so the type has to come from `a`'s slot.
+/// A computed source has no name to look up, and the caller's `unwrap_or`
+/// covers that.
+fn value_name(value: &Expression) -> &str {
+    match value {
+        Expression::Identifier(id) => id.name.as_str(),
+        _ => "",
     }
 }

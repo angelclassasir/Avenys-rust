@@ -2,6 +2,19 @@
 
 All notable changes to Avenys will be documented in this file.
 
+## 4.3.6 - 2026-10-07
+
+### Fixed
+- **`move::(src) to dst` did not compile.** The statement reached the MIR
+  lowering's catch-all arm, so no slot was ever created for `dst`. Type checking
+  and the borrow checker had both already accepted the binding, so the program
+  reached llc and failed there with `use of undefined value '@dst'` -- an error
+  pointing at the *use* of the moved value, on a line after a move that was
+  itself completely fine. It now lowers like `set dst = src`.
+- **A move onto an already-bound name kept the old value.** `dst` was never
+  written, so moving over it left `dst` reading whatever it had before. Silent,
+  and wrong in the direction that loses data rather than crashing.
+
 ## 4.3.5 - 2026-10-07
 
 ### Fixed
