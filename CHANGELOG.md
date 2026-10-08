@@ -2,6 +2,20 @@
 
 All notable changes to Avenys will be documented in this file.
 
+## 4.3.11 - 2026-10-08
+
+### Fixed
+- **`env::get` was a phantom builtin.** It was registered with a return type, so
+  type checking accepted it, and no phase ever lowered it: there is no `getenv`
+  in the runtime and no `env` module in the standard library. The build reached
+  llc and failed on a call to an undefined `@env.get`, naming neither the
+  missing builtin nor the reason it was missing.
+- Every other `env_*` spelling is correctly rejected, so `env::get` was the only
+  name where an unknown call produced invalid IR instead of a diagnostic.
+  Registering a name is a promise that code generation keeps; the phantom entry
+  is withdrawn rather than implemented, since exposing environment variables is
+  a feature and needs a runtime function behind it.
+
 ## 4.3.10 - 2026-10-08
 
 ### Fixed

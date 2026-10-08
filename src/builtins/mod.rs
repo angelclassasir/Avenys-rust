@@ -112,6 +112,13 @@ pub fn default_builtin_returns() -> HashMap<String, DataType> {
         },
     );
 
+    // `env.get` used to be registered here with nothing behind it: there is no
+    // `getenv` in the runtime and no `env` module in the standard library, so
+    // type checking accepted the call and no phase ever lowered it. The result
+    // was a call to an undefined `@env.get` and an llc failure naming neither
+    // the missing builtin nor the reason. Registering a name is a promise that
+    // codegen keeps; the rest of the `env_*` entries below are the real,
+    // working spellings.
     for name in [
         "ireru",
         "__mire_fmt",
@@ -121,7 +128,6 @@ pub fn default_builtin_returns() -> HashMap<String, DataType> {
         "fs_dir",
         "fs_name",
         "fs_ext",
-        "env.get",
         "env_cwd",
         "proc.run",
         "proc_exec",
