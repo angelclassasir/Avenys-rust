@@ -281,6 +281,10 @@ void *rt_dict_values(void *dict_ptr) {
 
 void rt_dict_free(void *dict_ptr) {
     if (!dict_ptr) return;
+    // A1 note: dict entries are raw pointers on insertion, but this destructor
+    // treats managed string keys/values as owned. The asymmetry is legacy
+    // contract and belongs to the future move/borrow model; do not widen the
+    // MirOp::Drop fix into an ownership redesign here.
     MireDict *dict = (MireDict *)dict_ptr;
     if (dict->key_kind == MIRE_KIND_STR) {
         for (int64_t i = 0; i < dict->len; i++) {

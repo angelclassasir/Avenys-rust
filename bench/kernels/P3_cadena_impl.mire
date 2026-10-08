@@ -1,0 +1,33 @@
+// P3: a method delegating through a skill to another type. Dificultad: dificil.
+pub skill Area { fn area: (self) :i64 }
+
+struct Rect { a :i64, b :i64 }
+struct Cuad { a :i64 }
+
+impl Area for Rect { fn area: (self) :i64 { return self.a * self.b } }
+impl Area for Cuad { fn area: (self) :i64 { return self.a * self.a } }
+
+struct Figura { alto :i64, ancho :i64 }
+
+impl Figura {
+    fn superficie: (self) :i64 {
+        if self.alto == self.ancho {
+            set q = Cuad(self.alto)
+            return q.area()
+        }
+        set r = Rect(self.alto self.ancho)
+        return r.area()
+    }
+}
+
+pub fn main: () :i32 {
+    set acc = SEED_OPACA mut
+    set i = 0 :i64 mut
+    while i < 8000000 {
+        set f = Figura(acc % 97 acc % 97 + 1)
+        set acc = (acc + f.superficie()) % 1000003
+        set i += 1
+    }
+    dasu(str(acc))
+    return 0 :i32
+}

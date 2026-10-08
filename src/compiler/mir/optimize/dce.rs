@@ -106,7 +106,7 @@ fn collect_uses(op: &MirOp, used: &mut HashSet<usize>) {
             collect_val(t, used);
             collect_val(f, used);
         }
-        MirOp::Drop(v) => collect_val(v, used),
+        MirOp::Drop(v, _) => collect_val(v, used),
         MirOp::Concat(vals) => {
             for v in vals {
                 collect_val(v, used);
@@ -139,6 +139,6 @@ fn collect_terminator_uses(term: &MirTerminator, used: &mut HashSet<usize>) {
 fn has_side_effect(op: &MirOp) -> bool {
     matches!(
         op,
-        MirOp::Store(_, _) | MirOp::Call(_, _, _) | MirOp::Drop(_)
+        MirOp::Store(_, _) | MirOp::Call(_, _, _) | MirOp::Drop(_, _)
     )
 }

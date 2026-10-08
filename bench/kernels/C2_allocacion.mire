@@ -1,0 +1,19 @@
+// C2: allocation pressure -- a fresh vector per iteration. Dificultad: dificil.
+load mire::vec
+
+pub fn main: () :i32 {
+    set acc = SEED_OPACA mut
+    set i = 0 :i64 mut
+    while i < 8000000 {
+        set v = [] :vec[i64] mut
+        set j = 0 :i64 mut
+        while j < 8 {
+            set v = vec::push::i64(v j + i)
+            set j += 1
+        }
+        set acc = (acc + vec::len(v) + vec::get::i64(v, 0)) % 1000003
+        set i += 1
+    }
+    dasu(str(acc))
+    return 0 :i32
+}

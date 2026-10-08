@@ -37,6 +37,29 @@ pub(crate) fn is_owned_ptr_type(ty: &DataType) -> bool {
     )
 }
 
+/// Classify ownership while the lowering phase still has the semantic type.
+/// Codegen must not infer ownership from LLVM's undifferentiated `ptr` type.
+///
+/// INVARIANT: `Ownership` (the destructor) is a SUBSET of
+/// `is_owned_ptr_type` (the property). Today the delta is exactly
+/// `{Slice, Set, Box, Result}`: these are treated as owned and retained on
+/// alias, but have no destructor here yet. When one gets a heap
+/// representation, add an `Ownership` variant BEFORE wiring its free; never
+/// merge these functions. In particular, `is_owned_ptr_type(Slice)` must stay
+/// true while Slice's `Ownership` remains `None`.
+pub(crate) fn ownership_of(ty: &DataType) -> Ownership {
+    match ty {
+        DataType::Str => Ownership::ManagedString,
+        DataType::Vector { .. } | DataType::List => Ownership::List,
+        DataType::Map { .. } | DataType::Dict => Ownership::Dict,
+        DataType::Ref { inner } | DataType::RefMut { inner } => match inner.as_ref() {
+            DataType::Str => Ownership::ManagedString,
+            _ => Ownership::Borrowed,
+        },
+        _ => Ownership::None,
+    }
+}
+
 /// True when evaluating `expr` yields a pointer *owned by something else* (a
 /// variable or a struct field). Assigning a borrow into a slot must retain it,
 /// otherwise releasing the source would leave the destination dangling.
@@ -217,7 +240,10 @@ impl MirLower {
                                 let last = self.current_block;
                                 self.func.blocks[last].push(
                                     None,
-                                    MirOp::Drop(MirValue::temp(loaded)),
+                                    MirOp::Drop(
+                                        MirValue::temp(loaded),
+                                        ownership_of(&target_ty),
+                                    ),
                                     loc,
                                 );
                             }

@@ -1,0 +1,39 @@
+// V1: 24 locals plus register pressure. Dificultad: media.
+// The accumulator feeds back in. Without it every local is invariant and the
+// whole loop folds to `acc + K * n`.
+pub fn main: () :i32 {
+    set a01 = 1 :i64 mut
+    set a02 = 2 :i64 mut
+    set a03 = 3 :i64 mut
+    set a04 = 4 :i64 mut
+    set a05 = 5 :i64 mut
+    set a06 = 6 :i64 mut
+    set a07 = 7 :i64 mut
+    set a08 = 8 :i64 mut
+    set a09 = 9 :i64 mut
+    set a10 = 10 :i64 mut
+    set a11 = 11 :i64 mut
+    set a12 = 12 :i64 mut
+    set a13 = 13 :i64 mut
+    set a14 = 14 :i64 mut
+    set a15 = 15 :i64 mut
+    set a16 = 16 :i64 mut
+    set a17 = 17 :i64 mut
+    set a18 = 18 :i64 mut
+    set a19 = 19 :i64 mut
+    set a20 = 20 :i64 mut
+    set a21 = 21 :i64 mut
+    set a22 = 22 :i64 mut
+    set a23 = 23 :i64 mut
+    set acc = SEED_OPACA mut
+    set i = 0 :i64 mut
+    while i < 4000000 {
+        set acc = (acc + a01 + a02 + a03 + a04 + a05 + a06 + a07 + a08) % 1000003
+        set acc = (acc + a09 + a10 + a11 + a12 + a13 + a14 + a15 + a16) % 1000003
+        set acc = (acc + a17 + a18 + a19 + a20 + a21 + a22 + a23) % 1000003
+        set acc = acc + i
+        set i += 1
+    }
+    dasu(str(acc))
+    return 0 :i32
+}

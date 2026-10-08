@@ -198,6 +198,8 @@ pub(crate) fn pal_extern_decls() -> Vec<String> {
         "declare void @rt_arr_reverse_i64(ptr, i64)".to_string(),
         "declare ptr @rt_arr_join(ptr, i64, ptr)".to_string(),
         // ── Lists with spans ─────────────────────────────────────────
+        "declare void @rt_list_free(ptr)".to_string(),
+        "declare void @rt_dict_free(ptr)".to_string(),
         "declare i64 @rt_lists_first(ptr, i64, i64, ptr)".to_string(),
         "declare i64 @rt_lists_last(ptr, i64, i64, ptr)".to_string(),
         // ── Dicts ────────────────────────────────────────────────────
@@ -210,7 +212,6 @@ pub(crate) fn pal_extern_decls() -> Vec<String> {
         "declare i64 @rt_dict_has(ptr, i64, i64, ptr)".to_string(),
         "declare ptr @rt_dict_remove(ptr, i64, i64, ptr)".to_string(),
         "declare ptr @rt_dict_to_string(ptr)".to_string(),
-        "declare void @rt_dict_free(ptr)".to_string(),
         "declare ptr @rt_dict_keys(ptr)".to_string(),
         "declare ptr @rt_dict_values(ptr)".to_string(),
         "declare ptr @rt_dicts_set(ptr, ptr, ptr)".to_string(),

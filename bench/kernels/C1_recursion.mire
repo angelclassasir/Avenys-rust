@@ -1,0 +1,13 @@
+// C1: recursion -- ackermann(2, n). Dificultad: dificil.
+// Argumentos con coma explicita: sin ella `ack(m (n - 1))` se parsea como
+// llamada a `m` porque la coma entre argumentos es opcional.
+fn ack: (m :i64, n :i64) :i64 {
+    if m == 0 { return n + 1 }
+    if n == 0 { return ack(m - 1, 1) }
+    return ack(m - 1, ack(m, (n - 1)))
+}
+
+pub fn main: () :i32 {
+    dasu(str(ack(3, 10)))
+    return 0 :i32
+}

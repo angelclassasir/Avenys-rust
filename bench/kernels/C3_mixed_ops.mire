@@ -1,0 +1,17 @@
+// C3: integer and float work interleaved. Dificultad: media.
+// El float depende del acumulador, asi que no se pliega.
+pub fn main: () :i32 {
+    set acc = SEED_OPACA mut
+    set f = 1.5 :f64 mut
+    set i = 0 :i64 mut
+    while i < 8000000 {
+        set acc = (acc + (i * 3) / 7 - i % 5) % 1000003
+        set f = f * 1.0000001 + (acc % 7) :f64
+        if i % 1000 == 0 { set f = f / 1.0000001 }
+        set acc = acc + (i % 3)
+        set i += 1
+    }
+    dasu(str(acc))
+    dasu(str(f > 0.0))
+    return 0 :i32
+}

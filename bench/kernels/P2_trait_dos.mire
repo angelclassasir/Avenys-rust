@@ -1,0 +1,25 @@
+// P2: one skill, two impls, dispatch on a runtime branch. Dificultad: media.
+pub skill Medible { fn valor: (self) :i64 }
+
+struct Cuadro { lado :i64 }
+struct Circulo { radio :i64 }
+
+impl Medible for Cuadro { fn valor: (self) :i64 { return self.lado * self.lado } }
+impl Medible for Circulo { fn valor: (self) :i64 { return self.radio * self.radio * 3 } }
+
+pub fn main: () :i32 {
+    set acc = SEED_OPACA mut
+    set i = 0 :i64 mut
+    while i < 8000000 {
+        if acc % 2 == 0 {
+            set q = Cuadro((acc + i) % 1000003)
+            set acc = (acc + q.valor()) % 1000003
+        } else {
+            set c = Circulo((acc + i) % 1000003)
+            set acc = (acc + c.valor()) % 1000003
+        }
+        set i += 1
+    }
+    dasu(str(acc))
+    return 0 :i32
+}

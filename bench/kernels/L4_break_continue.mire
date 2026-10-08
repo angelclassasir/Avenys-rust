@@ -1,0 +1,13 @@
+// L4: break y continue dentro del bucle. Dificultad: media.
+pub fn main: () :i32 {
+    set acc = SEED_OPACA mut
+    set i = 0 :i64 mut
+    while i < 20000000 {
+        set i += 1
+        if i % 3 == 0 { continue }
+        if i % 1000 == 0 { set acc += i }
+        if i % 2 == 0 { set acc -= 1 } else { set acc += 2 }
+    }
+    dasu(str(acc))
+    return 0 :i32
+}

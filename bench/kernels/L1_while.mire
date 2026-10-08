@@ -1,0 +1,11 @@
+// L1: while contando. Dificultad: trivial.
+pub fn main: () :i32 {
+    set acc = SEED_OPACA mut
+    set i = 0 :i64 mut
+    while i < 40000000 {
+        set acc += i % 7
+        set i += 1
+    }
+    dasu(str(acc))
+    return 0 :i32
+}

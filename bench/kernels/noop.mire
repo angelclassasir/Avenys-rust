@@ -1,0 +1,4 @@
+pub fn main: () :i32 {
+    dasu("x")
+    return 0 :i32
+}

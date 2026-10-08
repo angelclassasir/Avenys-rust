@@ -146,7 +146,7 @@ fn replace_value_in_op(op: &mut MirOp, copies: &HashMap<usize, MirValue>) -> usi
         | MirOp::SExt(v, _)
         | MirOp::Fptrunc(v, _)
         | MirOp::Fpext(v, _)
-        | MirOp::Drop(v) => replace(v, copies, &mut count),
+        | MirOp::Drop(v, _) => replace(v, copies, &mut count),
         MirOp::Concat(vals) => {
             for v in vals {
                 replace(v, copies, &mut count);

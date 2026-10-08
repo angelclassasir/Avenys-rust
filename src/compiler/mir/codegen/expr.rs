@@ -2,7 +2,7 @@ use super::builtins::{builtin_to_pal, compile_pal_builtin};
 use super::resolve::{coerce_to, coerce_to_bool, resolve_named_call, resolve_typed};
 use super::types::{llvm_type_str, render_struct_llvm_type};
 use super::{LlvmCtx, sanitize_fn_name, tmp_extra, tmp_result};
-use crate::compiler::mir::{DataType, MirCmp, MirConst, MirInst, MirOp, MirValue};
+use crate::compiler::mir::{DataType, MirCmp, MirConst, MirInst, MirOp, MirValue, Ownership};
 
 /// Resolves the common floating-point result type for a binary operation.
 /// Returns `Some("float")` / `Some("double")` if either operand is
@@ -924,15 +924,13 @@ pub(crate) fn compile_inst(inst: &MirInst, ctx: &mut LlvmCtx) -> Vec<String> {
                 result, c, tt, tv, ft, fv
             )
         }
-        MirOp::Drop(val) => {
-            // Materialize the Drop: tier-aware lowering
-            let (v, t) = resolve_typed(val, ctx);
-            if t == "ptr" {
-                // String/vec/map/closure — needs runtime free in minimal, no-op in full, free in none
-                format!("call void @rt_managed_free(ptr {})", v)
-            } else {
-                // Primitive types (i64, f64, bool, etc.) — no runtime action needed
-                String::new()
+        MirOp::Drop(val, ownership) => {
+            let (v, _) = resolve_typed(val, ctx);
+            match ownership {
+                Ownership::ManagedString => format!("call void @rt_managed_free(ptr {})", v),
+                Ownership::List => format!("call void @rt_list_free(ptr {})", v),
+                Ownership::Dict => format!("call void @rt_dict_free(ptr {})", v),
+                Ownership::Borrowed | Ownership::None => String::new(),
             }
         }
         MirOp::Phi(_, _) => String::new(),

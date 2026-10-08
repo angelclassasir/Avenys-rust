@@ -1,0 +1,18 @@
+// P1: struct method calls. Dificultad: trivial. 20M calls.
+struct Contador { n :i64 }
+
+impl Contador {
+    fn total: (self) :i64 { return self.n * 2 + 1 }
+}
+
+pub fn main: () :i32 {
+    set acc = SEED_OPACA mut
+    set i = 0 :i64 mut
+    while i < 20000000 {
+        set c = Contador((acc + i) % 1000003)
+        set acc = (acc + c.total()) % 1000003
+        set i += 1
+    }
+    dasu(str(acc))
+    return 0 :i32
+}

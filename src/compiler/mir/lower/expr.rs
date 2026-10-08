@@ -259,7 +259,11 @@ impl MirLower {
                     // allocations can be released immediately.
                     for operand in to_free {
                         let last = self.current_block;
-                        self.func.blocks[last].push(None, MirOp::Drop(operand), loc);
+                        self.func.blocks[last].push(
+                            None,
+                            MirOp::Drop(operand, Ownership::ManagedString),
+                            loc,
+                        );
                     }
                     return MirValue::temp(result);
                 }

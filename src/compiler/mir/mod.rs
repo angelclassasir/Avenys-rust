@@ -304,9 +304,16 @@ fn hash_op(op: &MirOp, buf: &mut Vec<u8>) {
                 buf.extend_from_slice(&idx.to_le_bytes());
             }
         }
-        MirOp::Drop(v) => {
+        MirOp::Drop(v, ownership) => {
             buf.push(29);
             hash_value(v, buf);
+            buf.push(match ownership {
+                Ownership::ManagedString => 0,
+                Ownership::List => 1,
+                Ownership::Dict => 2,
+                Ownership::Borrowed => 3,
+                Ownership::None => 4,
+            });
         }
         MirOp::Concat(vals) => {
             buf.push(30);
@@ -439,8 +446,17 @@ pub enum MirOp {
     Copy(MirValue),
     ExtractValue(MirValue, MirValue, Vec<usize>),
     InsertValue(MirValue, MirValue, Vec<usize>),
-    Drop(MirValue),
+    Drop(MirValue, Ownership),
     Concat(Vec<MirValue>),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Ownership {
+    ManagedString,
+    List,
+    Dict,
+    Borrowed,
+    None,
 }
 
 #[derive(Debug, Clone)]
