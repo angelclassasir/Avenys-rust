@@ -17,7 +17,39 @@ pub(super) fn collect_c_files(
     Ok(())
 }
 
+/// Tags every function definition with a size-preference attribute.
+///
+/// LLVM no longer has `-Os`/`-Oz` pipelines; the equivalent is O2 plus an
+/// attribute on each function, so the flag alone was not enough and both
+/// documented options failed on every build.
+fn apply_size_attribute(ir: &str, attribute: &str) -> String {
+    let mut out = String::with_capacity(ir.len() + 64);
+    for line in ir.lines() {
+        // Insert just before the body, which is the position LLVM reads
+        // function attributes from. An existing attribute group (`#0`) stays
+        // where it is; this just adds to the list.
+        if line.starts_with("define ")
+            && let Some(body) = line.rfind('{')
+        {
+            out.push_str(&line[..body]);
+            out.push(' ');
+            out.push_str(attribute);
+            out.push(' ');
+            out.push_str(&line[body..]);
+            out.push('\n');
+            continue;
+        }
+        out.push_str(line);
+        out.push('\n');
+    }
+    out
+}
+
 pub(super) fn optimize_ir(ir: &str, opt_level: OptLevel, source_filename: &str) -> Result<String> {
+    let ir = match opt_level.size_attribute() {
+        Some(attribute) => apply_size_attribute(ir, attribute),
+        None => ir.to_string(),
+    };
     let mut command = Command::new("opt");
     command
         .arg("-S")
@@ -88,14 +120,9 @@ pub(super) fn compile_binary_from_ir(
             .stdout(Stdio::null())
             .stderr(Stdio::piped());
         compile.arg("-o").arg(&ir_object);
-        compile.arg(match opt_level {
-            OptLevel::O0 => "-O0",
-            OptLevel::O1 => "-O1",
-            OptLevel::O2 => "-O2",
-            OptLevel::O3 => "-O3",
-            OptLevel::Os => "-Os",
-            OptLevel::Oz => "-Oz",
-        });
+        // `as_opt_flag` is the single source of truth: llc rejects `-Os`/`-Oz`
+        // outright ("invalid optimization level"), so both sites had to agree.
+        compile.arg(opt_level.as_opt_flag());
         if let Some(target) = &c_defs.target {
             compile.arg("--target").arg(target);
         }
@@ -414,14 +441,7 @@ fn lower_ir_to_object(
         .arg("-filetype=obj")
         .arg("-o")
         .arg(output)
-        .arg(match opt_level {
-            OptLevel::O0 => "-O0",
-            OptLevel::O1 => "-O1",
-            OptLevel::O2 => "-O2",
-            OptLevel::O3 => "-O3",
-            OptLevel::Os => "-Os",
-            OptLevel::Oz => "-Oz",
-        })
+        .arg(opt_level.as_opt_flag())
         .stdin(Stdio::piped())
         .stdout(Stdio::null())
         .stderr(Stdio::piped());

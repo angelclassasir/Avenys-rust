@@ -2,6 +2,23 @@
 
 All notable changes to Avenys will be documented in this file.
 
+## 4.3.10 - 2026-10-08
+
+### Fixed
+- **`-Os` and `-Oz` failed on every build.** Both are accepted on the command
+  line and listed in `--help`, and both were passed straight through to `opt`
+  and `llc`. LLVM removed those two pipelines, so `opt` rejected them with a raw
+  LLVM error and `llc` rejected them again with "invalid optimization level".
+- The size preference is a **function attribute**, not a pipeline name: LLVM
+  wants O2 plus `optsize`/`minsize` on each function. The attribute is now
+  applied to every definition, and both tools get their level from one place --
+  they had drifted into two separate copies of the same match, which is how the
+  fix needed applying twice.
+- Found while benchmarking: sweeping the optimization levels is how it turned
+  up. Note that `-Oz` is genuinely slower than `-O2` on compute-heavy loops,
+  because `minsize` suppresses vectorization -- that is the attribute working,
+  not a regression.
+
 ## 4.3.9 - 2026-10-08
 
 ### Fixed

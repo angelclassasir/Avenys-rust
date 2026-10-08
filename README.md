@@ -1,4 +1,4 @@
-# Avenys v4.3.9
+# Avenys v4.3.10
 
 **A compiled, ownership-aware systems language with an LLVM backend.**
 
@@ -11,7 +11,7 @@ The compiler, Avenys, translates Mire source through a multi-stage pipeline into
 native binaries via LLVM. It ships with Kioto, a standard library covering
 strings, collections, math, filesystem, processes, and more.
 
-## Recent Changes (v4.3.9)
+## Recent Changes (v4.3.10)
 - **Path sandbox**: every absolute-path entry point in the PAL consults one
   policy before reaching the kernel, instead of trusting a check in the language
   layer where a program could declare its own extern and call the kernel anyway.

@@ -2,7 +2,7 @@
 
 > Avenys compiler commands, flags, and usage.
 
-Version: **4.3.9**
+Version: **4.3.10**
 Status: **Stable**
 Date: **2026-09-12**
 

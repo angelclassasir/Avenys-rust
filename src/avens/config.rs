@@ -36,13 +36,24 @@ impl OptLevel {
     }
 
     pub fn as_opt_flag(self) -> &'static str {
+        // `Os` and `Oz` map to O2 as well. LLVM removed both pipelines; the size
+        // preference is now an attribute on each function, carried by
+        // `size_attribute` below. Passing `-Os` straight through made the flag
+        // fail on every build.
         match self {
             Self::O0 => "-O0",
             Self::O1 => "-O1",
-            Self::O2 => "-O2",
+            Self::O2 | Self::Os | Self::Oz => "-O2",
             Self::O3 => "-O3",
-            Self::Os => "-Os",
-            Self::Oz => "-Oz",
+        }
+    }
+
+    /// The LLVM function attribute expressing this level's size preference.
+    pub fn size_attribute(self) -> Option<&'static str> {
+        match self {
+            Self::Os => Some("optsize"),
+            Self::Oz => Some("minsize"),
+            _ => None,
         }
     }
 }
@@ -380,4 +391,39 @@ pub struct MireCacheConfig {
     pub analysis_cache: Option<bool>,
     pub compression: Option<bool>,
     pub blob_checksum: Option<bool>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::OptLevel;
+
+    #[test]
+    fn every_level_maps_to_an_opt_flag_llc_accepts() {
+        // `-Os` and `-Oz` used to be passed through verbatim. LLVM removed both
+        // pipelines, so `opt` rejected them and `llc` rejected them again with
+        // "invalid optimization level". Both documented flags failed on every
+        // build.
+        for (input, expected) in [
+            ("0", "-O0"),
+            ("1", "-O1"),
+            ("2", "-O2"),
+            ("3", "-O3"),
+            ("s", "-O2"),
+            ("z", "-O2"),
+        ] {
+            let level = OptLevel::parse(input).unwrap_or_else(|| panic!("{input}"));
+            assert_eq!(level.as_opt_flag(), expected, "level {input}");
+        }
+    }
+
+    #[test]
+    fn size_levels_carry_their_preference_as_an_attribute() {
+        // The size preference is not a pipeline; it is an attribute LLVM reads
+        // off each function, which is why the flag alone was not enough.
+        assert_eq!(OptLevel::parse("s").unwrap().size_attribute(), Some("optsize"));
+        assert_eq!(OptLevel::parse("z").unwrap().size_attribute(), Some("minsize"));
+        for input in ["0", "1", "2", "3"] {
+            assert_eq!(OptLevel::parse(input).unwrap().size_attribute(), None);
+        }
+    }
 }
