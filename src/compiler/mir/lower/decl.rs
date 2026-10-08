@@ -78,7 +78,12 @@ impl MirLower {
             current_block: 0,
             loop_stack: Vec::new(),
             closure_functions: Vec::new(),
-            closure_counter: 0,
+            // Continues this lowering's numbering rather than restarting it.
+            // The body below can define further closures, and starting them at
+            // zero made a nested closure collide with the one enclosing it --
+            // both were emitted as `closure_0`, and llc rejected the module
+            // with "invalid redefinition of function".
+            closure_counter: self.closure_counter,
             filename: self.filename.clone(),
         };
         lower.func.noinline = true;
@@ -101,6 +106,9 @@ impl MirLower {
             lower.var_types.insert(cap_name.clone(), cap_type.clone());
         }
         lower.lower_function_body(body);
+        // Whatever the body consumed is spent, so the next closure lowered here
+        // has to continue past it rather than reuse one of its names.
+        self.closure_counter = self.closure_counter.max(lower.closure_counter);
         lower.func.body_hash = lower.func.compute_hash();
         self.struct_types.extend(lower.struct_types.drain());
         self.closure_functions.extend(lower.closure_functions);

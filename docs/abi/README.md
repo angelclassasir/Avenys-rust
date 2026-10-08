@@ -2,7 +2,7 @@
 
 > Stable Application Binary Interface for the Mire programming language.
 
-Version: **4.3.8**
+Version: **4.3.9**
 Status: **Stable**
 Date: **2026-09-12**
 

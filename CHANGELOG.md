@@ -2,6 +2,22 @@
 
 All notable changes to Avenys will be documented in this file.
 
+## 4.3.9 - 2026-10-08
+
+### Fixed
+- **Two functions in one module, each defining a closure, could not both
+  compile.** The closure counter restarted at zero for every function, so both
+  produced `closure_0` and `closure_env_0`. Which way that failed depended on
+  the captured shapes: llc rejected the module with "invalid redefinition of
+  function", or the second definition quietly replaced the first's environment
+  struct and the surviving one had no fields, so the capture GEP was emitted
+  against `{ }` and llc reported "invalid getelementptr indices".
+- **Neither shape failed on its own.** A capturing closure, a non-capturing one
+  and a nested one each compiled fine in isolation, as did every pair of them
+  in a single function. It took two functions in the same module, and the order
+  they were declared in decided which of the two errors came out. The counter
+  is now one per module.
+
 ## 4.3.8 - 2026-10-07
 
 ### Fixed

@@ -402,6 +402,18 @@ pub fn lower_program_with_filename(program: &Program, filename: &str) -> MirProg
 
     seen_functions.clear();
 
+    // One closure counter for the whole module, not one per function.
+    //
+    // Closure function names and closure environment struct names are both
+    // derived from it, and every function's lowering started at zero. Two
+    // functions in the same module therefore both produced `closure_0` and
+    // `closure_env_0`, which fails in whichever way the shapes happen to
+    // differ: llc rejects the module with "invalid redefinition of function",
+    // or the second definition quietly replaces the first's env struct and
+    // the surviving one has no fields, so the capture GEP is emitted against
+    // `{ }` and llc reports "invalid getelementptr indices".
+    let mut next_closure_id = 0usize;
+
     for stmt in &program.statements {
         match stmt {
             Statement::Function {
@@ -440,7 +452,7 @@ pub fn lower_program_with_filename(program: &Program, filename: &str) -> MirProg
                     current_block: 0,
                     loop_stack: Vec::new(),
                     closure_functions: Vec::new(),
-                    closure_counter: 0,
+                    closure_counter: next_closure_id,
                     filename: filename.to_string(),
                 };
 
@@ -452,6 +464,7 @@ pub fn lower_program_with_filename(program: &Program, filename: &str) -> MirProg
                     body.clone()
                 };
                 lower.lower_function_body(&body_with_top_level);
+                next_closure_id = next_closure_id.max(lower.closure_counter);
                 struct_types.extend(lower.struct_types.clone());
                 functions.extend(lower.closure_functions);
                 if !lower.func.blocks.is_empty() {
@@ -513,11 +526,12 @@ pub fn lower_program_with_filename(program: &Program, filename: &str) -> MirProg
                             current_block: 0,
                             loop_stack: Vec::new(),
                             closure_functions: Vec::new(),
-                            closure_counter: 0,
+                            closure_counter: next_closure_id,
                             filename: filename.to_string(),
                         };
 
                         lower.lower_function_body(body);
+                        next_closure_id = next_closure_id.max(lower.closure_counter);
                         struct_types.extend(lower.struct_types.clone());
                         functions.extend(lower.closure_functions);
                         if !lower.func.blocks.is_empty() {

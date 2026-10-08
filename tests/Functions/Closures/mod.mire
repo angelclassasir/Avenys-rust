@@ -4,3 +4,78 @@ pub fn closure_family_is_discoverable: () :bool {
     set result = base + 2
     return result == 42
 }
+
+// A closure lowered inside another closure's body restarted the closure
+// counter at zero, so the inner one was emitted as `closure_0` -- the same
+// name as the outer -- and llc rejected the module outright:
+//
+//     llc: error: invalid redefinition of function 'fn_closure_0'
+//
+// The numbering now continues through the nesting.
+
+@[test]
+pub fn nested_closure_uses_the_outer_parameter: () :bool {
+    set outer = (x :i64) => {
+        set inner = (y :i64) => x + y
+        return inner(10)
+    }
+    return outer(5) == 15
+}
+
+@[test]
+pub fn three_levels_of_nesting_stay_distinct: () :bool {
+    set a = (x :i64) => {
+        set b = (y :i64) => {
+            set c = (z :i64) => x + y + z
+            return c(100)
+        }
+        return b(10)
+    }
+    return a(1) == 111
+}
+
+@[test]
+pub fn sibling_closures_keep_their_own_names: () :bool {
+    set f = (x :i64) => x + 1
+    set g = (x :i64) => x * 2
+    return f(3) == 4 && g(3) == 6
+}
+
+// The counter restarted at zero for every function, so two functions in one
+// module both produced `closure_0` and `closure_env_0`. Depending on how the
+// captured shapes differed, that surfaced either as "invalid redefinition of
+// function" or as a GEP against an empty `{ }` type. Neither shape failed on
+// its own: it took two functions in the same module, and the order they
+// appeared in decided which of the two errors came out.
+
+fn closure_capturing: () :i64 {
+    set k = 5 :i64
+    set f = (x :i64) => x + k
+    return f(1)
+}
+
+fn closure_capturing_nothing: () :i64 {
+    set g = (x :i64) => x * 2
+    return g(3)
+}
+
+fn closure_capturing_first: () :i64 {
+    set g = (x :i64) => x * 2
+    return g(3)
+}
+
+fn closure_capturing_second: () :i64 {
+    set k = 5 :i64
+    set f = (x :i64) => x + k
+    return f(1)
+}
+
+@[test]
+pub fn closures_in_separate_functions_do_not_collide: () :bool {
+    return closure_capturing() == 6 && closure_capturing_nothing() == 6
+}
+
+@[test]
+pub fn collision_does_not_depend_on_declaration_order: () :bool {
+    return closure_capturing_first() == 6 && closure_capturing_second() == 6
+}
