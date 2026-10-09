@@ -230,7 +230,7 @@ Relevant commits on the active branches:
   benchmark timing claim is made for this slice. The first short test timeout
   was due to release LTO compilation taking about 81 seconds, not a compiler
   deadlock.
-- Raw-string and formatting B2 slice (current worktree): the full allocator's
+- Raw-string and formatting B2 slice (`85fbc05`): the full allocator's
   raw copy/format helpers, argv arrays, padding scratch buffers, and map
   formatting temporaries now use PAL allocation/release pairs. The runtime API
   docs state that raw helper results must be freed with `pal_free`. Minimal
