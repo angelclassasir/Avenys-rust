@@ -161,6 +161,7 @@ typedef uint32_t pal_open_flags;
 typedef uint32_t pal_socket_flags;
 #define PAL_SOCKET_TCP 0x0001
 #define PAL_SOCKET_UDP 0x0002
+#define PAL_SOCKET_UNIX_STREAM 0x0004
 
 typedef uint32_t pal_spawn_flags;
 #define PAL_SPAWN_WAIT 0x0001
@@ -417,6 +418,10 @@ void pal_io_print_err(const char *msg);
 
 pal_socket_t pal_socket_connect(const char *host, uint16_t port, pal_socket_flags flags);
 pal_listener_t pal_listener_bind(uint16_t port, pal_socket_flags flags);
+// Unix-domain stream sockets are available only on hosts that implement them.
+// Both paths must be inside an absolute, owner-only directory (mode 0700).
+pal_socket_t pal_unix_connect(const char *path, pal_socket_flags flags);
+pal_listener_t pal_unix_bind(const char *path, pal_socket_flags flags);
 pal_socket_t pal_listener_accept(pal_listener_t listener);
 int64_t pal_socket_send(pal_socket_t sock, const void *buf, int64_t length);
 int64_t pal_socket_recv(pal_socket_t sock, void *buf, int64_t capacity);

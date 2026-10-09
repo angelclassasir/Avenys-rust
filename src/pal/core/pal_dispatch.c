@@ -343,6 +343,54 @@ pal_listener_t pal_listener_bind(uint16_t port, pal_socket_flags flags) {
     return h;
 }
 
+pal_socket_t pal_unix_connect(const char *path, pal_socket_flags flags) {
+    if (!ops || !ops->unix_connect) {
+        pal_set_error(PAL_ERR_UNSUPPORTED, "Unix sockets unavailable");
+        return PAL_SOCKET_NULL;
+    }
+    if (flags != PAL_SOCKET_UNIX_STREAM) {
+        pal_set_error(PAL_ERR_INVALID, "unsupported Unix socket flags");
+        return PAL_SOCKET_NULL;
+    }
+    int64_t internal = ops->unix_connect(path, flags);
+    if (internal <= 0) {
+        pal_set_error(pal_core_errno_map(errno), "Unix socket connect failed");
+        return PAL_SOCKET_NULL;
+    }
+    int slot = pal_core_reserve(PAL_RES_SOCKET);
+    if (slot < 0) {
+        ops->socket_close(internal);
+        return PAL_SOCKET_NULL;
+    }
+    extern pal_slot_t g_slots[];
+    g_slots[slot].internal = (void *)internal;
+    return (pal_socket_t){ .index = (uint32_t)slot, .generation = g_slots[slot].generation };
+}
+
+pal_listener_t pal_unix_bind(const char *path, pal_socket_flags flags) {
+    if (!ops || !ops->unix_bind) {
+        pal_set_error(PAL_ERR_UNSUPPORTED, "Unix sockets unavailable");
+        return PAL_LISTENER_NULL;
+    }
+    if (flags != PAL_SOCKET_UNIX_STREAM) {
+        pal_set_error(PAL_ERR_INVALID, "unsupported Unix socket flags");
+        return PAL_LISTENER_NULL;
+    }
+    int64_t internal = ops->unix_bind(path, flags);
+    if (internal <= 0) {
+        pal_set_error(pal_core_errno_map(errno), "Unix socket bind failed");
+        return PAL_LISTENER_NULL;
+    }
+    int slot = pal_core_reserve(PAL_RES_LISTENER);
+    if (slot < 0) {
+        ops->listener_close(internal);
+        return PAL_LISTENER_NULL;
+    }
+    extern pal_slot_t g_slots[];
+    g_slots[slot].internal = (void *)internal;
+    return (pal_listener_t){ .index = (uint32_t)slot, .generation = g_slots[slot].generation };
+}
+
 pal_socket_t pal_listener_accept(pal_listener_t listener) {
     if (!ops || !ops->listener_accept) { pal_set_error(PAL_ERR_UNSUPPORTED, "no backend"); return PAL_SOCKET_NULL; }
     int64_t internal = (int64_t)pal_core_validate_and_get(listener.index, listener.generation, PAL_RES_LISTENER);

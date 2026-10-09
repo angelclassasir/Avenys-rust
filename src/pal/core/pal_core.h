@@ -75,6 +75,8 @@ typedef struct pal_ops {
     // Networking
     int64_t (*socket_connect)(const char *host, uint16_t port, pal_socket_flags flags);
     int64_t (*listener_bind)(uint16_t port, pal_socket_flags flags);
+    int64_t (*unix_connect)(const char *path, pal_socket_flags flags);
+    int64_t (*unix_bind)(const char *path, pal_socket_flags flags);
     int64_t (*listener_accept)(int64_t listener_internal);
     int64_t (*socket_send)(int64_t internal, const void *buf, int64_t length);
     int64_t (*socket_recv)(int64_t internal, void *buf, int64_t capacity);

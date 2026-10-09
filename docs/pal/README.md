@@ -167,7 +167,15 @@ pal_socket_t pal_listener_accept(pal_listener_t listener);
 size_t pal_listener_send(pal_listener_t listener, const void *buf, size_t len);
 size_t pal_listener_recv(pal_listener_t listener, void *buf, size_t len);
 void pal_listener_close(pal_listener_t listener);
+
+// Linux Unix-domain stream sockets. Paths must be absolute and reside in a
+// canonical directory owned by the current user with no group/other access.
+pal_socket_t pal_unix_connect(const char *path, pal_socket_flags flags);
+pal_listener_t pal_unix_bind(const char *path, pal_socket_flags flags);
 ```
+
+Hosts without Unix-domain socket support return `PAL_ERR_UNSUPPORTED`.
+Closing a Unix listener removes only the socket inode created by that handle.
 
 ---
 

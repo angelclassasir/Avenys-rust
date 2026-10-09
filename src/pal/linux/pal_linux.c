@@ -13,9 +13,11 @@
 #include <errno.h>
 #include <sys/wait.h>
 #include <sys/socket.h>
+#include <sys/un.h>
 #include <sys/syscall.h>
 #include <netdb.h>
 #include <pthread.h>
+#include <limits.h>
 #include <sodium.h>
 #include <sys/resource.h>
 #include <time.h>
@@ -117,6 +119,9 @@ typedef struct {
     struct sockaddr_storage peer;
     socklen_t peer_len;
     bool has_peer;
+    char unix_path[sizeof(((struct sockaddr_un *)0)->sun_path)];
+    dev_t unix_device;
+    ino_t unix_inode;
 } linux_listener_t;
 
 typedef struct {
@@ -589,6 +594,122 @@ static int64_t linux_listener_bind(uint16_t port, pal_socket_flags flags) {
     listener->fd = fd;
     listener->peer_len = 0;
     listener->has_peer = false;
+    listener->unix_path[0] = '\0';
+    return (int64_t)listener;
+}
+
+// Unix sockets are intentionally restricted to absolute paths in a private,
+// owner-controlled directory. Requiring the spelling to match realpath also
+// rejects symlinked parent components and dot-segment aliases.
+static bool linux_validate_private_socket_path(const char *path,
+                                               struct sockaddr_un *address,
+                                               socklen_t *address_length) {
+    if (!path || path[0] != '/') { errno = EINVAL; return false; }
+    size_t path_length = strlen(path);
+    if (path_length == 0 || path_length >= sizeof(address->sun_path)) {
+        errno = ENAMETOOLONG;
+        return false;
+    }
+
+    const char *separator = strrchr(path, '/');
+    if (!separator || separator[1] == '\0' || strcmp(separator + 1, ".") == 0 ||
+        strcmp(separator + 1, "..") == 0) {
+        errno = EINVAL;
+        return false;
+    }
+    size_t parent_length = separator == path ? 1 : (size_t)(separator - path);
+    char parent[PATH_MAX];
+    if (parent_length >= sizeof(parent)) { errno = ENAMETOOLONG; return false; }
+    memcpy(parent, path, parent_length);
+    parent[parent_length] = '\0';
+
+    char canonical_parent[PATH_MAX];
+    if (!realpath(parent, canonical_parent)) return false;
+    if (strcmp(parent, canonical_parent) != 0) { errno = EACCES; return false; }
+
+    struct stat parent_status;
+    if (lstat(parent, &parent_status) != 0) return false;
+    if (!S_ISDIR(parent_status.st_mode) || S_ISLNK(parent_status.st_mode) ||
+        parent_status.st_uid != geteuid() || (parent_status.st_mode & 0077) != 0) {
+        errno = EACCES;
+        return false;
+    }
+
+    memset(address, 0, sizeof(*address));
+    address->sun_family = AF_UNIX;
+    memcpy(address->sun_path, path, path_length + 1);
+    *address_length = (socklen_t)(offsetof(struct sockaddr_un, sun_path) + path_length + 1);
+    return true;
+}
+
+static int64_t linux_unix_connect(const char *path, pal_socket_flags flags) {
+    if (flags != PAL_SOCKET_UNIX_STREAM) { errno = EINVAL; return -1; }
+    struct sockaddr_un address;
+    socklen_t address_length;
+    if (!linux_validate_private_socket_path(path, &address, &address_length)) return -1;
+
+    int fd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
+    if (fd < 0) return -1;
+    if (connect(fd, (const struct sockaddr *)&address, address_length) != 0) {
+        int saved_error = errno;
+        close(fd);
+        errno = saved_error;
+        return -1;
+    }
+    linux_socket_t *socket_handle = pal_alloc(sizeof(*socket_handle));
+    if (!socket_handle) { close(fd); errno = ENOMEM; return -1; }
+    socket_handle->fd = fd;
+    return (int64_t)socket_handle;
+}
+
+static void linux_unlink_owned_unix_socket(const char *path, dev_t device, ino_t inode) {
+    if (!path || path[0] == '\0') return;
+    struct stat current_status;
+    if (lstat(path, &current_status) == 0 && S_ISSOCK(current_status.st_mode) &&
+        current_status.st_dev == device && current_status.st_ino == inode) {
+        (void)unlink(path);
+    }
+}
+
+static int64_t linux_unix_bind(const char *path, pal_socket_flags flags) {
+    if (flags != PAL_SOCKET_UNIX_STREAM) { errno = EINVAL; return -1; }
+    struct sockaddr_un address;
+    socklen_t address_length;
+    if (!linux_validate_private_socket_path(path, &address, &address_length)) return -1;
+
+    int fd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
+    if (fd < 0) return -1;
+    if (bind(fd, (const struct sockaddr *)&address, address_length) != 0) {
+        int saved_error = errno;
+        close(fd);
+        errno = saved_error;
+        return -1;
+    }
+
+    struct stat socket_status;
+    if (chmod(path, 0600) != 0 || lstat(path, &socket_status) != 0 ||
+        !S_ISSOCK(socket_status.st_mode) || listen(fd, SOMAXCONN) != 0) {
+        int saved_error = errno ? errno : EIO;
+        if (lstat(path, &socket_status) == 0 && S_ISSOCK(socket_status.st_mode))
+            linux_unlink_owned_unix_socket(path, socket_status.st_dev, socket_status.st_ino);
+        close(fd);
+        errno = saved_error;
+        return -1;
+    }
+
+    linux_listener_t *listener = pal_alloc(sizeof(*listener));
+    if (!listener) {
+        int saved_error = ENOMEM;
+        linux_unlink_owned_unix_socket(path, socket_status.st_dev, socket_status.st_ino);
+        close(fd);
+        errno = saved_error;
+        return -1;
+    }
+    memset(listener, 0, sizeof(*listener));
+    listener->fd = fd;
+    memcpy(listener->unix_path, path, strlen(path) + 1);
+    listener->unix_device = socket_status.st_dev;
+    listener->unix_inode = socket_status.st_ino;
     return (int64_t)listener;
 }
 
@@ -655,6 +776,7 @@ static void linux_listener_close(int64_t internal) {
     linux_listener_t *l = (linux_listener_t *)internal;
     if (!l) return;
     if (l->fd >= 0) close(l->fd);
+    linux_unlink_owned_unix_socket(l->unix_path, l->unix_device, l->unix_inode);
     pal_free(l);
 }
 
@@ -1116,6 +1238,8 @@ static const pal_ops_t linux_ops = {
     .proc_close = linux_proc_close,
     .socket_connect = linux_socket_connect,
     .listener_bind = linux_listener_bind,
+    .unix_connect = linux_unix_connect,
+    .unix_bind = linux_unix_bind,
     .listener_accept = linux_listener_accept,
     .socket_send = linux_socket_send,
     .socket_recv = linux_socket_recv,
