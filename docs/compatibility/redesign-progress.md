@@ -247,7 +247,7 @@ Relevant commits on the active branches:
   gone from `strings.c`, and the runtime audit finds no direct allocator or
   clock calls in selected runtime sources; `strings_minimal.c` remains an
   unreferenced legacy file whose integration/disposition is still open.
-- Legacy minimal-string allocator B2 slice (current worktree): all raw buffer
+- Legacy minimal-string allocator B2 slice (`0afc220`): all raw buffer
   allocation, resize, and release in `strings_minimal.c` now goes through PAL.
   The file remains outside the selected runtime source graph, so no active
   runtime path changed. A focused smoke covers copy, concat, repeat, replace,
