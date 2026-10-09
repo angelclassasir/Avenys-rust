@@ -1077,10 +1077,15 @@ fn runtime_symbol_to_c_file(sym: &str) -> Option<&'static str> {
         Some("memory/allocator/managed.c")
     } else if sym.starts_with("rt_check_bounds") {
         Some("memory/safety/safety.c")
-    } else if sym.starts_with("rt_io_") {
-        // Standard streams: stdin/stdout/stderr via the C stdio FILE*s.
-        // Before the rt_read_/rt_write_ arms below, which are byte helpers.
-        Some("std/io/mire_io.c")
+    } else if sym == "ireru" || sym.starts_with("rt_io_read")
+        || sym == "rt_io_available"
+        || sym == "rt_io_is_tty"
+    {
+        Some("std/input/input.c")
+    } else if sym.starts_with("rt_io_write") || sym == "rt_io_flush" {
+        Some("std/output/output.c")
+    } else if sym == "rt_io_error" || sym == "rt_io_clear" || sym == "rt_io_fd" {
+        Some("std/error/error.c")
     } else if sym.starts_with("rt_list_")
         || sym.starts_with("rt_lists_")
         || sym.starts_with("rt_vecs_")
@@ -1188,7 +1193,9 @@ pub(crate) fn minimal_runtime_c_files(used_runtime: &HashSet<String>) -> Vec<Str
             ],
             "core/bytes.c" => &["core/strings.c"],
             "pal_bridge/helpers.c" => &["core/strings.c", "memory/allocator/managed.c"],
-            "std/io/mire_io.c" => &["memory/allocator/managed.c"],
+            "std/input/input.c" => &["memory/allocator/managed.c"],
+            "std/output/output.c" => &["memory/allocator/managed.c"],
+            "std/error/error.c" => &[],
             "pal_bridge/thread.c" => &[],
             "memory/safety/safety.c" => &[],
             "memory/allocator/managed.c" => &[],
@@ -1265,6 +1272,22 @@ mod runtime_source_tests {
             runtime_symbol_to_c_file("rt_dict_free"),
             Some("collections/map/maps.c")
         );
+        assert_eq!(
+            runtime_symbol_to_c_file("rt_io_read_line"),
+            Some("std/input/input.c")
+        );
+        assert_eq!(
+            runtime_symbol_to_c_file("ireru"),
+            Some("std/input/input.c")
+        );
+        assert_eq!(
+            runtime_symbol_to_c_file("rt_io_write_line"),
+            Some("std/output/output.c")
+        );
+        assert_eq!(
+            runtime_symbol_to_c_file("rt_io_error"),
+            Some("std/error/error.c")
+        );
 
         let symbols = HashSet::from(["rt_dict_free".to_string()]);
         let files = minimal_runtime_c_files(&symbols);
@@ -1298,7 +1321,9 @@ mod runtime_source_tests {
             "memory/allocator/managed.c",
             "collections/vec/vecs.c",
             "collections/map/maps.c",
-            "std/io/mire_io.c",
+            "std/input/input.c",
+            "std/output/output.c",
+            "std/error/error.c",
             "pal_bridge/pal_bridge.c",
         ] {
             assert!(relative_sources.contains(expected), "missing {expected}");
