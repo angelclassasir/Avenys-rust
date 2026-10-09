@@ -74,6 +74,14 @@ int64_t rt_strings_char_at(const char *s, int64_t index) {
     return (unsigned char)s[index];
 }
 
+// Build a managed one-byte string without interpreting the byte as UTF-8.
+// This is required by binary-safe protocol codecs; callers validate that the
+// numeric value is in the byte range before reaching the runtime boundary.
+char *rt_str_from_byte(int64_t byte_value) {
+    unsigned char byte = (unsigned char)(byte_value & 0xff);
+    return rt_managed_from_slice((const char *)&byte, 1);
+}
+
 char *rt_strings_repeat(const char *input, int64_t count) {
     if (!input || count <= 0) return rt_managed_from_slice("", 0);
     size_t len = str_byte_len(input);

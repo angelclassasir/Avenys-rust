@@ -39,6 +39,13 @@ int64_t rt_strings_char_at(const char *s, int64_t index) {
     return (int64_t)(unsigned char)s[index];
 }
 
+// Binary-safe counterpart to char_at. The managed-minimal allocator preserves
+// the explicit byte length even when the byte itself is zero.
+char *rt_str_from_byte(int64_t byte_value) {
+    unsigned char byte = (unsigned char)(byte_value & 0xff);
+    return rt_managed_from_slice((const char *)&byte, 1);
+}
+
 char *rt_strings_repeat(const char *input, int64_t count) {
     if (!input || count <= 0) return strdup("");
     size_t len = strlen(input);
