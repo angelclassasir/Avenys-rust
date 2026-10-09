@@ -54,6 +54,10 @@ static void *run_client(void *context_pointer) {
 }
 
 int main(void) {
+    int64_t monotonic_before = pal_time_monotonic_ns();
+    int64_t monotonic_after = pal_time_monotonic_ns();
+    if (monotonic_before <= 0 || monotonic_after < monotonic_before) return 9;
+
     char private_directory[] = "/tmp/avenys-pal-unix-XXXXXX";
     if (!mkdtemp(private_directory)) return 1;
 

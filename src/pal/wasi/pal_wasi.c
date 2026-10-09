@@ -54,6 +54,11 @@ int64_t pal_time_now_ns(void) {
     return wasi_clock_time_get(1, 1, &value) == 0 ? (int64_t)value : 0;
 }
 
+int64_t pal_time_monotonic_ns(void) {
+    uint64_t value = 0;
+    return wasi_clock_time_get(1, 1, &value) == 0 ? (int64_t)value : -1;
+}
+
 int64_t pal_time_now_ms(void) {
     return pal_time_now_ns() / 1000000;
 }
@@ -172,6 +177,7 @@ static const pal_ops_t wasi_ops = {
     .pubkey_close = NULL,
     .time_now_ms = pal_time_now_ms,
     .time_now_ns = pal_time_now_ns,
+    .time_monotonic_ns = pal_time_monotonic_ns,
     .cpu_count = pal_cpu_count,
     .mem_total = pal_mem_total,
     .mem_available = pal_mem_available,

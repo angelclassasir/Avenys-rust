@@ -1065,7 +1065,9 @@ pub(super) fn strip_unused_decls(ir: &str, used: &UsedSymbols) -> String {
 fn runtime_symbol_to_c_file(sym: &str) -> Option<&'static str> {
     // Order matters: more specific prefixes first.
     //
-    if sym.starts_with("rt_math_random") {
+    if sym.starts_with("rt_time_elapsed_ms") {
+        Some("core/time.c")
+    } else if sym.starts_with("rt_math_random") {
         Some("core/random.c")
     } else if sym.starts_with("rt_math_") {
         Some("core/math.c")
@@ -1187,6 +1189,7 @@ pub(crate) fn minimal_runtime_c_files(used_runtime: &HashSet<String>) -> Vec<Str
             "collections/map/maps_internal.c" => &["memory/allocator/managed.c"],
             "core/math.c" => &["collections/vec/vecs.c", "core/bytes.c"],
             "core/random.c" => &[],
+            "core/time.c" => &["core/strings.c", "memory/allocator/managed.c"],
             "core/mire_types.c" => &[
                 "core/strings.c",
                 "memory/allocator/managed.c",
@@ -1232,7 +1235,7 @@ pub(crate) fn minimal_runtime_c_files(used_runtime: &HashSet<String>) -> Vec<Str
 pub(crate) fn runtime_c_file_needs_pal(source_path: &std::path::Path) -> bool {
     matches!(
         source_path.file_name().and_then(|name| name.to_str()),
-        Some("helpers.c" | "thread.c" | "pal_bridge.c")
+        Some("helpers.c" | "thread.c" | "pal_bridge.c" | "time.c")
     )
 }
 
@@ -1273,6 +1276,11 @@ mod runtime_source_tests {
             runtime_symbol_to_c_file("rt_dict_free"),
             Some("collections/map/maps.c")
         );
+        assert_eq!(
+            runtime_symbol_to_c_file("rt_time_elapsed_ms_str"),
+            Some("core/time.c")
+        );
+        assert!(runtime_c_file_needs_pal(Path::new("runtime/core/time.c")));
         assert_eq!(
             runtime_symbol_to_c_file("rt_io_read_line"),
             Some("std/input/input.c")
@@ -1319,6 +1327,7 @@ mod runtime_source_tests {
 
         for expected in [
             "core/strings.c",
+            "core/time.c",
             "memory/allocator/managed.c",
             "collections/vec/vecs.c",
             "collections/map/maps.c",

@@ -937,6 +937,12 @@ static int64_t linux_time_now_ns(void) {
     return (int64_t)(ts.tv_sec * 1000000000 + ts.tv_nsec);
 }
 
+static int64_t linux_time_monotonic_ns(void) {
+    struct timespec ts;
+    if (clock_gettime(CLOCK_MONOTONIC, &ts) != 0) return -1;
+    return (int64_t)ts.tv_sec * 1000000000LL + (int64_t)ts.tv_nsec;
+}
+
 static int64_t linux_cpu_count(void) {
     return (int64_t)sysconf(_SC_NPROCESSORS_ONLN);
 }
@@ -1259,6 +1265,7 @@ static const pal_ops_t linux_ops = {
     .pubkey_close = linux_pubkey_close,
     .time_now_ms = linux_time_now_ms,
     .time_now_ns = linux_time_now_ns,
+    .time_monotonic_ns = linux_time_monotonic_ns,
     .cpu_count = linux_cpu_count,
     .mem_total = linux_mem_total,
     .mem_available = linux_mem_available,

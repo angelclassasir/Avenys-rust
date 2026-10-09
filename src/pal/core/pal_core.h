@@ -104,6 +104,7 @@ typedef struct pal_ops {
 // Stateless services (no handles)
 int64_t (*time_now_ms)(void);
 int64_t (*time_now_ns)(void);
+int64_t (*time_monotonic_ns)(void);
 int64_t (*cpu_count)(void);
 int64_t (*mem_total)(void);
 int64_t (*mem_available)(void);

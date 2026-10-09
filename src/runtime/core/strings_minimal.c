@@ -8,7 +8,6 @@
 
 /*
  * Minimal string operations for freestanding/WASI targets.
- * Excludes functions that require POSIX time APIs (clock_gettime, clock).
  */
 
 char *rt_string_copy(const char *value) {
@@ -385,10 +384,6 @@ char *rt_strings_join_list(void *parts, const char *sep) {
     return out;
 }
 
-/* 
- * Time functions are EXCLUDED from minimal:
- * - rt_time_elapsed_ms_str (uses clock_gettime/clock)
- * - rt_cpu_elapsed_ms_str (uses clock_gettime/clock)
- * 
- * These require POSIX time APIs not available in WASI/freestanding.
+/* Time formatting moved to core/time.c and uses the PAL monotonic clock.
+ * CPU-time formatting remains outside this minimal string implementation.
  */

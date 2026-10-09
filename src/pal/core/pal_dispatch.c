@@ -559,6 +559,11 @@ int64_t pal_time_now_ns(void) {
     return ops->time_now_ns();
 }
 
+int64_t pal_time_monotonic_ns(void) {
+    if (!ops || !ops->time_monotonic_ns) return -1;
+    return ops->time_monotonic_ns();
+}
+
 int64_t pal_cpu_count(void) {
     if (!ops || !ops->cpu_count) return 0;
     return ops->cpu_count();

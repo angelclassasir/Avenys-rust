@@ -465,6 +465,8 @@ int64_t pal_thread_join(int64_t tid, void *ret_storage);
 
 int64_t pal_time_now_ms(void);
 int64_t pal_time_now_ns(void);
+/// Monotonic timestamp in nanoseconds for elapsed-time measurement.
+int64_t pal_time_monotonic_ns(void);
 
 // pal_time_mark / pal_time_unix_ms / pal_time_unix_ns: aliases for
 // wall-clock time. pal_time_mark is used by the Mire runtime for
