@@ -225,6 +225,7 @@ pub(super) fn generate_runtime_declarations(ir: &str) -> String {
             "declare ptr @rt_get_args(i32, ptr)",
         ),
         ("declare i32 @printf(", "declare i32 @printf(ptr, ...)"),
+        ("declare ptr @ireru(", "declare ptr @ireru(ptr)"),
         ("declare i32 @fflush(", "declare i32 @fflush(ptr)"),
         ("declare i32 @strcmp(", "declare i32 @strcmp(ptr, ptr)"),
         (
@@ -991,7 +992,7 @@ pub(crate) fn collect_used_symbols(ir: &str) -> UsedSymbols {
                     let sym = &after_at[..paren_pos];
                     if sym.starts_with("pal_") {
                         used.pal.insert(sym.to_string());
-                    } else if sym.starts_with("rt_") {
+                    } else if sym.starts_with("rt_") || sym == "ireru" {
                         used.runtime.insert(sym.to_string());
                     }
                 }
@@ -1238,8 +1239,8 @@ pub(crate) fn runtime_c_file_needs_pal(source_path: &std::path::Path) -> bool {
 #[cfg(test)]
 mod runtime_source_tests {
     use super::{
-        collect_c_sources, minimal_runtime_c_files, runtime_c_file_needs_pal,
-        runtime_symbol_to_c_file,
+        collect_c_sources, collect_used_symbols, generate_runtime_declarations,
+        minimal_runtime_c_files, runtime_c_file_needs_pal, runtime_symbol_to_c_file,
     };
     use std::{collections::HashSet, path::Path};
 
@@ -1328,5 +1329,17 @@ mod runtime_source_tests {
         ] {
             assert!(relative_sources.contains(expected), "missing {expected}");
         }
+    }
+
+    #[test]
+    fn input_builtin_call_is_retained_and_selects_the_input_runtime_module() {
+        let used = collect_used_symbols("%input = call ptr @ireru(ptr null)");
+        assert!(used.runtime.contains("ireru"));
+        assert!(generate_runtime_declarations("%input = call ptr @ireru(ptr null)")
+            .contains("declare ptr @ireru(ptr)"));
+        assert_eq!(runtime_symbol_to_c_file("ireru"), Some("std/input/input.c"));
+        assert!(minimal_runtime_c_files(&used.runtime)
+            .iter()
+            .any(|file| file == "std/input/input.c"));
     }
 }
