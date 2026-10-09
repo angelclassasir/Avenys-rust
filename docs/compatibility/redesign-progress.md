@@ -134,6 +134,12 @@ Relevant commits on the active branches:
   opens. The smoke test is in CI and reuses existing dependencies, so no
   installer packages changed. `rt_read_tty` and direct process calls remain
   open host-boundary work.
+- Runtime terminal-input B2 slice (`c93ad25`): `rt_read_tty` now
+  calls `pal_tty_read_line`; Linux reads the controlling terminal, while WASI
+  marks the capability unsupported. The historical non-interactive `"y"`
+  fallback is preserved. A `forkpty` smoke test checks real line input and a
+  `setsid` process checks fallback behavior; CI uses existing system libraries.
+  No installer dependency was added.
 - Owl: `ac41531` (schema dependency documentation), `0ce4193` and `9747cd4`
   (cross-decode CI and LLVM toolchain path).
 
