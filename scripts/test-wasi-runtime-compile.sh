@@ -34,5 +34,6 @@ compile_wasi_source "$repository_directory/src/runtime/memory/allocator/managed.
 compile_wasi_source "$repository_directory/src/runtime/core/time.c" runtime_time.o
 compile_wasi_source "$repository_directory/src/runtime/collections/vec/vecs.c" runtime_vecs.o
 compile_wasi_source "$repository_directory/src/runtime/core/math.c" runtime_math.o
+compile_wasi_source "$repository_directory/src/runtime/core/mire_types.c" runtime_mire_types.o
 
-printf 'WASI PAL, standard-stream, safety, allocator, timing, vector, and math modules compiled successfully.\n'
+printf 'WASI PAL, standard-stream, safety, allocator, timing, vector, math, and Maybe/Result modules compiled successfully.\n'

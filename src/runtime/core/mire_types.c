@@ -1,5 +1,6 @@
 #include "runtime.h"
 #include "types.h"
+#include "pal.h"
 #include <stdlib.h>
 #include <string.h>
 
@@ -14,28 +15,28 @@
 // ═══════════════════════════════════════════════════════════════════════
 
 void *rt_maybe_some_i64(int64_t value) {
-    int64_t *slot = (int64_t *)malloc(sizeof(int64_t));
+    int64_t *slot = (int64_t *)pal_alloc((int64_t)sizeof(int64_t));
     if (!slot) return NULL;
     *slot = value;
     return (void *)slot;
 }
 
 void *rt_maybe_some_str(char *value) {
-    char **slot = (char **)malloc(sizeof(char *));
+    char **slot = (char **)pal_alloc((int64_t)sizeof(char *));
     if (!slot) return NULL;
     *slot = value;
     return (void *)slot;
 }
 
 void *rt_maybe_some_f64(double value) {
-    double *slot = (double *)malloc(sizeof(double));
+    double *slot = (double *)pal_alloc((int64_t)sizeof(double));
     if (!slot) return NULL;
     *slot = value;
     return (void *)slot;
 }
 
 void *rt_maybe_some_ptr(void *value) {
-    void **slot = (void **)malloc(sizeof(void *));
+    void **slot = (void **)pal_alloc((int64_t)sizeof(void *));
     if (!slot) return NULL;
     *slot = value;
     return (void *)slot;
@@ -90,7 +91,7 @@ void *rt_maybe_unwrap_or_ptr(void *ptr, void *default_val) {
 }
 
 void rt_maybe_free(void *ptr) {
-    if (ptr) free(ptr);
+    if (ptr) pal_free(ptr);
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -102,7 +103,7 @@ void rt_maybe_free(void *ptr) {
 // ═══════════════════════════════════════════════════════════════════════
 
 void *rt_result_ok_i64(int64_t value) {
-    MireResult *r = (MireResult *)malloc(sizeof(MireResult));
+    MireResult *r = (MireResult *)pal_alloc((int64_t)sizeof(MireResult));
     if (!r) return NULL;
     r->tag = 1;
     r->payload = value;
@@ -110,7 +111,7 @@ void *rt_result_ok_i64(int64_t value) {
 }
 
 void *rt_result_ok_str(char *value) {
-    MireResult *r = (MireResult *)malloc(sizeof(MireResult));
+    MireResult *r = (MireResult *)pal_alloc((int64_t)sizeof(MireResult));
     if (!r) return NULL;
     r->tag = 1;
     r->payload = (int64_t)(intptr_t)value;
@@ -118,7 +119,7 @@ void *rt_result_ok_str(char *value) {
 }
 
 void *rt_result_ok_ptr(void *value) {
-    MireResult *r = (MireResult *)malloc(sizeof(MireResult));
+    MireResult *r = (MireResult *)pal_alloc((int64_t)sizeof(MireResult));
     if (!r) return NULL;
     r->tag = 1;
     r->payload = (int64_t)(intptr_t)value;
@@ -126,7 +127,7 @@ void *rt_result_ok_ptr(void *value) {
 }
 
 void *rt_result_err_i64(int64_t error) {
-    MireResult *r = (MireResult *)malloc(sizeof(MireResult));
+    MireResult *r = (MireResult *)pal_alloc((int64_t)sizeof(MireResult));
     if (!r) return NULL;
     r->tag = 0;
     r->payload = error;
@@ -134,7 +135,7 @@ void *rt_result_err_i64(int64_t error) {
 }
 
 void *rt_result_err_str(char *error) {
-    MireResult *r = (MireResult *)malloc(sizeof(MireResult));
+    MireResult *r = (MireResult *)pal_alloc((int64_t)sizeof(MireResult));
     if (!r) return NULL;
     r->tag = 0;
     r->payload = (int64_t)(intptr_t)error;
@@ -142,7 +143,7 @@ void *rt_result_err_str(char *error) {
 }
 
 void *rt_result_err_ptr(void *error) {
-    MireResult *r = (MireResult *)malloc(sizeof(MireResult));
+    MireResult *r = (MireResult *)pal_alloc((int64_t)sizeof(MireResult));
     if (!r) return NULL;
     r->tag = 0;
     r->payload = (int64_t)(intptr_t)error;
@@ -220,7 +221,7 @@ void *rt_result_unwrap_or_ptr(void *ptr, void *default_val) {
 }
 
 void rt_result_free(void *ptr) {
-    if (ptr) free(ptr);
+    if (ptr) pal_free(ptr);
 }
 
 // ═══════════════════════════════════════════════════════════════════════

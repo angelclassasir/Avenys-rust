@@ -73,6 +73,11 @@ All notable changes to Avenys will be documented in this file.
   source selection and the WASI compile smoke include the math module; a C test
   verifies odd/even medians and matching PAL allocation/release counts. No
   installer dependency changed.
+- `Maybe` and `Result` heap descriptors now use PAL allocation and release
+  functions. Their representation, payload ownership, and destructor behavior
+  are unchanged. Native smoke coverage verifies Some/Ok/Err values and balanced
+  allocation/release calls; the WASI compile check includes this module. No
+  installer dependency changed.
 
 ## 4.3.12 - 2026-10-09
 

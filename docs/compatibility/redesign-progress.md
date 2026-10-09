@@ -186,6 +186,15 @@ Relevant commits on the active branches:
   It passes, as do the 241 library + 14 CLI Rust tests, WASI compilation, and
   all 12 benchmark output comparisons. The WASI build still surfaces the 11
   existing warnings from vector code. No installer dependency changed.
+- Runtime Maybe/Result allocation B2 slice (pending commit): heap descriptors
+  for `Maybe` and `Result` now use PAL allocation/free functions. The change
+  deliberately leaves payload ownership, representation, and destructor
+  behavior untouched. Minimal-runtime source selection marks `mire_types.c`
+  PAL-dependent; the WASI compile smoke includes it. A focused C test verifies
+  Some/Ok/Err behavior plus three matched PAL allocations/releases. It passes,
+  as do the Rust release suite (241 library + 14 CLI + doc-tests), runtime I/O
+  smoke, WASI compilation, and 12/12 benchmark equivalence. No installer
+  dependency changed.
 - Owl: `ac41531` (schema dependency documentation), `0ce4193` and `9747cd4`
   (cross-decode CI and LLVM toolchain path).
 
