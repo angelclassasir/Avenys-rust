@@ -670,6 +670,38 @@ void *pal_realloc(void *ptr, int64_t new_size) {
     return realloc(ptr, (size_t)new_size);
 }
 
+void *pal_memory_reserve(int64_t size) {
+    pal_ensure_init();
+    if (size <= 0) {
+        pal_set_error(PAL_ERR_INVALID, "invalid virtual memory reservation size");
+        return NULL;
+    }
+    if (!ops || !ops->memory_reserve) {
+        pal_set_error(PAL_ERR_UNSUPPORTED, "virtual memory reservation is unavailable");
+        return NULL;
+    }
+    void *region = ops->memory_reserve(size);
+    if (!region) pal_set_error(pal_core_errno_map(errno), "virtual memory reservation failed");
+    return region;
+}
+
+bool pal_memory_release(void *region, int64_t size) {
+    pal_ensure_init();
+    if (!region || size <= 0) {
+        pal_set_error(PAL_ERR_INVALID, "invalid virtual memory region");
+        return false;
+    }
+    if (!ops || !ops->memory_release) {
+        pal_set_error(PAL_ERR_UNSUPPORTED, "virtual memory release is unavailable");
+        return false;
+    }
+    if (!ops->memory_release(region, size)) {
+        pal_set_error(pal_core_errno_map(errno), "virtual memory release failed");
+        return false;
+    }
+    return true;
+}
+
 void *pal_secure_alloc(int64_t size) {
     if (size <= 0) return NULL;
     if ((uint64_t)size > SIZE_MAX - sizeof(size_t)) return NULL;

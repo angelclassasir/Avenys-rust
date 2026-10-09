@@ -241,6 +241,11 @@ const char *pal_last_error_message(void);
 void *pal_alloc(int64_t size);
 void pal_free(void *ptr);
 void *pal_realloc(void *ptr, int64_t new_size);
+/// Reserve a stable virtual-memory region without eagerly committing its pages.
+/// Returns NULL when the host does not provide this capability.
+void *pal_memory_reserve(int64_t size);
+/// Release a region previously returned by pal_memory_reserve. Returns false on failure.
+bool pal_memory_release(void *region, int64_t size);
 void *pal_secure_alloc(int64_t size);
 void pal_secure_free(void *ptr);
 

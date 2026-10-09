@@ -129,6 +129,8 @@ int64_t (*time_mark)(void);
 int64_t (*time_unix_ms)(void);
 int64_t (*time_unix_ns)(void);
 int64_t (*mem_process_bytes)(void);
+void *(*memory_reserve)(int64_t size);
+bool (*memory_release)(void *region, int64_t size);
 
 // Extended process
 bool (*proc_exists)(int64_t pid);

@@ -1236,8 +1236,8 @@ pub(crate) fn runtime_c_file_needs_pal(source_path: &std::path::Path) -> bool {
     matches!(
         source_path.file_name().and_then(|name| name.to_str()),
         Some(
-            "error.c" | "helpers.c" | "input.c" | "output.c" | "thread.c"
-                | "pal_bridge.c" | "time.c",
+            "error.c" | "helpers.c" | "input.c" | "managed.c" | "output.c"
+                | "thread.c" | "pal_bridge.c" | "time.c",
         )
     )
 }
@@ -1266,6 +1266,9 @@ mod runtime_source_tests {
         assert!(runtime_c_file_needs_pal(Path::new("runtime/std/input/input.c")));
         assert!(runtime_c_file_needs_pal(Path::new("runtime/std/output/output.c")));
         assert!(runtime_c_file_needs_pal(Path::new("runtime/std/error/error.c")));
+        assert!(runtime_c_file_needs_pal(
+            Path::new("runtime/memory/allocator/managed.c")
+        ));
     }
 
     #[test]

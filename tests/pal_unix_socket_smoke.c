@@ -54,6 +54,12 @@ static void *run_client(void *context_pointer) {
 }
 
 int main(void) {
+    char *reserved_memory = pal_memory_reserve(4096);
+    if (!reserved_memory) return 10;
+    reserved_memory[0] = 'x';
+    if (reserved_memory[0] != 'x') return 11;
+    if (!pal_memory_release(reserved_memory, 4096)) return 12;
+
     int64_t monotonic_before = pal_time_monotonic_ns();
     int64_t monotonic_after = pal_time_monotonic_ns();
     if (monotonic_before <= 0 || monotonic_after < monotonic_before) return 9;

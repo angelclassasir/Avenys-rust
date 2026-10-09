@@ -49,8 +49,8 @@
 //  Mire uses a bump-pointer arena allocator for all heap strings. Every
 //  string returned by the runtime is managed unless noted otherwise.
 //  Managed strings have a hidden header with length/capacity metadata
-//  and a reference count. The arena is allocated at full size upfront
-//  (1 GB via mmap) to avoid pointer invalidation on growth.
+//  and a reference count. The arena is reserved at full size upfront
+//  (1 GB through PAL virtual-memory reservation) to avoid pointer invalidation.
 //  rt_managed_free() decrements refcount and returns string to free-list;
 //  the entire arena is released at program exit via rt_managed_cleanup_all().
 // ═══════════════════════════════════════════════════════════════════════

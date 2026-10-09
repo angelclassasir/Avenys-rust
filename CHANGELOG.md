@@ -34,6 +34,10 @@ All notable changes to Avenys will be documented in this file.
   writes. Minimal-runtime source selection includes the diagnostic PAL module
   transitively with safety and managed-memory support. CI preserves and checks
   the historical panic exit statuses in minimal and full runtime builds.
+- The full managed-string arena now reserves and releases its fixed region via
+  PAL virtual-memory operations; POSIX mapping calls and headers no longer leak
+  into the runtime allocator module. Linux retains lazy `MAP_NORESERVE`
+  semantics; WASI reports this capability as unsupported.
 
 ## 4.3.12 - 2026-10-09
 

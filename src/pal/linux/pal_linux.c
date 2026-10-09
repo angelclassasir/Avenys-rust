@@ -20,6 +20,7 @@
 #include <limits.h>
 #include <sodium.h>
 #include <sys/resource.h>
+#include <sys/mman.h>
 #include <time.h>
 #include <poll.h>
 
@@ -1029,6 +1030,16 @@ static int64_t linux_mem_process(void) {
     return vm_rss * 1024;
 }
 
+static void *linux_memory_reserve(int64_t size) {
+    void *region = mmap(NULL, (size_t)size, PROT_READ | PROT_WRITE,
+                        MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE, -1, 0);
+    return region == MAP_FAILED ? NULL : region;
+}
+
+static bool linux_memory_release(void *region, int64_t size) {
+    return munmap(region, (size_t)size) == 0;
+}
+
 static bool linux_random_fill(void *buf, int64_t length) {
     if (!buf || length <= 0) return false;
     FILE *f = fopen("/dev/urandom", "r");
@@ -1333,6 +1344,8 @@ static const pal_ops_t linux_ops = {
     .time_unix_ms = linux_time_unix_ms,
     .time_unix_ns = linux_time_unix_ns,
     .mem_process_bytes = linux_mem_process,
+    .memory_reserve = linux_memory_reserve,
+    .memory_release = linux_memory_release,
     .proc_exists = linux_proc_exists,
     .proc_run = linux_proc_run,
     .env_all = linux_env_all,

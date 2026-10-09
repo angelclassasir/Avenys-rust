@@ -2,15 +2,16 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/mman.h>
+#include "pal.h"
 
 // ── Arena allocator with refcounting and size-class free lists ────────────────
 //
 // All managed strings are allocated from a single contiguous arena.
 // Each string has a reference count in its header. When the refcount
 // reaches zero, the string is added to a size-class free list for reuse.
-// The arena is allocated at full size upfront via mmap(MAP_NORESERVE) to avoid
-// pointer invalidation on realloc (which would invalidate free list pointers).
+// The arena reserves its full address range through the PAL to avoid pointer
+// invalidation on growth (which would invalidate free-list pointers). Hosts
+// without lazy virtual-memory reservation use a different runtime tier.
 // The entire arena is released at program exit via rt_managed_cleanup_all().
 
 #define ARENA_MAX_SIZE     (1024 * 1024 * 1024) // 1 GB cap
@@ -33,10 +34,8 @@ static char *free_lists[NUM_SIZE_CLASSES] = {NULL};
 
 static int arena_ensure_initialized(void) {
     if (arena_base) return 1;
-    // Use mmap with MAP_NORESERVE to reserve virtual address space without committing physical memory
-    arena_base = (char *)mmap(NULL, ARENA_MAX_SIZE, PROT_READ | PROT_WRITE,
-                              MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE, -1, 0);
-    if (arena_base == MAP_FAILED) return 0;
+    arena_base = (char *)pal_memory_reserve((int64_t)ARENA_MAX_SIZE);
+    if (!arena_base) return 0;
     arena_cap = ARENA_MAX_SIZE;
     arena_pos = 0;
     return 1;
@@ -59,8 +58,8 @@ static inline void free_list_add(char *header_ptr, size_t total_size) {
     char *data_area = (char *)(hdr + 1);  // data area starts after header
     FreeBlock *block = (FreeBlock *)data_area;
     block->size = total_size;
-    block->next = free_lists[size_class_index(total_size)];
-    free_lists[size_class_index(total_size)] = header_ptr;  // free list stores header pointers
+    block->next = free_lists[idx];
+    free_lists[idx] = header_ptr;  // free list stores header pointers
 }
 
 static char *free_list_find(size_t need) {
@@ -187,8 +186,6 @@ char *rt_managed_alloc(size_t len) {
 
     // Allocate from arena (ensure initialized first)
     if (!arena_ensure_initialized()) return NULL;
-    size_t total_size = sizeof(MireManagedString) + cap + 1;
-    total = (total + 15) & ~(size_t)15;
     if (arena_pos + total > arena_cap) return NULL;
     MireManagedString *header = (MireManagedString *)(arena_base + arena_pos);
     arena_pos += total;
@@ -274,7 +271,7 @@ void rt_managed_free(char *value) {
 
 void rt_managed_cleanup_all(void) {
     if (arena_base) {
-        munmap(arena_base, ARENA_MAX_SIZE);
+        (void)pal_memory_release(arena_base, (int64_t)ARENA_MAX_SIZE);
         arena_base = NULL;
     }
     arena_pos = 0;

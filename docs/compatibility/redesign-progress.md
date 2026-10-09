@@ -84,6 +84,18 @@ does not claim that the full redesign is complete.
   changed standard-stream, safety, and timing modules. This development-only dependency is
   documented in the installer and README; the end-user installer does not
   install it. `scripts/test-wasi-runtime-compile.sh` is the local equivalent.
+- The full managed allocator now obtains/releases its fixed 1 GiB arena through
+  `pal_memory_reserve`/`pal_memory_release`. Linux preserves lazy
+  `MAP_NORESERVE` behavior; WASI explicitly reports this capability unsupported
+  and must use the minimal runtime tier. The allocator no longer includes or
+  invokes POSIX mapping APIs, and the WASI compile gate includes this source.
+  An initial substitution with generic `pal_alloc` measured C2 at 1404 ms
+  (52.00x Rust), so it was rejected. The dedicated reservation API preserves
+  Linux's prior mapping semantics; C2 measured 1301 ms (48.19x Rust) initially
+  and 1291 ms (47.81x Rust) in a later best-of-five run against 27 ms Rust.
+  All 12 benchmark outputs still match. The large gap remains and points to
+  collection allocation/reallocation behavior, not a reason to claim the
+  allocator is optimized.
 
 Relevant commits on the active branches:
 
