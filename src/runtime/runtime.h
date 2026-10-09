@@ -85,6 +85,7 @@ void  rt_managed_register(char *data_ptr);    // no-op (ABI compat)
 void  rt_managed_unregister(char *data_ptr);  // no-op (ABI compat)
 void  rt_managed_retain(char *data_ptr);      // increments refcount
 
+// Raw strings use the PAL allocator and must be released with pal_free().
 char *rt_strdup_raw(const char *src);
 char *rt_strdup_raw_n(const char *src, size_t len);
 char *rt_alloc_printf_raw_i64(const char *fmt, long long value);

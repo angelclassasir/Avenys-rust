@@ -1,0 +1,11 @@
+load mire::str
+
+@[test]
+pub fn left_padding_preserves_input_and_fills_width: () :bool {
+    return str::pad::left("mire" 6 "0") == "00mire"
+}
+
+@[test]
+pub fn right_padding_preserves_input_and_fills_width: () :bool {
+    return str::pad::right("mire" 6 "-") == "mire--"
+}

@@ -139,7 +139,7 @@ static size_t utf8_codepoint_count(const char *s, size_t byte_len) {
     return count;
 }
 
-// ── String helpers (raw malloc, not arena) ────────────────────────────
+// ── String helpers (PAL allocations, not managed-arena strings) ───────
 
 size_t rt_string_growth_cap(size_t min_cap) {
     size_t cap = 16;
@@ -149,14 +149,16 @@ size_t rt_string_growth_cap(size_t min_cap) {
 
 char *rt_strdup_raw(const char *src) {
     size_t len = strlen(src) + 1;
-    char *out = (char *)malloc(len);
+    if (len > (size_t)INT64_MAX) return NULL;
+    char *out = (char *)pal_alloc((int64_t)len);
     if (out == NULL) return NULL;
     memcpy(out, src, len);
     return out;
 }
 
 char *rt_strdup_raw_n(const char *src, size_t len) {
-    char *out = (char *)malloc(len + 1);
+    if (len >= (size_t)INT64_MAX) return NULL;
+    char *out = (char *)pal_alloc((int64_t)(len + 1));
     if (out == NULL) return NULL;
     if (len > 0) memcpy(out, src, len);
     out[len] = '\0';
@@ -237,7 +239,7 @@ char *rt_managed_printf_f64(const char *fmt, double value) {
 char *rt_alloc_printf_raw_i64(const char *fmt, long long value) {
     int needed = snprintf(NULL, 0, fmt, value);
     if (needed < 0) return rt_strdup_raw("");
-    char *out = (char *)malloc((size_t)needed + 1);
+    char *out = (char *)pal_alloc((int64_t)needed + 1);
     if (out == NULL) return rt_strdup_raw("");
     snprintf(out, (size_t)needed + 1, fmt, value);
     return out;

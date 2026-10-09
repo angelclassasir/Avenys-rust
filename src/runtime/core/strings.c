@@ -1,6 +1,7 @@
 #define _POSIX_C_SOURCE 200809L
 
 #include "runtime.h"
+#include "pal.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -292,13 +293,15 @@ static char *pad_core(const char *input, int64_t width, const char *pad, int lef
     if (plen == 0 || (int64_t)ilen >= width) return rt_managed_from_slice(input, ilen);
     size_t pad_total = (size_t)(width - (int64_t)ilen);
     size_t repeats = pad_total / plen + 1;
+    if (repeats > SIZE_MAX / plen) return rt_managed_from_slice(input, ilen);
     size_t buf_len = repeats * plen;
-    char *pad_buf = (char *)malloc(buf_len);
+    if (buf_len > (size_t)INT64_MAX) return rt_managed_from_slice(input, ilen);
+    char *pad_buf = (char *)pal_alloc((int64_t)buf_len);
     if (!pad_buf) return rt_managed_from_slice(input, ilen);
     for (size_t i = 0; i < repeats; i++) memcpy(pad_buf + i * plen, pad, plen);
     size_t result_len = (size_t)width;
     char *out = rt_managed_alloc(result_len);
-    if (!out) { free(pad_buf); return rt_managed_from_slice("", 0); }
+    if (!out) { pal_free(pad_buf); return rt_managed_from_slice("", 0); }
     if (left_pad) {
         memcpy(out, pad_buf, pad_total);
         memcpy(out + pad_total, input, ilen);
@@ -307,7 +310,7 @@ static char *pad_core(const char *input, int64_t width, const char *pad, int lef
         memcpy(out + ilen, pad_buf, pad_total);
     }
     out[result_len] = '\0';
-    free(pad_buf);
+    pal_free(pad_buf);
     return out;
 }
 
@@ -411,11 +414,12 @@ char **rt_build_argv(const char *cmd, void *args_vec, int64_t *argc_out) {
     if (nargs < 0 || nargs > (INT64_MAX / (int64_t)sizeof(char *)) - 2) return NULL;
     size_t argc = (size_t)nargs + 2;
     if (argc > SIZE_MAX / sizeof(char *)) return NULL;
-    char **argv = (char **)calloc(argc, sizeof(char *));
+    char **argv = (char **)pal_alloc((int64_t)(argc * sizeof(char *)));
     if (!argv) return NULL;
+    memset(argv, 0, argc * sizeof(char *));
     argv[0] = rt_strdup_raw(cmd);
     if (!argv[0]) {
-        free(argv);
+        pal_free(argv);
         return NULL;
     }
     for (int64_t i = 0; i < nargs; i++) {
@@ -433,9 +437,9 @@ char **rt_build_argv(const char *cmd, void *args_vec, int64_t *argc_out) {
 void rt_free_argv(char **argv, int64_t argc) {
     if (!argv) return;
     for (int64_t i = 0; i < argc; i++) {
-        if (argv[i]) free(argv[i]);
+        if (argv[i]) pal_free(argv[i]);
     }
-    free(argv);
+    pal_free(argv);
 }
 
 char *rt_cpu_elapsed_ms_str(int64_t start_ns) {

@@ -1,6 +1,5 @@
 #include "maps_internal.h"
 #include "pal.h"
-#include <stdlib.h>
 #include <string.h>
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -115,7 +114,7 @@ void mire_store_key(MireDict *dict, int64_t entry_index,
             char *existing = *(char **)slot;
             if (existing) {
                 if (rt_managed_is_managed(existing)) rt_managed_free(existing);
-                else free(existing);
+                else pal_free(existing);
             }
         }
         // Store a managed copy owned by the map: remove/replace/free release it.
@@ -139,7 +138,7 @@ void mire_store_value(MireDict *dict, int64_t entry_index,
             char *existing = *(char **)slot;
             if (existing) {
                 if (rt_managed_is_managed(existing)) rt_managed_free(existing);
-                else free(existing);
+                else pal_free(existing);
             }
         }
         // Store a managed copy owned by the map: remove/replace/free release it.

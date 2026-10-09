@@ -230,6 +230,16 @@ Relevant commits on the active branches:
   benchmark timing claim is made for this slice. The first short test timeout
   was due to release LTO compilation taking about 81 seconds, not a compiler
   deadlock.
+- Raw-string and formatting B2 slice (current worktree): the full allocator's
+  raw copy/format helpers, argv arrays, padding scratch buffers, and map
+  formatting temporaries now use PAL allocation/release pairs. The runtime API
+  docs state that raw helper results must be freed with `pal_free`. Minimal
+  runtime source selection marks `strings.c` PAL-dependent, and the WASI gate
+  compiles it. Focused C tests pass for raw-string accounting and map formatting;
+  Mire string/padding tests pass 11/11, map tests pass 3/3, runtime I/O and
+  process smoke tests pass, and the Rust release suite passes (241 library + 14
+  CLI + doc-tests). No benchmark gain is claimed; installer dependencies are
+  unchanged.
 - Owl: `ac41531` (schema dependency documentation), `0ce4193` and `9747cd4`
   (cross-decode CI and LLVM toolchain path).
 

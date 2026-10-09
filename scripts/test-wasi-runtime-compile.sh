@@ -38,5 +38,6 @@ compile_wasi_source "$repository_directory/src/runtime/collections/map/maps.c" r
 compile_wasi_source "$repository_directory/src/runtime/collections/map/maps_internal.c" runtime_maps_internal.o
 compile_wasi_source "$repository_directory/src/runtime/core/math.c" runtime_math.o
 compile_wasi_source "$repository_directory/src/runtime/core/mire_types.c" runtime_mire_types.o
+compile_wasi_source "$repository_directory/src/runtime/core/strings.c" runtime_strings.o
 
-printf 'WASI PAL, standard-stream, safety, full/minimal allocators, timing, vector/map collections, math, and Maybe/Result modules compiled successfully.\n'
+printf 'WASI PAL, standard-stream, safety, full/minimal allocators, timing, vector/map collections, strings, math, and Maybe/Result modules compiled successfully.\n'

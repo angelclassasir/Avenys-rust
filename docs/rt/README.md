@@ -2,7 +2,7 @@
 
 > Runtime tiers, verified symbol reference, and configuration.
 
-Version: **4.3.12**
+Version: **4.3.13**
 Status: **Stable**
 Date: **2026-09-12**
 
@@ -78,6 +78,14 @@ All symbols below are extracted from `src/runtime/runtime.h` and verified to exi
 | `rt_managed_contains(data_ptr)` | `i64` | Check if in managed table |
 | `rt_managed_register(data_ptr)` | void | No-op (ABI compat) |
 | `rt_managed_unregister(data_ptr)` | void | No-op (ABI compat) |
+
+### Raw C Buffers
+
+`rt_strdup_raw`, `rt_strdup_raw_n`, and `rt_alloc_printf_raw_i64` return
+unmanaged buffers allocated through the PAL. Release these buffers with
+`pal_free`, not `rt_managed_free`. The argument-vector helpers follow the same
+contract: `rt_build_argv` returns PAL-owned strings and `rt_free_argv` releases
+the complete vector.
 | `rt_managed_retain(data_ptr)` | void | Increment refcount |
 | `rt_string_header(data)` | `*` | Get MireManagedString header |
 | `rt_string_growth_cap(min_cap)` | `size_t` | Compute growth capacity |
@@ -472,11 +480,11 @@ All symbols below are extracted from `src/runtime/runtime.h` and verified to exi
 | `rt_managed_*`, `rt_panic_*` | `managed.c` / `managed_minimal.c` |
 | `rt_check_bounds_*`, `rt_div_*`, `rt_rem_*` | `safety.c` / `safety_minimal.c` |
 | `rt_closure_env_*` | `safety.c` |
-| `rt_get_args`, `rt_free_argv` | `helpers.c` |
+| `rt_get_args`, `rt_build_argv`, `rt_free_argv` | `strings.c` |
 | `rt_thread_*` | `thread.c` |
 | `rt_crypto_*`, `rt_read_bytes`, `rt_hex_to_file` | `mire_io.c` |
 | `rt_font_*`, `rt_read_cstr`, `rt_blend_u32` | `helpers.c` |
-| `rt_build_argv`, `rt_free_argv`, `rt_proc_*` | `helpers.c` |
+| `rt_proc_*` | `helpers.c` |
 | `rt_channel_recv_into` | `helpers.c` |
 
 **Always included**: `managed.c` + `safety.c` (safety baselines)

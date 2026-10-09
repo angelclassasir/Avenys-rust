@@ -57,6 +57,9 @@ jobs:
       - name: Test map container allocation through PAL
         run: ./scripts/test-runtime-maps-pal.sh
 
+      - name: Test full-runtime raw string allocation through PAL
+        run: ./scripts/test-runtime-managed-raw-pal.sh
+
       - name: Test Maybe and Result allocation through PAL
         run: ./scripts/test-runtime-mire-types-pal.sh
 

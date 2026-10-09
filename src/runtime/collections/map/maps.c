@@ -1,8 +1,6 @@
 #include "runtime.h"
 #include "maps_internal.h"
 #include "pal.h"
-#include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -146,14 +144,14 @@ void *rt_dict_remove(void *dict_ptr, int64_t key_kind, int64_t key_i64, void *ke
                     char *old_key = *(char **)mire_key_slot(dict, idx);
                     if (old_key) {
                         if (rt_managed_is_managed(old_key)) rt_managed_free(old_key);
-                        else free(old_key);
+                        else pal_free(old_key);
                     }
                 }
                 if (dict->value_kind == MIRE_KIND_STR) {
                     char *old_val = *(char **)mire_value_slot(dict, idx);
                     if (old_val) {
                         if (rt_managed_is_managed(old_val)) rt_managed_free(old_val);
-                        else free(old_val);
+                        else pal_free(old_val);
                     }
                 }
                 dict->entries[idx] = dict->entries[dict->len];
@@ -185,7 +183,8 @@ static char *format_key(const MireDict *dict, int64_t entry_index) {
     if (dict->key_kind == MIRE_KIND_STR) {
         const char *s = *(const char **)mire_key_slot((MireDict *)dict, entry_index);
         size_t len = strlen(s);
-        char *out = (char *)malloc(len + 3);
+        if (len > (size_t)INT64_MAX - 3) return rt_strdup_raw("");
+        char *out = (char *)pal_alloc((int64_t)(len + 3));
         if (!out) return rt_strdup_raw("");
         out[0] = '"';
         memcpy(out + 1, s, len);
@@ -199,7 +198,7 @@ static char *format_key(const MireDict *dict, int64_t entry_index) {
 static void free_repr(char *repr) {
     if (!repr) return;
     if (rt_managed_contains(repr)) rt_managed_free(repr);
-    else free(repr);
+    else pal_free(repr);
 }
 
 char *rt_dict_to_string(void *dict_ptr) {
@@ -213,7 +212,8 @@ char *rt_dict_to_string(void *dict_ptr) {
         if (dict->value_kind == MIRE_KIND_STR) {
             const char *s = *(const char **)mire_value_slot(dict, i);
             size_t slen = strlen(s);
-            v = (char *)malloc(slen + 3);
+            if (slen <= (size_t)INT64_MAX - 3)
+                v = (char *)pal_alloc((int64_t)(slen + 3));
             if (v) { v[0] = '"'; memcpy(v + 1, s, slen); v[slen + 1] = '"'; v[slen + 2] = '\0'; }
         } else if (dict->value_kind == MIRE_KIND_MAP) {
             void *sub = mire_read_ptr(dict, i);
@@ -237,7 +237,8 @@ char *rt_dict_to_string(void *dict_ptr) {
         if (dict->value_kind == MIRE_KIND_STR) {
             const char *s = *(const char **)mire_value_slot(dict, i);
             size_t slen = strlen(s);
-            v = (char *)malloc(slen + 3);
+            if (slen <= (size_t)INT64_MAX - 3)
+                v = (char *)pal_alloc((int64_t)(slen + 3));
             if (v) { v[0] = '"'; memcpy(v + 1, s, slen); v[slen + 1] = '"'; v[slen + 2] = '\0'; }
         } else if (dict->value_kind == MIRE_KIND_MAP) {
             v = rt_dict_to_string(mire_read_ptr(dict, i));
@@ -294,7 +295,7 @@ void rt_dict_free(void *dict_ptr) {
             char *key = *(char **)(dict->key_storage + i * dict->key_size);
             if (key) {
                 if (rt_managed_is_managed(key)) rt_managed_free(key);
-                else free(key);
+                else pal_free(key);
             }
         }
     }
@@ -303,7 +304,7 @@ void rt_dict_free(void *dict_ptr) {
             char *val = *(char **)(dict->value_storage + i * dict->value_size);
             if (val) {
                 if (rt_managed_is_managed(val)) rt_managed_free(val);
-                else free(val);
+                else pal_free(val);
             }
         }
     }

@@ -95,6 +95,12 @@ All notable changes to Avenys will be documented in this file.
   found and fixed inconsistent signed/unsigned hash modulo during bucket
   rehashing. CI and the WASI source compile gate cover the map modules. This is
   a portability-boundary change, not a measured performance claim.
+- Full-runtime raw string helpers, argument-vector buffers, string-padding
+  scratch buffers, and map-formatting temporaries now use matching PAL
+  allocation/release calls. Minimal-runtime selection marks the affected
+  string module PAL-dependent; the WASI compile gate covers it. Focused C
+  allocator tests and Mire padding tests protect the pairing and output. No
+  installer dependency changed.
 
 ## 4.3.12 - 2026-10-09
 

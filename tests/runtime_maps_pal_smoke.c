@@ -2,6 +2,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 static int allocation_calls;
 static int reallocation_calls;
@@ -36,17 +37,30 @@ void pal_free(void *pointer) {
 int rt_managed_is_managed(const char *value) { (void)value; return 0; }
 int rt_managed_contains(const char *value) { (void)value; return 0; }
 MireManagedString *rt_string_header(const char *value) { (void)value; return NULL; }
-char *rt_managed_from_slice(const char *value, size_t length) {
-    (void)value;
-    (void)length;
-    return NULL;
+char *rt_managed_alloc(size_t length) {
+    if (length >= (size_t)INT64_MAX) return NULL;
+    return (char *)pal_alloc((int64_t)(length + 1));
 }
-void rt_managed_free(char *value) { (void)value; }
-char *rt_strdup_raw(const char *value) { (void)value; return NULL; }
+char *rt_managed_from_slice(const char *value, size_t length) {
+    char *copy = rt_managed_alloc(length);
+    if (!copy) return NULL;
+    memcpy(copy, value, length);
+    copy[length] = '\0';
+    return copy;
+}
+void rt_managed_free(char *value) { pal_free(value); }
+char *rt_strdup_raw(const char *value) {
+    size_t length = strlen(value) + 1;
+    char *copy = (char *)pal_alloc((int64_t)length);
+    if (copy) memcpy(copy, value, length);
+    return copy;
+}
 char *rt_alloc_printf_raw_i64(const char *format, long long value) {
-    (void)format;
-    (void)value;
-    return NULL;
+    int required = snprintf(NULL, 0, format, value);
+    if (required < 0) return NULL;
+    char *formatted = (char *)pal_alloc((int64_t)required + 1);
+    if (formatted) snprintf(formatted, (size_t)required + 1, format, value);
+    return formatted;
 }
 
 int main(void) {
@@ -70,6 +84,47 @@ int main(void) {
     }
 
     rt_dict_free(map);
+
+    void *format_map = rt_dict_set_i64(NULL, MIRE_KIND_SCALAR,
+                                       MIRE_KIND_SCALAR, 7, NULL, 21);
+    int allocations_before_formatting = allocation_calls;
+    int releases_before_formatting = release_calls;
+    char *representation = rt_dict_to_string(format_map);
+    if (!representation || strcmp(representation, "{7: 21}") != 0) {
+        fprintf(stderr, "map representation was incorrect: %s\n",
+                representation ? representation : "<null>");
+        return 1;
+    }
+    if (allocation_calls - allocations_before_formatting != 5 ||
+        release_calls - releases_before_formatting != 4) {
+        fprintf(stderr, "map formatting PAL buffers were not released: alloc=%d free=%d\n",
+                allocation_calls - allocations_before_formatting,
+                release_calls - releases_before_formatting);
+        return 1;
+    }
+    rt_managed_free(representation);
+    rt_dict_free(format_map);
+
+    void *string_map = rt_dict_set_ptr(NULL, MIRE_KIND_STR, MIRE_KIND_STR,
+                                       0, "name", "mire");
+    allocations_before_formatting = allocation_calls;
+    releases_before_formatting = release_calls;
+    representation = rt_dict_to_string(string_map);
+    if (!representation || strcmp(representation, "{\"name\": \"mire\"}") != 0) {
+        fprintf(stderr, "string map representation was incorrect: %s\n",
+                representation ? representation : "<null>");
+        return 1;
+    }
+    if (allocation_calls - allocations_before_formatting != 5 ||
+        release_calls - releases_before_formatting != 4) {
+        fprintf(stderr, "string map formatting PAL buffers were not released: alloc=%d free=%d\n",
+                allocation_calls - allocations_before_formatting,
+                release_calls - releases_before_formatting);
+        return 1;
+    }
+    rt_managed_free(representation);
+    rt_dict_free(string_map);
+
     if (outstanding_allocations != 0) {
         fprintf(stderr, "map storage release mismatch: remaining=%d alloc=%d realloc=%d free=%d\n",
                 outstanding_allocations, allocation_calls, reallocation_calls, release_calls);
