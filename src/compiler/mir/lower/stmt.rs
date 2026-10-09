@@ -81,6 +81,24 @@ fn borrow_source_name(expr: &Expression) -> Option<&str> {
     }
 }
 
+/// Collection push mutates its input and returns the same owned storage, or a
+/// reallocated replacement. In `set values = vec::push(values, item)`, the
+/// assignment must transfer that storage into the same slot without dropping
+/// the old pointer first. Dropping it after the call would free the returned
+/// pointer when the allocator did not grow, and would double-free/reuse an
+/// invalid pointer when it did grow.
+fn collection_call_reuses_assignment_target(expr: &Expression, target: &str) -> bool {
+    let Expression::Call { name, args, .. } = expr else {
+        return false;
+    };
+    let is_collection_push =
+        name == "lists.push" || name == "vec.push" || name.starts_with("vec.push.");
+    if !is_collection_push {
+        return false;
+    }
+    matches!(args.first(), Some(Expression::Identifier(identifier)) if identifier.name == target)
+}
+
 impl MirLower {
     /// Emit `rt_managed_retain(value)` (a no-op for non-managed pointers).
     pub(crate) fn emit_retain(&mut self, value: MirValue, loc: (usize, usize)) {
@@ -224,7 +242,9 @@ impl MirLower {
                             }
                             // Release the value the slot currently holds (only
                             // for owned pointer types).
-                            if is_owned_ptr_type(&target_ty) {
+                            let result_reuses_target =
+                                collection_call_reuses_assignment_target(value, name);
+                            if is_owned_ptr_type(&target_ty) && !result_reuses_target {
                                 let loaded = self.new_temp();
                                 let last = self.current_block;
                                 self.func.blocks[last].push(
@@ -240,10 +260,7 @@ impl MirLower {
                                 let last = self.current_block;
                                 self.func.blocks[last].push(
                                     None,
-                                    MirOp::Drop(
-                                        MirValue::temp(loaded),
-                                        ownership_of(&target_ty),
-                                    ),
+                                    MirOp::Drop(MirValue::temp(loaded), ownership_of(&target_ty)),
                                     loc,
                                 );
                             }
