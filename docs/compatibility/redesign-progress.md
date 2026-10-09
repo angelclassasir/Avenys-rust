@@ -216,7 +216,7 @@ Relevant commits on the active branches:
   (241 library + 14 CLI + doc-tests), WASI compile coverage, and 12/12 benchmark
   equivalence passed. The only direct allocator-name match left in
   `helpers.c` is explanatory comment text. No installer dependency changed.
-- Dictionary-container B2 slice (current worktree): dictionary objects, bucket
+- Dictionary-container B2 slice (`e5c295b`): dictionary objects, bucket
   arrays, slot storage, and entries now use PAL allocation/reallocation/free;
   stored key/value ownership and raw-string cleanup remain unchanged. The
   focused 128-entry PAL smoke test exposed a pre-existing rehash defect: the
