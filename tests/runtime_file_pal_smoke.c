@@ -49,6 +49,11 @@ int main(void) {
     char digest_error_message[128];
     snprintf(digest_error_message, sizeof(digest_error_message), "%s",
              pal_last_error_message());
+    char *base64 = rt_crypto_base64_file(input_path);
+    int base64_ok = base64 && strcmp(base64, "YWJj") == 0;
+    rt_managed_free(base64);
+    int malformed_base64_rejected =
+        !rt_crypto_ed25519_verify_b64("!", input_path, "!");
 
     int write_ok = rt_hex_to_file(output_path, "4100ff");
     unsigned char binary[3] = {0};
@@ -79,11 +84,13 @@ int main(void) {
     unlink(log_path);
     rmdir(directory);
 
-    if (!(read_ok && relative_read_ok && digest_ok && write_ok && binary_ok &&
-          log_ok && traversal_denied)) {
+    if (!(read_ok && relative_read_ok && digest_ok && base64_ok &&
+          malformed_base64_rejected && write_ok && binary_ok && log_ok &&
+          traversal_denied)) {
         fprintf(stderr,
-                "Runtime file PAL smoke failed: read=%d relative_read=%d digest=%d write=%d binary=%d log=%d traversal=%d\n",
-                read_ok, relative_read_ok, digest_ok, write_ok, binary_ok, log_ok,
+                "Runtime file PAL smoke failed: read=%d relative_read=%d digest=%d base64=%d malformed=%d write=%d binary=%d log=%d traversal=%d\n",
+                read_ok, relative_read_ok, digest_ok, base64_ok,
+                malformed_base64_rejected, write_ok, binary_ok, log_ok,
                 traversal_denied);
         return 3;
     }

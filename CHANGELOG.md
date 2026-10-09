@@ -85,6 +85,11 @@ All notable changes to Avenys will be documented in this file.
   rule that non-owned/static values are not freed remain unchanged. A focused C
   smoke checks allocation counts, oversized requests, and literal preservation.
   No installer dependency changed.
+- PAL bridge base64/PEM/Ed25519 temporary buffers, PAL-owned process output, and
+  the per-thread shell result buffer now use PAL allocation/reallocation/release
+  functions with checked size conversions. File smoke coverage verifies
+  base64 output and malformed-input rejection; process capture coverage remains
+  green. No installer dependency changed.
 
 ## 4.3.12 - 2026-10-09
 

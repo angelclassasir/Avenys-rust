@@ -207,6 +207,15 @@ Relevant commits on the active branches:
   tests (241 library + 14 CLI + doc-tests), runtime I/O smoke, WASI compile, and
   12/12 benchmark equivalence pass. WASI compile now covers both full and
   minimal allocators. No installer dependency changed.
+- PAL bridge scratch-buffer B2 slice (pending commit): base64 encode/decode,
+  PEM parsing, Ed25519 temporary buffers, PAL-owned shell/capture output, and
+  the per-thread shell result buffer now allocate/reallocate/release through
+  PAL APIs. Size arithmetic is checked before base64/PEM allocation. The
+  existing file smoke now verifies `abc` encodes as `YWJj` and malformed
+  base64 is rejected; process capture smoke remains green. Full Rust tests
+  (241 library + 14 CLI + doc-tests), WASI compile coverage, and 12/12 benchmark
+  equivalence passed. The only direct allocator-name match left in
+  `helpers.c` is explanatory comment text. No installer dependency changed.
 - Owl: `ac41531` (schema dependency documentation), `0ce4193` and `9747cd4`
   (cross-decode CI and LLVM toolchain path).
 

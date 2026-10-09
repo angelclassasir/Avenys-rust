@@ -262,8 +262,12 @@ static const char rt_b64_alphabet[] =
 
 static char *rt_base64_encode(const unsigned char *data, size_t length) {
     if (!data) return rt_managed_from_cstr("");
-    size_t out_len = 4 * ((length + 2) / 3);
-    char *out = (char *)malloc(out_len + 1);
+    if (length > SIZE_MAX - 2) return rt_managed_from_cstr("");
+    size_t groups = (length + 2) / 3;
+    if (groups > ((size_t)INT64_MAX - 1) / 4)
+        return rt_managed_from_cstr("");
+    size_t out_len = 4 * groups;
+    char *out = (char *)pal_alloc((int64_t)(out_len + 1));
     if (!out) return rt_managed_from_cstr("");
     size_t i = 0, j = 0;
     while (i + 3 <= length) {
@@ -293,7 +297,7 @@ static char *rt_base64_encode(const unsigned char *data, size_t length) {
     }
     out[j] = '\0';
     char *managed = rt_managed_from_cstr(out);
-    free(out);
+    pal_free(out);
     return managed;
 }
 
@@ -306,11 +310,14 @@ static int rt_b64_value(int c) {
     return -1;
 }
 
-// Decodes base64 text into a malloc'd byte buffer (caller frees). Whitespace is
+// Decodes base64 text into a PAL-owned byte buffer (caller releases). Whitespace is
 // ignored; padding is honoured. Returns NULL on malformed input.
 static unsigned char *rt_base64_decode(const char *s, size_t s_len, size_t *out_len) {
     if (!s) return NULL;
-    unsigned char *out = (unsigned char *)malloc((s_len / 4 + 2) * 3);
+    size_t groups = s_len / 4;
+    if (groups > ((size_t)INT64_MAX / 3) - 2) return NULL;
+    size_t allocation_size = (groups + 2) * 3;
+    unsigned char *out = (unsigned char *)pal_alloc((int64_t)allocation_size);
     if (!out) return NULL;
     int accum = 0, bits = 0;
     size_t n = 0;
@@ -318,7 +325,7 @@ static unsigned char *rt_base64_decode(const char *s, size_t s_len, size_t *out_
         int c = (unsigned char)s[i];
         if (c == '=' || c == '\n' || c == '\r' || c == ' ' || c == '\t') continue;
         int v = rt_b64_value(c);
-        if (v < 0) { free(out); return NULL; }
+        if (v < 0) { pal_free(out); return NULL; }
         accum = (accum << 6) | v;
         bits += 6;
         if (bits >= 8) {
@@ -351,8 +358,8 @@ bool rt_crypto_ed25519_verify_b64(const char *pubkey_b64, const char *data_file,
         sg_len == PAL_CRYPTO_ED25519_BYTES) {
         ok = pal_crypto_ed25519_verify(data, data_len, sg, sg_len, pk) == PAL_ERR_OK;
     }
-    free(pk);
-    free(sg);
+    pal_free(pk);
+    pal_free(sg);
     pal_free(data);
     return ok;
 }
@@ -369,7 +376,7 @@ bool rt_crypto_ed25519_verify_file(const char *pubkey_b64, const char *data_file
         sg_len == PAL_CRYPTO_ED25519_BYTES) {
         ok = pal_crypto_ed25519_verify(data, data_len, sg, sg_len, pk) == PAL_ERR_OK;
     }
-    free(pk);
+    pal_free(pk);
     pal_free(sg);
     pal_free(data);
     return ok;
@@ -382,7 +389,11 @@ char *rt_crypto_ed25519_pubkey_raw_b64(const char *pem_path) {
     size_t pem_len = 0;
     unsigned char *pem = rt_read_file_raw(pem_path, &pem_len);
     if (!pem) return rt_managed_from_cstr("");
-    char *body = (char *)malloc(pem_len + 1);
+    if (pem_len >= (size_t)INT64_MAX) {
+        pal_free(pem);
+        return rt_managed_from_cstr("");
+    }
+    char *body = (char *)pal_alloc((int64_t)(pem_len + 1));
     if (!body) { pal_free(pem); return rt_managed_from_cstr(""); }
     size_t bn = 0;
     size_t i = 0;
@@ -402,14 +413,14 @@ char *rt_crypto_ed25519_pubkey_raw_b64(const char *pem_path) {
     pal_free(pem);
     size_t der_len = 0;
     unsigned char *der = rt_base64_decode(body, bn, &der_len);
-    free(body);
+    pal_free(body);
     if (!der || der_len < PAL_CRYPTO_ED25519_PUBLICKEYBYTES) {
-        free(der);
+        pal_free(der);
         return rt_managed_from_cstr("");
     }
     unsigned char *raw = der + (der_len - PAL_CRYPTO_ED25519_PUBLICKEYBYTES);
     char *out = rt_base64_encode(raw, PAL_CRYPTO_ED25519_PUBLICKEYBYTES);
-    free(der);
+    pal_free(der);
     return out;
 }
 
@@ -479,7 +490,7 @@ char *rt_proc_capture_output(const char *cmd) {
     const char *out = pal_proc_capture_output(cmd);
     if (!out) return rt_managed_from_cstr("");
     char *managed = rt_managed_from_cstr(out);
-    free((void *)out);
+    pal_free((void *)out);
     return managed;
 }
 #endif
@@ -945,9 +956,14 @@ const char *rt_proc_shell(const char *command) {
     // then copies every later, longer result past its end.
     size_t need = strlen(owned) + 1;
     if (need > g_shell_buf_cap) {
-        char *grown = realloc(g_shell_buf, need);
+        if (need > (size_t)INT64_MAX) {
+            pal_free(owned);
+            g_shell_out[0] = '\0';
+            return g_shell_out;
+        }
+        char *grown = (char *)pal_realloc(g_shell_buf, (int64_t)need);
         if (!grown) {
-            free(owned);
+            pal_free(owned);
             g_shell_out[0] = '\0';
             return g_shell_out;
         }
@@ -955,7 +971,7 @@ const char *rt_proc_shell(const char *command) {
         g_shell_buf_cap = need;
     }
     memcpy(g_shell_buf, owned, need);
-    free(owned);
+    pal_free(owned);
     return g_shell_buf;
 }
 
