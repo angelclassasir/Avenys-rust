@@ -50,6 +50,12 @@ All notable changes to Avenys will be documented in this file.
   the runtime preserves its existing non-interactive `"y"` fallback. A PTY
   smoke test exercises both interactive input and the detached-process
   fallback in CI without adding a package dependency.
+- Runtime argv-based process capture now uses PAL process creation and channel
+  reads instead of direct process, pipe, and wait calls in runtime code. Linux
+  supports sandbox-authorized working directories, stdout capture, optional
+  stderr merging, and conventional signal exit statuses. A focused smoke test
+  covers these behaviors; this is a Linux process-helper migration slice, not
+  full cross-platform process support. No installer dependency changed.
 
 ## 4.3.12 - 2026-10-09
 

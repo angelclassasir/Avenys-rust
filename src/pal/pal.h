@@ -165,6 +165,9 @@ typedef uint32_t pal_socket_flags;
 
 typedef uint32_t pal_spawn_flags;
 #define PAL_SPAWN_WAIT 0x0001
+#define PAL_SPAWN_CAPTURE_STDOUT 0x0002
+#define PAL_SPAWN_CAPTURE_STDERR 0x0004
+#define PAL_SPAWN_MERGE_STDERR 0x0008
 
 // ── Seek Origin (not POSIX whence) ──────────────────────────
 
@@ -410,6 +413,14 @@ int64_t pal_proc_wait_pid(int64_t pid);
 pal_process_t pal_proc_create(const char **argv, pal_spawn_flags flags,
                             pal_channel_t stdin_ch, pal_channel_t stdout_ch,
                             pal_channel_t stderr_ch);
+/// Create a process with an optional sandbox-authorized working directory.
+/// Capture flags request output pipes without requiring dummy channel handles.
+pal_process_t pal_proc_create_in_directory(const char **argv,
+                                           const char *working_directory,
+                                           pal_spawn_flags flags,
+                                           pal_channel_t stdin_ch,
+                                           pal_channel_t stdout_ch,
+                                           pal_channel_t stderr_ch);
 int64_t pal_proc_wait(pal_process_t proc);
 bool pal_proc_kill(pal_process_t proc);
 pal_channel_t pal_proc_stdin(pal_process_t proc);

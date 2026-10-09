@@ -75,7 +75,8 @@ typedef struct pal_ops {
     void (*dir_close)(int64_t internal);
 
     // Process
-    int64_t (*proc_create)(const char **argv, pal_spawn_flags flags,
+    int64_t (*proc_create)(const char **argv, const char *working_directory,
+                            pal_spawn_flags flags,
                             int64_t stdin_internal, int64_t stdout_internal,
                             int64_t stderr_internal);
     int64_t (*proc_wait)(int64_t internal);

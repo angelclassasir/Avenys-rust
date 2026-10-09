@@ -132,14 +132,28 @@ Relevant commits on the active branches:
   sandbox traversal denial. It exposed a Linux `openat2` call passing a
   creation mode without `O_CREAT`; the backend now passes mode zero for read
   opens. The smoke test is in CI and reuses existing dependencies, so no
-  installer packages changed. `rt_read_tty` and direct process calls remain
-  open host-boundary work.
+  installer packages changed. At that checkpoint, `rt_read_tty` and direct
+  process calls remained open host-boundary work; see the later process slice.
 - Runtime terminal-input B2 slice (`c93ad25`): `rt_read_tty` now
   calls `pal_tty_read_line`; Linux reads the controlling terminal, while WASI
   marks the capability unsupported. The historical non-interactive `"y"`
   fallback is preserved. A `forkpty` smoke test checks real line input and a
   `setsid` process checks fallback behavior; CI uses existing system libraries.
   No installer dependency was added.
+- Runtime process B2 slice (pending commit): argv-based runtime capture now
+  creates processes, captures stdout, reads output, and obtains exit status
+  through PAL process/channel APIs instead of calling `fork`, `execvp`, `pipe`,
+  `read`, and `waitpid` from runtime code. PAL process creation accepts an
+  optional sandbox-authorized working directory and explicit stdout/stderr
+  capture/merge flags; Linux implements these options and conventional
+  `128 + signal` status reporting. Its focused smoke test covers output,
+  working-directory success and failure, merged stderr, exit code 7, and
+  SIGTERM. Validation passed: process, runtime I/O, files, and TTY smoke tests;
+  WASI source compilation; `cargo test --locked --release -j 2` (241 library,
+  14 CLI, and doc-tests); and all 12 benchmark output comparisons. C smoke
+  scripts still report the previously observed comment and sandbox-path
+  truncation warnings. This is one Linux process-helper slice, not completion
+  of B2 or cross-platform process support. No installer dependency changed.
 - Owl: `ac41531` (schema dependency documentation), `0ce4193` and `9747cd4`
   (cross-decode CI and LLVM toolchain path).
 

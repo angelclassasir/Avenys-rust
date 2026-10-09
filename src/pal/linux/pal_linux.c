@@ -456,7 +456,8 @@ static void linux_dir_close(int64_t internal) {
 
 // ── Process ──────────────────────────────────────────────────
 
-static int64_t linux_proc_create(const char **argv, pal_spawn_flags flags,
+static int64_t linux_proc_create(const char **argv, const char *working_directory,
+                                pal_spawn_flags flags,
                                 int64_t stdin_internal, int64_t stdout_internal,
                                 int64_t stderr_internal) {
     if (!argv || !argv[0]) return -1;
@@ -469,8 +470,10 @@ static int64_t linux_proc_create(const char **argv, pal_spawn_flags flags,
     // discarded the child's output (and could deadlock once >64KB wrote).
     int stdin_pipe[2] = {-1, -1}, stdout_pipe[2] = {-1, -1}, stderr_pipe[2] = {-1, -1};
     int has_stdin = stdin_internal != 0;
-    int has_stdout = stdout_internal != 0;
-    int has_stderr = stderr_internal != 0;
+    int has_stdout = stdout_internal != 0 || (flags & PAL_SPAWN_CAPTURE_STDOUT) != 0;
+    int merge_stderr = (flags & PAL_SPAWN_MERGE_STDERR) != 0;
+    int has_stderr = !merge_stderr &&
+        (stderr_internal != 0 || (flags & PAL_SPAWN_CAPTURE_STDERR) != 0);
     if (has_stdin && pipe(stdin_pipe) != 0) return -1;
     if (has_stdout && pipe(stdout_pipe) != 0) {
         if (has_stdin) { close(stdin_pipe[0]); close(stdin_pipe[1]); }
@@ -491,6 +494,8 @@ static int64_t linux_proc_create(const char **argv, pal_spawn_flags flags,
     }
 
     if (pid == 0) {
+        if (working_directory && working_directory[0] != '\0' &&
+            chdir(working_directory) != 0) _exit(126);
         // Child: wire up pipes for requested streams, keep the inherited
         // parent fds for any stream the caller left as "no pipe".
         if (has_stdin) {
@@ -501,6 +506,7 @@ static int64_t linux_proc_create(const char **argv, pal_spawn_flags flags,
         if (has_stdout) {
             close(stdout_pipe[0]);  // Close read end
             dup2(stdout_pipe[1], STDOUT_FILENO);
+            if (merge_stderr) dup2(stdout_pipe[1], STDERR_FILENO);
             close(stdout_pipe[1]);
         }
         if (has_stderr) {
@@ -541,9 +547,14 @@ static int64_t linux_proc_wait(int64_t internal) {
     linux_process_t *proc = (linux_process_t *)internal;
     if (!proc || proc->pid <= 0) return -1;
     int status;
-    if (waitpid(proc->pid, &status, 0) < 0) return -1;
+    pid_t waited;
+    do {
+        waited = waitpid(proc->pid, &status, 0);
+    } while (waited < 0 && errno == EINTR);
+    if (waited < 0) return -1;
     proc->waited = true;
     if (WIFEXITED(status)) return WEXITSTATUS(status);
+    if (WIFSIGNALED(status)) return 128 + WTERMSIG(status);
     return -1;
 }
 

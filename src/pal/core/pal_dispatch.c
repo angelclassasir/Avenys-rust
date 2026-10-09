@@ -290,7 +290,20 @@ static int64_t pal_dispatch_optional_channel(pal_channel_t ch) {
 pal_process_t pal_proc_create(const char **argv, pal_spawn_flags flags,
                             pal_channel_t stdin_ch, pal_channel_t stdout_ch,
                             pal_channel_t stderr_ch) {
+    return pal_proc_create_in_directory(argv, NULL, flags, stdin_ch, stdout_ch,
+                                         stderr_ch);
+}
+
+pal_process_t pal_proc_create_in_directory(const char **argv,
+                                           const char *working_directory,
+                                           pal_spawn_flags flags,
+                                           pal_channel_t stdin_ch,
+                                           pal_channel_t stdout_ch,
+                                           pal_channel_t stderr_ch) {
+    pal_ensure_init();
     if (!ops || !ops->proc_create) { pal_set_error(PAL_ERR_UNSUPPORTED, "no backend"); return PAL_PROCESS_NULL; }
+    if (working_directory && working_directory[0] != '\0' &&
+        !pal_sbx_permit_or_error(working_directory)) return PAL_PROCESS_NULL;
     int64_t stdin_internal = pal_dispatch_optional_channel(stdin_ch);
     if (!stdin_internal && !(stdin_ch.index == 0 && stdin_ch.generation == 0)) {
         pal_set_error(PAL_ERR_INVALID_HANDLE, "bad stdin channel"); return PAL_PROCESS_NULL;
@@ -303,7 +316,17 @@ pal_process_t pal_proc_create(const char **argv, pal_spawn_flags flags,
     if (!stderr_internal && !(stderr_ch.index == 0 && stderr_ch.generation == 0)) {
         pal_set_error(PAL_ERR_INVALID_HANDLE, "bad stderr channel"); return PAL_PROCESS_NULL;
     }
-    int64_t internal = ops->proc_create(argv, flags, stdin_internal, stdout_internal, stderr_internal);
+    bool capture_stdout = (flags & PAL_SPAWN_CAPTURE_STDOUT) != 0 || stdout_internal != 0;
+    bool capture_stderr = (flags & PAL_SPAWN_CAPTURE_STDERR) != 0 || stderr_internal != 0;
+    bool merge_stderr = (flags & PAL_SPAWN_MERGE_STDERR) != 0;
+    if (merge_stderr && (!capture_stdout || capture_stderr)) {
+        pal_set_error(PAL_ERR_INVALID,
+                      "merged stderr requires captured stdout and no separate stderr channel");
+        return PAL_PROCESS_NULL;
+    }
+    int64_t internal = ops->proc_create(argv, working_directory, flags,
+                                        stdin_internal, stdout_internal,
+                                        stderr_internal);
     if (internal <= 0) { pal_set_error(pal_core_errno_map(errno), "proc_create failed"); return PAL_PROCESS_NULL; }
     int slot = pal_core_reserve(PAL_RES_PROCESS);
     if (slot < 0) return PAL_PROCESS_NULL;

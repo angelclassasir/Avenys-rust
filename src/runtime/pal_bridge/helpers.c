@@ -6,8 +6,6 @@
 #include <string.h>
 #include <stdio.h>
 #include <limits.h>
-#include <unistd.h>
-#include <sys/wait.h>
 #include "runtime.h"
 #include "pal.h"
 #include "pal_crypto.h"
@@ -486,85 +484,107 @@ char *rt_proc_capture_output(const char *cmd) {
 }
 #endif
 
-// Safe argv-based process execution with output capture.
-// Builds a real argv[] (no shell) and runs fork + execvp directly.
-// Returns the captured stdout as a managed string (empty on failure).
-// Thread-local exit status of the most recent argv-based capture. Mirrors the
-// shell capture's implicit status without needing an extra out-parameter that
-// Mire cannot express. Single mire process = single sequential proc user.
+// Safe argv-based process execution with output capture (no shell). Process
+// creation, output reads, and exit status all cross the PAL boundary.
 static _Thread_local __attribute__((tls_model("global-dynamic"))) int64_t g_last_proc_exit = -1;
 
-char *rt_proc_capture_argv(const char *cmd, void *args_vec) {
+static char *rt_proc_capture_with_options(const char *cmd, void *args_vec,
+                                         const char *working_directory,
+                                         int merge_stderr) {
     g_last_proc_exit = -1;
     if (!cmd || !args_vec) return rt_managed_from_cstr("");
     int64_t argc = 0;
     char **argv = rt_build_argv(cmd, args_vec, &argc);
     if (!argv) return rt_managed_from_cstr("");
 
-    int pipefd[2];
-    if (pipe(pipefd) != 0) {
+    pal_spawn_flags flags = PAL_SPAWN_CAPTURE_STDOUT;
+    if (merge_stderr) flags |= PAL_SPAWN_MERGE_STDERR;
+    pal_process_t process = pal_proc_create_in_directory(
+        (const char **)argv, working_directory, flags,
+        PAL_CHANNEL_NULL, PAL_CHANNEL_NULL, PAL_CHANNEL_NULL);
+    if (process.index == PAL_PROCESS_NULL.index &&
+        process.generation == PAL_PROCESS_NULL.generation) {
+        pal_error_code_t error = pal_last_error();
+        g_last_proc_exit = working_directory && working_directory[0] != '\0' &&
+                           (error == PAL_ERR_PERMISSION || error == PAL_ERR_NOT_FOUND)
+            ? 126 : 127;
         rt_free_argv(argv, argc);
         return rt_managed_from_cstr("");
     }
 
-    pid_t pid = fork();
-    if (pid < 0) {
-        close(pipefd[0]);
-        close(pipefd[1]);
+    pal_channel_t output = pal_proc_stdout(process);
+    if (output.index == PAL_CHANNEL_NULL.index &&
+        output.generation == PAL_CHANNEL_NULL.generation) {
+        pal_proc_close(process);
         rt_free_argv(argv, argc);
+        g_last_proc_exit = 127;
         return rt_managed_from_cstr("");
     }
 
-    if (pid == 0) {
-        // Child: wire stdout to the pipe, exec without a shell.
-        close(pipefd[0]);
-        dup2(pipefd[1], STDOUT_FILENO);
-        close(pipefd[1]);
-        execvp(argv[0], (char *const *)argv);
-        _exit(127);
-    }
-
-    // Parent: read captured output.
-    close(pipefd[1]);
     size_t cap = 4096;
     size_t len = 0;
-    char *buf = malloc(cap);
+    char *buf = (char *)pal_alloc((int64_t)cap);
     if (!buf) {
-        close(pipefd[0]);
-        waitpid(pid, NULL, 0);
+        pal_channel_close(output);
+        pal_proc_close(process);
         rt_free_argv(argv, argc);
         return rt_managed_from_cstr("");
     }
-    ssize_t n;
-    while ((n = read(pipefd[0], buf + len, cap - len - 1)) > 0) {
-        len += (size_t)n;
-        if (len + 1 >= cap) {
-            cap *= 2;
-            char *nb = realloc(buf, cap);
-            if (!nb) {
-                free(buf);
-                close(pipefd[0]);
-                waitpid(pid, NULL, 0);
-                rt_free_argv(argv, argc);
-                return rt_managed_from_cstr("");
+
+    int capture_failed = 0;
+    for (;;) {
+        pal_bytes_t chunk = pal_channel_recv(output);
+        if (!chunk.data || chunk.len <= 0) {
+            pal_free(chunk.data);
+            break;
+        }
+        if ((uint64_t)chunk.len > SIZE_MAX - len - 1) {
+            pal_free(chunk.data);
+            capture_failed = 1;
+            break;
+        }
+        size_t required = len + (size_t)chunk.len + 1;
+        while (required > cap) {
+            if (cap > SIZE_MAX / 2 || cap >= (size_t)INT64_MAX / 2) {
+                capture_failed = 1;
+                break;
             }
-            buf = nb;
+            cap *= 2;
         }
+        if (capture_failed) {
+            pal_free(chunk.data);
+            break;
+        }
+        char *grown = (char *)pal_realloc(buf, (int64_t)cap);
+        if (!grown) {
+            pal_free(chunk.data);
+            capture_failed = 1;
+            break;
+        }
+        buf = grown;
+        memcpy(buf + len, chunk.data, (size_t)chunk.len);
+        len += (size_t)chunk.len;
+        pal_free(chunk.data);
     }
-    close(pipefd[0]);
+
+    pal_channel_close(output);
+    if (capture_failed) {
+        pal_proc_close(process);
+        pal_free(buf);
+        rt_free_argv(argv, argc);
+        return rt_managed_from_cstr("");
+    }
     buf[len] = '\0';
-    int status = 0;
-    if (waitpid(pid, &status, 0) > 0) {
-        if (WIFEXITED(status)) {
-            g_last_proc_exit = WEXITSTATUS(status);
-        } else if (WIFSIGNALED(status)) {
-            g_last_proc_exit = 128 + WTERMSIG(status);
-        }
-    }
+    g_last_proc_exit = pal_proc_wait(process);
+    pal_proc_close(process);
     char *managed = rt_managed_from_slice(buf, len);
-    free(buf);
+    pal_free(buf);
     rt_free_argv(argv, argc);
     return managed;
+}
+
+char *rt_proc_capture_argv(const char *cmd, void *args_vec) {
+    return rt_proc_capture_with_options(cmd, args_vec, NULL, 0);
 }
 
 // Thread-local exit status of the most recent argv-based capture. Mirrors the
@@ -575,78 +595,8 @@ int64_t rt_proc_last_exit(void) {
 }
 
 // Extended argv capture: optional working directory + optional stderr merge.
-// Everything else mirrors rt_proc_capture_argv (pipe + fork + execvp, no shell).
 char *rt_proc_capture_argv2(const char *cmd, void *args_vec, const char *cwd, int64_t merge_err) {
-    g_last_proc_exit = -1;
-    if (!cmd || !args_vec) return rt_managed_from_cstr("");
-    int64_t argc = 0;
-    char **argv = rt_build_argv(cmd, args_vec, &argc);
-    if (!argv) return rt_managed_from_cstr("");
-
-    int pipefd[2];
-    if (pipe(pipefd) != 0) {
-        rt_free_argv(argv, argc);
-        return rt_managed_from_cstr("");
-    }
-
-    pid_t pid = fork();
-    if (pid < 0) {
-        close(pipefd[0]);
-        close(pipefd[1]);
-        rt_free_argv(argv, argc);
-        return rt_managed_from_cstr("");
-    }
-
-    if (pid == 0) {
-        close(pipefd[0]);
-        if (cwd && *cwd && chdir(cwd) != 0) _exit(126);
-        dup2(pipefd[1], STDOUT_FILENO);
-        if (merge_err != 0) dup2(pipefd[1], STDERR_FILENO);
-        close(pipefd[1]);
-        execvp(argv[0], (char *const *)argv);
-        _exit(127);
-    }
-
-    close(pipefd[1]);
-    size_t cap = 4096;
-    size_t len = 0;
-    char *buf = malloc(cap);
-    if (!buf) {
-        close(pipefd[0]);
-        waitpid(pid, NULL, 0);
-        rt_free_argv(argv, argc);
-        return rt_managed_from_cstr("");
-    }
-    ssize_t n;
-    while ((n = read(pipefd[0], buf + len, cap - len - 1)) > 0) {
-        len += (size_t)n;
-        if (len + 1 >= cap) {
-            cap *= 2;
-            char *nb = realloc(buf, cap);
-            if (!nb) {
-                free(buf);
-                close(pipefd[0]);
-                waitpid(pid, NULL, 0);
-                rt_free_argv(argv, argc);
-                return rt_managed_from_cstr("");
-            }
-            buf = nb;
-        }
-    }
-    close(pipefd[0]);
-    buf[len] = '\0';
-    int status = 0;
-    if (waitpid(pid, &status, 0) > 0) {
-        if (WIFEXITED(status)) {
-            g_last_proc_exit = WEXITSTATUS(status);
-        } else if (WIFSIGNALED(status)) {
-            g_last_proc_exit = 128 + WTERMSIG(status);
-        }
-    }
-    char *managed = rt_managed_from_slice(buf, len);
-    free(buf);
-    rt_free_argv(argv, argc);
-    return managed;
+    return rt_proc_capture_with_options(cmd, args_vec, cwd, merge_err != 0);
 }
 
 // Read one line from the controlling terminal. No shell, no subprocess.
@@ -956,7 +906,9 @@ const char *rt_sbx_detail(void) {
 // directory here instead of relying on that fail-closed API value.
 void rt_sbx_init(void) {
     char working_directory[PATH_MAX];
-    if (getcwd(working_directory, sizeof(working_directory)) != NULL) {
+    const char *current_directory = pal_env_cwd();
+    if (current_directory && strlen(current_directory) < sizeof(working_directory)) {
+        memcpy(working_directory, current_directory, strlen(current_directory) + 1);
         pal_sbx_set_root(working_directory);
     } else {
         pal_sbx_set_root(NULL);
