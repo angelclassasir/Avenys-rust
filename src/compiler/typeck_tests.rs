@@ -662,6 +662,49 @@ fn integer_literal_range_validation_does_not_scan_unrelated_scope_bindings() {
 }
 
 #[test]
+fn binary_expression_ascription_survives_type_checking() {
+    let source =
+        "pub fn main: () {\n    set floating = 2.5 :f64\n    set narrowed = 1 + floating :i64\n}\n";
+    let mut program = parse(source).expect("source should parse");
+
+    let Statement::Function { body, .. } = &program.statements[0] else {
+        panic!("expected function");
+    };
+    let Statement::Let {
+        value:
+            Some(Expression::BinaryOp {
+                data_type: parsed_type,
+                ..
+            }),
+        ..
+    } = &body[1]
+    else {
+        panic!("expected parser to attach the explicit type to the binary expression");
+    };
+    assert_eq!(*parsed_type, DataType::I64);
+
+    check_program_types(&mut program, source).expect("ascribed operand should type check");
+
+    let Statement::Function { body, .. } = &program.statements[0] else {
+        panic!("expected function");
+    };
+    let Statement::Let {
+        data_type,
+        value:
+            Some(Expression::BinaryOp {
+                data_type: expression_type,
+                ..
+            }),
+        ..
+    } = &body[1]
+    else {
+        panic!("expected binary expression binding");
+    };
+    assert_eq!(*expression_type, DataType::I64);
+    assert_eq!(*data_type, DataType::I64);
+}
+
+#[test]
 fn map_assignment_rejects_vector_values() {
     let mut program = Program {
         file_attributes: vec![],

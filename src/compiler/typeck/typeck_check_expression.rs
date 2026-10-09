@@ -119,6 +119,11 @@ impl TypeChecker {
                 right,
                 data_type,
             } => {
+                // The parser stores an explicit expression ascription in this
+                // slot. Preserve it instead of replacing it with the type
+                // inferred solely from the operands (for example, `1 + f
+                // :i64` where `f` is f64).
+                let explicit_type = data_type.clone();
                 let left_type = if Self::is_logical_operator(operator) {
                     self.check_expression_allow_unknown_identifier(left)?
                 } else {
@@ -129,7 +134,23 @@ impl TypeChecker {
                 } else {
                     self.check_expression(right)?
                 };
-                let resolved = self.resolve_binary_type(operator, &left_type, &right_type)?;
+                let inferred = self.resolve_binary_type(operator, &left_type, &right_type)?;
+                let resolved = if explicit_type == DataType::Unknown {
+                    inferred
+                } else if self.is_assignable(&explicit_type, &inferred)
+                    || (crate::types::unify::is_numeric(&explicit_type)
+                        && crate::types::unify::is_numeric(&inferred))
+                {
+                    explicit_type
+                } else {
+                    return Err(crate::types::errors::type_mismatch(
+                        span.line,
+                        span.column,
+                        &explicit_type,
+                        &inferred,
+                        "type ascription",
+                    ));
+                };
                 *data_type = resolved.clone();
                 Ok(resolved)
             }
