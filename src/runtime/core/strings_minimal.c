@@ -1,4 +1,5 @@
 #include "runtime.h"
+#include "pal.h"
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -7,13 +8,34 @@
 #include <string.h>
 
 /*
- * Minimal string operations for freestanding/WASI targets.
+ * Legacy minimal-tier string operations. Host allocation goes through PAL.
  */
+
+static void *minimal_allocate(size_t size) {
+    if (size > (size_t)INT64_MAX) return NULL;
+    return pal_alloc((int64_t)size);
+}
+
+static void *minimal_reallocate(void *pointer, size_t size) {
+    if (size > (size_t)INT64_MAX) return NULL;
+    return pal_realloc(pointer, (int64_t)size);
+}
+
+static void minimal_release(void *pointer) {
+    pal_free(pointer);
+}
+
+static char *minimal_duplicate(const char *value) {
+    size_t length = strlen(value) + 1;
+    char *copy = (char *)minimal_allocate(length);
+    if (copy) memcpy(copy, value, length);
+    return copy;
+}
 
 char *rt_string_copy(const char *value) {
     if (!value) return NULL;
     size_t len = strlen(value);
-    char *copy = malloc(len + 1);
+    char *copy = (char *)minimal_allocate(len + 1);
     if (!copy) return NULL;
     memcpy(copy, value, len + 1);
     return copy;
@@ -24,7 +46,7 @@ char *rt_string_concat(const char *left, const char *right) {
     if (!right) right = "";
     size_t ll = strlen(left);
     size_t rl = strlen(right);
-    char *result = malloc(ll + rl + 1);
+    char *result = (char *)minimal_allocate(ll + rl + 1);
     if (!result) return NULL;
     memcpy(result, left, ll);
     memcpy(result + ll, right, rl + 1);
@@ -46,11 +68,11 @@ char *rt_str_from_byte(int64_t byte_value) {
 }
 
 char *rt_strings_repeat(const char *input, int64_t count) {
-    if (!input || count <= 0) return strdup("");
+    if (!input || count <= 0) return minimal_duplicate("");
     size_t len = strlen(input);
-    if (len == 0) return strdup("");
+    if (len == 0) return minimal_duplicate("");
     size_t total = len * (size_t)count;
-    char *result = malloc(total + 1);
+    char *result = (char *)minimal_allocate(total + 1);
     if (!result) return NULL;
     char *p = result;
     for (int64_t i = 0; i < count; i++) {
@@ -66,7 +88,7 @@ char *rt_string_append_owned(char *value, const char *suffix) {
     if (!suffix) return value;
     size_t vl = strlen(value);
     size_t sl = strlen(suffix);
-    char *new_val = realloc(value, vl + sl + 1);
+    char *new_val = (char *)minimal_reallocate(value, vl + sl + 1);
     if (!new_val) return value;
     memcpy(new_val + vl, suffix, sl + 1);
     return new_val;
@@ -140,7 +162,7 @@ char *rt_u128_to_string(unsigned __int128 value) {
 char *rt_string_to_upper(const char *value) {
     if (!value) return NULL;
     size_t len = strlen(value);
-    char *result = malloc(len + 1);
+    char *result = (char *)minimal_allocate(len + 1);
     if (!result) return NULL;
     for (size_t i = 0; i < len; i++) {
         char c = value[i];
@@ -153,7 +175,7 @@ char *rt_string_to_upper(const char *value) {
 char *rt_string_to_lower(const char *value) {
     if (!value) return NULL;
     size_t len = strlen(value);
-    char *result = malloc(len + 1);
+    char *result = (char *)minimal_allocate(len + 1);
     if (!result) return NULL;
     for (size_t i = 0; i < len; i++) {
         char c = value[i];
@@ -174,16 +196,16 @@ char *rt_strings_replace(const char *input, const char *from, const char *to) {
     size_t to_len = strlen(to);
     const char *p = input;
     size_t result_cap = strlen(input) + 1;
-    char *result = malloc(result_cap);
+    char *result = (char *)minimal_allocate(result_cap);
     if (!result) return NULL;
     size_t result_len = 0;
     while (*p) {
         if (strncmp(p, from, from_len) == 0) {
             if (result_len + to_len + 1 >= result_cap) {
                 result_cap *= 2;
-                char *new_result = realloc(result, result_cap);
+                char *new_result = (char *)minimal_reallocate(result, result_cap);
                 if (!new_result) {
-                    free(result);
+                    minimal_release(result);
                     return NULL;
                 }
                 result = new_result;
@@ -194,9 +216,9 @@ char *rt_strings_replace(const char *input, const char *from, const char *to) {
         } else {
             if (result_len + 1 >= result_cap) {
                 result_cap *= 2;
-                char *new_result = realloc(result, result_cap);
+                char *new_result = (char *)minimal_reallocate(result, result_cap);
                 if (!new_result) {
-                    free(result);
+                    minimal_release(result);
                     return NULL;
                 }
                 result = new_result;
@@ -217,7 +239,7 @@ char *rt_strings_replace_first(const char *input, const char *from, const char *
     size_t to_len = strlen(to);
     size_t suffix_len = strlen(found + from_len);
     size_t total = prefix_len + to_len + suffix_len;
-    char *result = malloc(total + 1);
+    char *result = (char *)minimal_allocate(total + 1);
     if (!result) return NULL;
     memcpy(result, input, prefix_len);
     memcpy(result + prefix_len, to, to_len);
@@ -241,13 +263,13 @@ int64_t rt_strings_ends_with(const char *str, const char *suffix) {
 }
 
 char *rt_strings_substr(const char *input, int64_t start, int64_t length) {
-    if (!input || start < 0 || length < 0) return strdup("");
+    if (!input || start < 0 || length < 0) return minimal_duplicate("");
     size_t len = strlen(input);
-    if ((size_t)start >= len) return strdup("");
+    if ((size_t)start >= len) return minimal_duplicate("");
     size_t end = (size_t)start + (size_t)length;
     if (end > len) end = len;
     size_t sub_len = end - (size_t)start;
-    char *result = malloc(sub_len + 1);
+    char *result = (char *)minimal_allocate(sub_len + 1);
     if (!result) return NULL;
     memcpy(result, input + start, sub_len);
     result[sub_len] = '\0';
@@ -263,7 +285,7 @@ char *rt_strings_pad_left(const char *input, int64_t width, const char *pad) {
     size_t pad_len = strlen(pad);
     if (pad_len == 0) return rt_string_copy(input);
     size_t total_pad = (size_t)pad_count * pad_len;
-    char *result = malloc(total_pad + len + 1);
+    char *result = (char *)minimal_allocate(total_pad + (size_t)len + 1);
     if (!result) return NULL;
     char *p = result;
     for (int64_t i = 0; i < pad_count; i++) {
@@ -283,7 +305,7 @@ char *rt_strings_pad_right(const char *input, int64_t width, const char *pad) {
     size_t pad_len = strlen(pad);
     if (pad_len == 0) return rt_string_copy(input);
     size_t total_pad = (size_t)pad_count * pad_len;
-    char *result = malloc(len + total_pad + 1);
+    char *result = (char *)minimal_allocate((size_t)len + total_pad + 1);
     if (!result) return NULL;
     memcpy(result, input, len);
     char *p = result + len;
@@ -296,7 +318,7 @@ char *rt_strings_pad_right(const char *input, int64_t width, const char *pad) {
 }
 
 char *rt_strings_trim(const char *input) {
-    if (!input) return strdup("");
+    if (!input) return minimal_duplicate("");
     size_t len = strlen(input);
     size_t start = 0;
     while (start < len && (input[start] == ' ' || input[start] == '\t' || input[start] == '\n' || input[start] == '\r')) start++;
@@ -306,11 +328,12 @@ char *rt_strings_trim(const char *input) {
 }
 
 char *rt_strings_split_list(const char *input, const char *delimiter) {
+    (void)delimiter;
     return rt_string_copy(input);
 }
 
 char *rt_strings_join(char **parts, int64_t count, const char *delimiter) {
-    if (!parts || count <= 0) return strdup("");
+    if (!parts || count <= 0) return minimal_duplicate("");
     if (!delimiter) delimiter = "";
     size_t total = 0;
     for (int64_t i = 0; i < count; i++) {
@@ -318,7 +341,7 @@ char *rt_strings_join(char **parts, int64_t count, const char *delimiter) {
     }
     size_t delim_len = strlen(delimiter);
     total += (size_t)(count - 1) * delim_len;
-    char *result = malloc(total + 1);
+    char *result = (char *)minimal_allocate(total + 1);
     if (!result) return NULL;
     char *p = result;
     for (int64_t i = 0; i < count; i++) {
@@ -348,9 +371,9 @@ int64_t rt_f64_to_i64(double value) {
 void rt_free_argv(char **argv, int64_t argc) {
     if (!argv) return;
     for (int64_t i = 0; i < argc; i++) {
-        free(argv[i]);
+        minimal_release(argv[i]);
     }
-    free(argv);
+    minimal_release(argv);
 }
 
 int64_t rt_strings_index_of(const char *s, const char *sub) {

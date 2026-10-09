@@ -106,6 +106,11 @@ All notable changes to Avenys will be documented in this file.
   from that PAL clock, and a focused smoke test protects the millisecond-unit
   subtraction. The runtime string module no longer includes POSIX headers for
   this path.
+- The legacy minimal-string source now uses PAL allocation/reallocation/release
+  for its raw string operations and argv cleanup. A focused C smoke verifies
+  output and balanced allocations, and the WASI compile gate includes the
+  source. This file is not currently selected by the runtime source graph, so
+  this is portability cleanup rather than a runtime behavior change.
 
 ## 4.3.12 - 2026-10-09
 

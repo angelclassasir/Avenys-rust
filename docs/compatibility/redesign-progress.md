@@ -247,6 +247,14 @@ Relevant commits on the active branches:
   gone from `strings.c`, and the runtime audit finds no direct allocator or
   clock calls in selected runtime sources; `strings_minimal.c` remains an
   unreferenced legacy file whose integration/disposition is still open.
+- Legacy minimal-string allocator B2 slice (current worktree): all raw buffer
+  allocation, resize, and release in `strings_minimal.c` now goes through PAL.
+  The file remains outside the selected runtime source graph, so no active
+  runtime path changed. A focused smoke covers copy, concat, repeat, replace,
+  padding, trim, join, argv cleanup, and balanced allocations; WASI compilation
+  includes the module. The release suite passes (241 library + 14 CLI +
+  doc-tests), and benchmark output equivalence passes 12/12. The file's future
+  integration/disposition remains an open B1 compatibility question.
 - Owl: `ac41531` (schema dependency documentation), `0ce4193` and `9747cd4`
   (cross-decode CI and LLVM toolchain path).
 

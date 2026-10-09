@@ -63,6 +63,9 @@ jobs:
       - name: Test CPU elapsed time through PAL
         run: ./scripts/test-runtime-cpu-time-pal.sh
 
+      - name: Test minimal string helpers through PAL
+        run: ./scripts/test-runtime-strings-minimal-pal.sh
+
       - name: Test Maybe and Result allocation through PAL
         run: ./scripts/test-runtime-mire-types-pal.sh
 
