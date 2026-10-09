@@ -77,10 +77,11 @@ does not claim that the full redesign is complete.
   flags. `dasu`, string/numeric writers, input prompts, and stream error
   queries in `runtime/std/*` no longer access host stdio directly. The Linux
   runtime smoke checks output ordering and error state; the WASI compile gate
-  includes both stream modules. Panic and safety diagnostics still print
-  directly to stdio and remain part of B2.
+  includes both stream modules. Panic and safety diagnostics also use the PAL;
+  `scripts/test-runtime-io.sh` checks the formatted error output and preserved
+  exit codes in both minimal and full runtime builds.
 - CI now installs pinned WASI SDK 27.0 and compiles the WASI backend plus the
-  changed input and timing modules. This development-only dependency is
+  changed standard-stream, safety, and timing modules. This development-only dependency is
   documented in the installer and README; the end-user installer does not
   install it. `scripts/test-wasi-runtime-compile.sh` is the local equivalent.
 
@@ -99,7 +100,9 @@ Relevant commits on the active branches:
 - Avenys: `13aaf62` routes standard input through the PAL and adds the pinned
   WASI compile check; `89b60f9` routes the runtime standard-stream APIs
   through PAL byte writes and records per-thread stream errors; `febffb3`
-  verifies a clean output error state after the end-to-end input/output smoke.
+  verifies a clean output error state after the end-to-end input/output smoke;
+  `25b0605` routes panic diagnostics through PAL and verifies the diagnostic
+  format and exit status in both minimal and full runtime builds.
 - Owl: `ac41531` (schema dependency documentation), `0ce4193` and `9747cd4`
   (cross-decode CI and LLVM toolchain path).
 

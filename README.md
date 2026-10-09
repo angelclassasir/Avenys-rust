@@ -18,7 +18,8 @@ strings, collections, math, filesystem, processes, and more.
   streams; readiness and terminal detection are explicitly unavailable there.
   CI compiles the affected modules with WASI SDK 27.0. The SDK is a contributor
   and CI tool only; it is not installed by the end-user installer. Panic and
-  safety diagnostics still have direct stdio paths and remain B2 work.
+  safety diagnostics also use PAL writes; filesystem helpers, memory mappings,
+  and process creation still have direct host calls under review.
 
 ## Recent Changes (v4.3.12)
 - **Collection drops use semantic ownership.** Vectors and maps now use their

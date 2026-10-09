@@ -30,6 +30,10 @@ All notable changes to Avenys will be documented in this file.
 - The runtime `std/output` and `std/error` APIs now use PAL byte writes and
   PAL-managed error flags. Runtime prompts and numeric/string output no longer
   call host stdio output functions directly.
+- Panic and safety diagnostics now share PAL-backed formatting and stderr
+  writes. Minimal-runtime source selection includes the diagnostic PAL module
+  transitively with safety and managed-memory support. CI preserves and checks
+  the historical panic exit statuses in minimal and full runtime builds.
 
 ## 4.3.12 - 2026-10-09
 
