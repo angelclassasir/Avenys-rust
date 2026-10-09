@@ -5,6 +5,19 @@ All notable changes to Avenys will be documented in this file.
 ## 4.3.13 - 2026-10-09
 
 ### Changed
+- **Runtime host boundary closed:** runtime C sources now reach the host only
+  through `pal_*` capabilities. `grep` for host headers (`unistd`, `sys/*`,
+  `poll`, `errno`, `fcntl`, `signal`, `time`, `process`) and for direct host calls
+  (`fork`, `execvp`, `waitpid`, `pipe`, `dup2`, `mmap`, `munmap`, `poll`,
+  `isatty`, `read`, `write`, `open`, `close`, `kill`, `_exit`) both return zero
+  matches in `src/runtime`. The last such dependency was `input.c`, which read
+  `errno` to retry `EINTR`; the retry now lives in `linux_stdin_read()`, inside
+  the capability that issues `read(2)`. The runtime consumes 53 distinct
+  `pal_*` capabilities whose implementations live in `runtime/pal_bridge/`.
+  Remaining libc use in runtime C is `snprintf` (formatting only, no I/O) and
+  the `malloc`/`realloc`/`free` family routed through `pal_alloc`,
+  `pal_realloc`, and `pal_free`. This is a boundary invariant, not a claim of
+  cross-platform parity: Windows remains unimplemented in the PAL.
 - **Runtime source layout:** C runtime modules are organized by responsibility
   under `core/`, `memory/`, `collections/`, `std/input/`, `std/output/`,
   `std/error/`, and `pal_bridge/`.

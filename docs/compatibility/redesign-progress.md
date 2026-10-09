@@ -266,6 +266,43 @@ Relevant commits on the active branches:
   integration/disposition remains an open B1 compatibility question.
 - Owl: `ac41531` (schema dependency documentation), `0ce4193` and `9747cd4`
   (cross-decode CI and LLVM toolchain path).
+- Stdin capability EINTR B2 slice: `linux_stdin_read()` now retries `read(2)`
+  on `EINTR` inside the PAL, so the runtime no longer includes `<errno.h>` or
+  interprets POSIX error codes to obtain correct input behavior. Runtime output
+  is unchanged, including the EOF path, because the capability returns the same
+  count and the same `-1` on a genuine failure. This is the last host-header
+  dependency the runtime carried.
+
+## B2 — Host boundary: closed
+
+The invariant is that runtime C reaches the host only through `pal_*`, with
+libc reduced to formatting and allocator shims. The audit command and its result
+on this branch:
+
+```sh
+# host headers must not appear in runtime C sources
+grep -rn "#include <\(unistd\|sys/\|poll\|errno\|fcntl\|signal\|time\|process\)" \
+    --include='*.c' src/runtime            # 0 matches
+
+# direct host calls must not appear (pal_*/rt_* excluded)
+grep -rnE "(^|[^_[:alnum:]])(fork|execvp|waitpid|pipe|dup2|mmap|munmap|poll|isatty|read|write|open|close|kill|_exit)[[:space:]]*\(" \
+    --include='*.c' src/runtime | grep -v "pal_\|rt_\|//"   # 0 matches
+```
+
+What remains from libc in runtime C is `snprintf` (pure formatting, no I/O) and
+the `malloc`/`realloc`/`free` family routed through `pal_alloc`/`pal_realloc`/
+`pal_free`. Fifty-three distinct `pal_*` capabilities are consumed by runtime
+code, and the implementations live in `src/runtime/pal_bridge/`. `B1`'s empty
+`std/io/` directory was removed during this audit.
+
+This closes B2 as a boundary invariant. It does **not** claim cross-platform
+runtime parity: Windows is still unimplemented in the PAL (C1-C6 open), so
+"no direct host calls" means "the runtime expresses every host need through the
+PAL interface", not "the runtime runs on every backend".
+
+B3-B6 remain open: remove the `full` tier only with explicit compatibility
+handling, prove the three narrow Mire bootstrap modules, then measure the slab
+allocator against the honest C2 baseline.
 
 ## Compatibility baseline and known limits
 
@@ -288,15 +325,10 @@ restriction, not evidence that the socket implementation is unsupported.
 - The planned FIFO bootstrap is not currently implementable with the exposed
   PAL: there is no FIFO-creation operation. Before using FIFOs, add a scoped,
   tested FIFO capability; otherwise finish C0 and use Unix sockets.
-- Runtime B1's move-only source reorganization is implemented and verified.
-  B2 has started with monotonic elapsed-time routing; its remaining host
-  operations must also move through PAL before B2 is complete. Map storage is
-  routed, but map formatting temporaries and other allocator paths remain.
-  B3-B6 remain
-  open: remove the `full` tier
-  only with explicit compatibility handling, prove the three narrow Mire
-  bootstrap modules, then measure the slab allocator against the honest C2
-  baseline.
+- Runtime B1 (move-only source reorganization) and B2 (host boundary) are
+  closed and verified. B3-B6 remain open: remove the `full` tier only with
+  explicit compatibility handling, prove the three narrow Mire bootstrap
+  modules, then measure the slab allocator against the honest C2 baseline.
 - PAL C1-C6, including actual WASI/Wasmtime coverage, Windows/Wine coverage,
   removal of weak stubs, capability reporting, and the incomplete WASM package,
   remain open.
