@@ -154,6 +154,20 @@ Relevant commits on the active branches:
   scripts still report the previously observed comment and sandbox-path
   truncation warnings. This is one Linux process-helper slice, not completion
   of B2 or cross-platform process support. No installer dependency changed.
+- Runtime vector-allocation B2 slice (pending commit): list creation, growth,
+  concatenation, slicing, and destruction now use `pal_alloc`, `pal_realloc`,
+  and `pal_free`. Size calculations reject values that cannot be represented
+  by the PAL's signed size parameter. Minimal runtime selection now includes
+  the PAL backend when `vecs.c` is selected, and the WASI compile smoke covers
+  this module. Verification passed: Rust release tests (241 library + 14 CLI
+  + doc-tests), runtime I/O/files/TTY/process smokes, WASI compilation, and
+  12/12 benchmark output equivalence. A same-session C2 comparison measured
+  committed allocator baseline 1,361 ms vs PAL wrapper 1,381 ms, Rust 26 ms in
+  both runs. The 20 ms delta is below the harness's 25 ms noise threshold, so
+  this indicates neither a measurable gain nor a confirmed regression. The
+  expanded WASI check surfaces 11 existing unused-variable/parameter warnings
+  from `vecs.c`; compilation succeeds. This does not finish B2 or demonstrate
+  a performance improvement, and no package dependency changed.
 - Owl: `ac41531` (schema dependency documentation), `0ce4193` and `9747cd4`
   (cross-decode CI and LLVM toolchain path).
 

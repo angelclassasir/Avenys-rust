@@ -56,6 +56,13 @@ All notable changes to Avenys will be documented in this file.
   stderr merging, and conventional signal exit statuses. A focused smoke test
   covers these behaviors; this is a Linux process-helper migration slice, not
   full cross-platform process support. No installer dependency changed.
+- Vector storage allocation and release now use the PAL allocator API, with
+  checked conversion to the PAL's signed allocation-size type. Minimal runtime
+  source selection includes the PAL backend when vectors are used, and the
+  WASI compile smoke covers the vector module. A same-session C2 comparison
+  stayed within the benchmark harness's noise threshold (1,361 ms before,
+  1,381 ms after; Rust 26 ms in both runs), so this is a portability-boundary
+  change, not a measured performance gain. No installer dependency changed.
 
 ## 4.3.12 - 2026-10-09
 

@@ -1,4 +1,5 @@
 #include "runtime.h"
+#include "pal.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
@@ -12,6 +13,7 @@ static int list_allocation_size(int64_t capacity, int64_t elem_size, size_t *out
     size_t size = (size_t)elem_size;
     if (cap > (SIZE_MAX - 16) / size) return 0;
     *out = 16 + cap * size;
+    if (*out > (size_t)INT64_MAX) return 0;
     return 1;
 }
 
@@ -20,7 +22,7 @@ void *rt_list_create(int64_t initial_cap, int64_t elem_size) {
     if (initial_cap < 4) initial_cap = 4;
     size_t allocation_size;
     if (!list_allocation_size(initial_cap, elem_size, &allocation_size)) return NULL;
-    int64_t *ptr = (int64_t *)malloc(allocation_size);
+    int64_t *ptr = (int64_t *)pal_alloc((int64_t)allocation_size);
     if (!ptr) return NULL;
     ptr[0] = initial_cap;
     ptr[1] = 0;
@@ -45,7 +47,7 @@ static void *list_grow(void *list_ptr, int64_t elem_size) {
     size_t allocation_size;
     if (!list_allocation_size(new_cap, elem_size, &allocation_size)) return NULL;
     int64_t *old_ptr = ((int64_t *)list_ptr) - 1;
-    int64_t *new_ptr = (int64_t *)realloc(old_ptr, allocation_size);
+    int64_t *new_ptr = (int64_t *)pal_realloc(old_ptr, (int64_t)allocation_size);
     if (!new_ptr) return NULL;
     new_ptr[0] = new_cap;
     new_ptr[1] = old_len;
@@ -125,7 +127,7 @@ void *rt_list_concat(void *left_ptr, void *right_ptr) {
     int64_t total = llen + rlen;
     size_t allocation_size;
     if (!list_allocation_size(total, 8, &allocation_size)) return left_ptr;
-    int64_t *result = (int64_t *)malloc(allocation_size);
+    int64_t *result = (int64_t *)pal_alloc((int64_t)allocation_size);
     if (!result) return left_ptr;
     result[0] = total;  // capacity
     result[1] = total;  // length
@@ -156,7 +158,7 @@ void *rt_list_slice(void *list_ptr, int64_t start, int64_t end) {
     int64_t new_len = end - start;
     size_t allocation_size;
     if (!list_allocation_size(new_len, 8, &allocation_size)) return rt_list_create(4, 8);
-    int64_t *result = (int64_t *)malloc(allocation_size);
+    int64_t *result = (int64_t *)pal_alloc((int64_t)allocation_size);
     if (!result) return rt_list_create(4, 8);
     result[0] = new_len;  // capacity
     result[1] = new_len;  // length
@@ -179,7 +181,7 @@ void *rt_list_remove(void *list_ptr, int64_t index) {
 
 void rt_list_free(void *list_ptr) {
     if (!list_ptr) return;
-    free(((int64_t *)list_ptr) - 1);
+    pal_free(((int64_t *)list_ptr) - 1);
 }
 
 void *rt_list_clear(void *list_ptr) {
