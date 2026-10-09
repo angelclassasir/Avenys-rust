@@ -54,6 +54,9 @@ jobs:
       - name: Test runtime math allocation through PAL
         run: ./scripts/test-runtime-math-pal.sh
 
+      - name: Test map container allocation through PAL
+        run: ./scripts/test-runtime-maps-pal.sh
+
       - name: Test Maybe and Result allocation through PAL
         run: ./scripts/test-runtime-mire-types-pal.sh
 

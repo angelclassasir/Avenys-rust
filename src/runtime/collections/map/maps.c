@@ -1,5 +1,6 @@
 #include "runtime.h"
 #include "maps_internal.h"
+#include "pal.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -12,11 +13,13 @@
 
 void *rt_dict_ensure(void *dict_ptr) {
     if (dict_ptr) return (MireDict *)dict_ptr;
-    MireDict *dict = (MireDict *)calloc(1, sizeof(MireDict));
+    MireDict *dict = (MireDict *)pal_alloc((int64_t)sizeof(MireDict));
     if (!dict) return NULL;
+    memset(dict, 0, sizeof(MireDict));
     dict->bucket_cap = 8;
-    dict->buckets = (int64_t *)calloc(8, sizeof(int64_t));
-    if (!dict->buckets) { free(dict); return NULL; }
+    dict->buckets = (int64_t *)pal_alloc((int64_t)(8 * sizeof(int64_t)));
+    if (!dict->buckets) { pal_free(dict); return NULL; }
+    memset(dict->buckets, 0, 8 * sizeof(int64_t));
     for (int64_t i = 0; i < 8; i++) dict->buckets[i] = -1;
     return dict;
 }
@@ -304,11 +307,11 @@ void rt_dict_free(void *dict_ptr) {
             }
         }
     }
-    free(dict->buckets);
-    free(dict->entries);
-    free(dict->key_storage);
-    free(dict->value_storage);
-    free(dict);
+    pal_free(dict->buckets);
+    pal_free(dict->entries);
+    pal_free(dict->key_storage);
+    pal_free(dict->value_storage);
+    pal_free(dict);
 }
 
 // ── Dicts module aliases (rt_dicts_*) ────────────────────────────────

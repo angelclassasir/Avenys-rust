@@ -90,6 +90,11 @@ All notable changes to Avenys will be documented in this file.
   functions with checked size conversions. File smoke coverage verifies
   base64 output and malformed-input rejection; process capture coverage remains
   green. No installer dependency changed.
+- Dictionary container storage now uses PAL allocation, growth, and release;
+  stored key/value ownership semantics are unchanged. A growth regression test
+  found and fixed inconsistent signed/unsigned hash modulo during bucket
+  rehashing. CI and the WASI source compile gate cover the map modules. This is
+  a portability-boundary change, not a measured performance claim.
 
 ## 4.3.12 - 2026-10-09
 

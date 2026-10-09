@@ -1,4 +1,5 @@
 #include "maps_internal.h"
+#include "pal.h"
 #include <stdlib.h>
 #include <string.h>
 
@@ -189,27 +190,28 @@ void mire_clear_buckets(MireDict *dict) {
 }
 
 int mire_rehash(MireDict *dict, int64_t bucket_cap) {
-    int64_t *new_buckets = (int64_t *)calloc((size_t)bucket_cap, sizeof(int64_t));
+    int64_t *new_buckets = (int64_t *)pal_alloc(bucket_cap * (int64_t)sizeof(int64_t));
     if (!new_buckets) return 0;
+    memset(new_buckets, 0, (size_t)bucket_cap * sizeof(int64_t));
     int64_t *old_buckets = dict->buckets;
     dict->buckets = new_buckets;
     dict->bucket_cap = bucket_cap;
     for (int64_t i = 0; i < bucket_cap; i++) dict->buckets[i] = -1;
     for (int64_t i = 0; i < dict->len; i++) {
-        int64_t h = dict->entries[i].hash;
-        int64_t bi = h % bucket_cap;
-        if (bi < 0) bi = -bi;
+        uint64_t hash = (uint64_t)dict->entries[i].hash;
+        int64_t bi = (int64_t)(hash % (uint64_t)bucket_cap);
         dict->entries[i].next = dict->buckets[bi];
         dict->buckets[bi] = i;
     }
-    if (old_buckets) free(old_buckets);
+    if (old_buckets) pal_free(old_buckets);
     return 1;
 }
 
 int mire_resize_storage(MireDict *dict, int64_t new_cap) {
-    uint8_t *new_key = (uint8_t *)realloc(dict->key_storage, (size_t)new_cap * dict->key_size);
-    uint8_t *new_val = (uint8_t *)realloc(dict->value_storage, (size_t)new_cap * dict->value_size);
-    MireDictEntry *new_entries = (MireDictEntry *)realloc(dict->entries, (size_t)new_cap * sizeof(MireDictEntry));
+    uint8_t *new_key = (uint8_t *)pal_realloc(dict->key_storage, new_cap * dict->key_size);
+    uint8_t *new_val = (uint8_t *)pal_realloc(dict->value_storage, new_cap * dict->value_size);
+    MireDictEntry *new_entries = (MireDictEntry *)pal_realloc(
+        dict->entries, new_cap * (int64_t)sizeof(MireDictEntry));
     if (!new_key || !new_val || !new_entries) return 0;
     dict->key_storage = new_key;
     dict->value_storage = new_val;

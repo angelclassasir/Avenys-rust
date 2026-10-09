@@ -216,6 +216,20 @@ Relevant commits on the active branches:
   (241 library + 14 CLI + doc-tests), WASI compile coverage, and 12/12 benchmark
   equivalence passed. The only direct allocator-name match left in
   `helpers.c` is explanatory comment text. No installer dependency changed.
+- Dictionary-container B2 slice (current worktree): dictionary objects, bucket
+  arrays, slot storage, and entries now use PAL allocation/reallocation/free;
+  stored key/value ownership and raw-string cleanup remain unchanged. The
+  focused 128-entry PAL smoke test exposed a pre-existing rehash defect: the
+  rebuild used signed modulo while lookup/insertion use unsigned modulo. The
+  rehash calculation now follows the same unsigned rule. Both map modules are
+  selected as PAL-dependent in minimal builds and compiled by the WASI source
+  gate. The focused PAL smoke passes; `cargo test --locked --release -j 2`
+  passes (241 library tests, 14 CLI tests, and doc-tests); a release build
+  succeeds; and the Mire map integration suite passes 3/3 with the workspace
+  library path. WASI compilation and 12/12 benchmark equivalence pass. No
+  benchmark timing claim is made for this slice. The first short test timeout
+  was due to release LTO compilation taking about 81 seconds, not a compiler
+  deadlock.
 - Owl: `ac41531` (schema dependency documentation), `0ce4193` and `9747cd4`
   (cross-decode CI and LLVM toolchain path).
 
@@ -242,7 +256,9 @@ restriction, not evidence that the socket implementation is unsupported.
   tested FIFO capability; otherwise finish C0 and use Unix sockets.
 - Runtime B1's move-only source reorganization is implemented and verified.
   B2 has started with monotonic elapsed-time routing; its remaining host
-  operations must also move through PAL before B2 is complete. B3-B6 remain
+  operations must also move through PAL before B2 is complete. Map storage is
+  routed, but map formatting temporaries and other allocator paths remain.
+  B3-B6 remain
   open: remove the `full` tier
   only with explicit compatibility handling, prove the three narrow Mire
   bootstrap modules, then measure the slab allocator against the honest C2

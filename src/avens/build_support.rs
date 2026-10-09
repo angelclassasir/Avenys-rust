@@ -1236,7 +1236,8 @@ pub(crate) fn runtime_c_file_needs_pal(source_path: &std::path::Path) -> bool {
     matches!(
         source_path.file_name().and_then(|name| name.to_str()),
         Some(
-            "error.c" | "helpers.c" | "input.c" | "managed.c" | "managed_minimal.c" | "math.c" | "mire_types.c" | "output.c" | "vecs.c"
+            "error.c" | "helpers.c" | "input.c" | "managed.c" | "managed_minimal.c"
+                | "maps.c" | "maps_internal.c" | "math.c" | "mire_types.c" | "output.c" | "vecs.c"
                 | "thread.c" | "pal_bridge.c" | "time.c",
         )
     )
@@ -1267,6 +1268,10 @@ mod runtime_source_tests {
         assert!(runtime_c_file_needs_pal(Path::new("runtime/std/output/output.c")));
         assert!(runtime_c_file_needs_pal(Path::new("runtime/std/error/error.c")));
         assert!(runtime_c_file_needs_pal(Path::new("runtime/collections/vec/vecs.c")));
+        assert!(runtime_c_file_needs_pal(Path::new("runtime/collections/map/maps.c")));
+        assert!(runtime_c_file_needs_pal(Path::new(
+            "runtime/collections/map/maps_internal.c"
+        )));
         assert!(runtime_c_file_needs_pal(Path::new("runtime/core/math.c")));
         assert!(runtime_c_file_needs_pal(Path::new("runtime/core/mire_types.c")));
         assert!(runtime_c_file_needs_pal(
