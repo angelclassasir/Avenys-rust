@@ -1,30 +1,26 @@
 #!/bin/zsh
-# Comparacion Avenys/Mire contra Rust sobre el mismo calculo.
+# Compare Avenys/Mire against Rust on the same calculation.
 #
-#   ./run.sh verify                 cada kernel: comprueba salida identica
-#   ./run.sh measure                cada kernel: mide, con barrera de opacidad
-#   ./run.sh measure <kernel>       solo uno
-#   ./run.sh curve [kernel]         curva de nivel de optimizacion
-#   ./run.sh startup                coste de arranque de un programa trivial
+#   ./run.sh verify                 compare every kernel's output
+#   ./run.sh measure                measure all kernels with an opacity barrier
+#   ./run.sh measure <kernel>       measure one kernel
+#   ./run.sh curve [kernel]         sweep optimization levels
+#   ./run.sh startup                measure trivial-program startup
 #
-# Por que dos modos y por que la semilla cambia entre ellos
+# Why there are two modes and why their seeds differ
 # -------------------------------------------------------
-# Los dos kernel dan exactamente la misma salida, que es lo que permite
-# afirmar que los dos lenguajes hacen el mismo calculo.
+# Both kernels produce exactly the same output, comparing both languages on
+# the same calculation.
 #
-# En `measure` la semilla se sustituye por la direccion de una reserva de
-# heap. No hace falta que cambie entre corridas --ASLR puede estar
-# desactivado--: lo que importa es que el compilador no puede conocerla en
-# tiempo de compilacion, y por tanto no puede resolver el bucle en forma
-# cerrada. Sin esa barrera LLVM pliega sumas como `acc = acc * 3 + 1` en una
-# Closed form y "mide" 1 ms por 50M de iteraciones, que es imposible.
+# In `measure`, the seed is replaced with the address of a heap allocation.
+# It does not need to change between runs (ASLR may be disabled); the compiler
+# simply must not know it at compile time. Without this barrier LLVM can fold
+# `acc = acc * 3 + 1` into a closed form and report an impossible runtime.
 #
-# Por que hay un piso de ruido
+# Why there is a noise floor
 # ---------------------------
-# El arranque de un binario de Mire cuesta ~1 ms, igual que el de Rust. Cualquier
-# kernel que termine por debajo de ~25 ms esta midiendo el arranque, no el
-# calculo. El script marca esos resultados con `<-- ruido` en vez de
-# presentarlos como una comparacion.
+# Mire and Rust startup each cost about 1 ms. Kernels below about 25 ms measure
+# startup more than computation, so the script marks them as noise.
 
 set -u
 
@@ -36,11 +32,11 @@ DEFAULT_MIRE="$BENCH_DIR/../target/release/mire"
 MIRE="${MIRE_BIN:-$DEFAULT_MIRE}"
 MIRE_LIB_DIR="${MIRE_LIB_DIR:-$HOME/.owl/libs}"
 MSSEC=5
-# Array, no string: zsh no parte palabras de una expansion sin comillas, y
-# `rustc $RUST_OPT` pasaria "-C opt-level=3" como un solo argumento.
+# Store options in an array: zsh does not split an unquoted scalar into words,
+# so a string would pass `-C opt-level=3` as one argument.
 RUST_OPT=(-C opt-level=3)
 
-# Piso de ruido: por debajo, el resultado no significa nada.
+# Noise floor: results below this value are not meaningful comparisons.
 NOISE_FLOOR_MS=25
 
 mkdir -p "$WORK"/{bin,logs}
@@ -52,9 +48,9 @@ kernels() {
 difficulty() {
   case "$1" in
     L1_while|P1_metodo) echo "trivial" ;;
-    L2_for_lista|V2_intercambio) echo "facil" ;;
-    L3_anidados|L4_break_continue|V1_muchas_locales|P2_trait_dos|C3_mixed_ops) echo "media" ;;
-    P3_cadena_impl|C1_recursion|C2_allocacion) echo "dificil" ;;
+    L2_for_lista|V2_intercambio) echo "easy" ;;
+    L3_anidados|L4_break_continue|V1_muchas_locales|P2_trait_dos|C3_mixed_ops) echo "medium" ;;
+    P3_cadena_impl|C1_recursion|C2_allocacion) echo "hard" ;;
     *) echo "-" ;;
   esac
 }
@@ -69,15 +65,15 @@ build_one() {
 
   sed 's|OPACUE(|std::hint::black_box(|g' "$KERNELS/$k.rs" > "$WORK/logs/rs_$k.rs"
   rustc $RUST_OPT -o "$WORK/bin/rust_$k" "$WORK/logs/rs_$k.rs" 2> "$WORK/logs/rust_$k.log" || {
-    print -r -- "  $k: rustc fallo"; head -5 "$WORK/logs/rust_$k.log"; return 1
+    print -r -- "  $k: rustc failed"; head -5 "$WORK/logs/rust_$k.log"; return 1
   }
 
   local d="$WORK/$k.$mode.$opt"
   mkdir -p "$d/code"
   printf '[security]\nexterns = []\n' > "$d/cfg.toml"
 
-  # La semilla se decide aqui y en un solo sitio. En measure se reemplaza la
-  # declaracion `set seed = SEED_OPACA mut` por una lectura de puntero.
+  # Choose the seed in one place. Measurement replaces the opaque seed
+  # declaration with a pointer-derived value.
   python3 - "$KERNELS/$k.mire" "$d/code/main.mire" "$mode" <<'PY'
 import sys
 src, dst, mode = sys.argv[1], sys.argv[2], sys.argv[3]
@@ -96,18 +92,18 @@ PY
   ( cd "$d" && timeout 900 "$MIRE" build code/main.mire --config cfg.toml --release \
       -O "$opt" --lib-dir "$MIRE_LIB_DIR" ) > "$WORK/logs/mire_$k.log" 2>&1
   if [[ ! -x "$d/code/bin/release/main" ]]; then
-    print -r -- "  $k: mire fallo -> $(grep -oE '╰─ .*|llc: error: .*' "$WORK/logs/mire_$k.log" | head -1 | cut -c1-60)"
+    print -r -- "  $k: Mire failed -> $(grep -oE '╰─ .*|llc: error: .*' "$WORK/logs/mire_$k.log" | head -1 | cut -c1-60)"
     return 1
   fi
   return 0
 }
 
-# Tiempo: mejor de N, en milisegundos. El mejor y no la media porque una
-# muestra contaminada por la planificacion solo puede hacer la media peor.
+# Report the best of N samples in milliseconds. A scheduling outlier can only
+# make the average worse, so use the best sample.
 #
-# Las variables se declaran aqui y no dentro del bucle: en zsh, un `local`
-# en el cuerpo de un `for` hace que la asignacion siguiente se imprima en vez
-# de guardarse, y el `date` entero se cuela en el resultado.
+# Declare variables outside loops: in zsh, `local` inside a `for` body can
+# make the next assignment print instead of storing its value, causing the
+# complete `date` output to be mistaken for a timing result.
 time_ms() {
   local best=99999999 r ms s e
   for r in $(seq 1 $MSSEC); do
@@ -121,7 +117,7 @@ time_ms() {
 }
 
 cmd_verify() {
-  print -r -- "Comprobando que Rust y Mire hacen el mismo calculo..."
+  print -r -- "Checking that Rust and Mire perform the same calculation..."
   local k fail=0 d mo ro
   for k in $(kernels); do
     [[ "$k" == "noop" ]] && continue
@@ -130,24 +126,24 @@ cmd_verify() {
     mo=$("$d/code/bin/release/main" 2>&1 | tail -1)
     ro=$("$WORK/bin/rust_$k" 2>&1 | tail -1)
     if [[ "$mo" == "$ro" ]]; then
-      printf "  %-19s %-9s %s\n" "$k" "identico" "$mo"
+      printf "  %-19s %-9s %s\n" "$k" "match" "$mo"
     else
-      printf "  %-19s %-9s rust=%s mire=%s\n" "$k" "DIFIERE" "$ro" "$mo"
+      printf "  %-19s %-9s rust=%s mire=%s\n" "$k" "DIFFERS" "$ro" "$mo"
       fail=1
     fi
   done
   if (( fail )); then
-    print -r -- "\nHay diferencias. No mide nada hasta que coincidan."
+    print -r -- "\nOutput differs. No timings are reported until all kernels match."
     return 1
   fi
-  print -r -- "\nTodos los kernels coinciden. Se puede medir."
+  print -r -- "\nAll kernels match. Measurements are allowed."
 }
 
 cmd_measure() {
   local only="${1:-}"
-  print -r -- "Mediendo (mejor de $MSSEC, opt Rust ${RUST_OPT[*]}, opt Mire 3)"
+  print -r -- "Measuring (best of $MSSEC, Rust ${RUST_OPT[*]}, Mire -O3)"
   print -r -- ""
-  printf "  %-19s %-9s %11s %11s %10s\n" KERNEL DIFICULTAD "Rust -O3" "Mire -O3" "Mire/Rust"
+  printf "  %-19s %-9s %11s %11s %10s\n" KERNEL WORKLOAD "Rust -O3" "Mire -O3" "Mire/Rust"
   printf "  %-19s %-9s %11s %11s %10s\n" "-------------------" "---------" "---------" "---------" "---------"
   local k d r m ratio flag
   for k in $(kernels); do
@@ -159,20 +155,20 @@ cmd_measure() {
     m=$(time_ms "$d/code/bin/release/main")
     ratio=$(awk -v m="$m" -v r="$r" 'BEGIN{if(r>0)printf "%.2fx", m/r; else print "-"}')
     flag=""
-    (( r < NOISE_FLOOR_MS || m < NOISE_FLOOR_MS )) && flag=" <-- ruido"
+    (( r < NOISE_FLOOR_MS || m < NOISE_FLOOR_MS )) && flag=" <-- noise"
     printf "  %-19s %-9s %8s ms %8s ms %9s%s\n" "$k" "$(difficulty "$k")" "$r" "$m" "$ratio" "$flag"
   done
   print -r -- ""
-  print -r -- "  (ruido = por debajo de ${NOISE_FLOOR_MS} ms, se midio el arranque)"
+  print -r -- "  (noise = below ${NOISE_FLOOR_MS} ms; startup dominates)"
 }
 
 cmd_curve() {
   local k="${1:-C2_allocacion}"
   build_one "$k" measure || return 1
   local d="$WORK/$k.measure.3"
-  print -r -- "Curva de nivel de optimizacion, kernel $k"
+  print -r -- "Optimization-level curve for kernel $k"
   print -r -- ""
-  printf "  %-8s %12s %12s %10s\n" NIVEL Rust Mire "Mire/Rust"
+  printf "  %-8s %12s %12s %10s\n" LEVEL Rust Mire "Mire/Rust"
   local O r m ratio
   for O in 0 1 2 3 s z; do
     sed 's|OPACUE(|std::hint::black_box(|g' "$KERNELS/$k.rs" > "$WORK/logs/rs_$k.rs"
@@ -198,12 +194,12 @@ cmd_startup() {
   local r m
   r=$(time_ms "$WORK/bin/rust_noop")
   m=$(time_ms "$d/code/bin/release/main")
-  print -r -- "Arranque de un programa trivial (mejor de $MSSEC):"
+  print -r -- "Startup time for a trivial program (best of $MSSEC):"
   print -r -- "  Rust -O3: $r ms"
   print -r -- "  Mire -O3: $m ms"
   print -r -- ""
-  print -r -- "  Es el piso de ruido de toda medicion: por debajo de ~${NOISE_FLOOR_MS} ms"
-  print -r -- "  una comparacion no significa nada."
+  print -r -- "  This is the noise floor for all measurements: below ~${NOISE_FLOOR_MS} ms"
+  print -r -- "  a performance comparison is not meaningful."
 }
 
 case "${1:-}" in
@@ -211,5 +207,5 @@ case "${1:-}" in
   measure)  cmd_measure "${2:-}" ;;
   curve)    cmd_curve "${2:-}" ;;
   startup)  cmd_startup ;;
-  *) print -r -- "uso: $0 {verify|measure [kernel]|curve [kernel]|startup}"; exit 2 ;;
+  *) print -r -- "usage: $0 {verify|measure [kernel]|curve [kernel]|startup}"; exit 2 ;;
 esac
