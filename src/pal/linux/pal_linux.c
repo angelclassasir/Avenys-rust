@@ -253,7 +253,8 @@ static int64_t linux_file_open(int64_t root_internal, const char *rel_path, pal_
     if (flags & PAL_OPEN_TRUNCATE) linux_flags |= O_TRUNC;
     if (flags & PAL_OPEN_APPEND) linux_flags |= O_APPEND;
 
-    int fd = linux_openat2_sandbox(root->fd, rel_path, linux_flags, 0644);
+    mode_t create_mode = (flags & PAL_OPEN_CREATE) ? 0644 : 0;
+    int fd = linux_openat2_sandbox(root->fd, rel_path, linux_flags, create_mode);
     if (fd < 0) return -1;
 
     linux_file_t *file = pal_alloc(sizeof(linux_file_t));

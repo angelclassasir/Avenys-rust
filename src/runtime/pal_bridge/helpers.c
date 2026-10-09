@@ -16,6 +16,49 @@
 extern const char *pal_proc_capture_output(const char *cmd);
 #endif
 
+// Open an absolute or sandbox-relative path through a root capability. For
+// absolute paths, anchor the handle at the path's parent and open only its
+// basename. For relative paths, use the configured sandbox root directly.
+static pal_file_t rt_open_sandboxed_file(const char *path, pal_open_flags flags) {
+    if (!path || !pal_sbx_permit_or_error(path)) return PAL_FILE_NULL;
+
+    pal_root_t root = PAL_ROOT_NULL;
+    const char *relative_path = path;
+    char parent_path[PATH_MAX];
+    if (path[0] == '/') {
+        const char *separator = strrchr(path, '/');
+        if (!separator || separator[1] == '\0') return PAL_FILE_NULL;
+        size_t parent_length = separator == path ? 1 : (size_t)(separator - path);
+        if (parent_length >= sizeof(parent_path)) return PAL_FILE_NULL;
+        memcpy(parent_path, path, parent_length);
+        parent_path[parent_length] = '\0';
+        root = pal_root_open(parent_path);
+        relative_path = separator + 1;
+    } else {
+        const char *sandbox_root = pal_sbx_get_root();
+        if (!sandbox_root) return PAL_FILE_NULL;
+        root = pal_root_open(sandbox_root);
+    }
+
+    if (root.index == PAL_ROOT_NULL.index &&
+        root.generation == PAL_ROOT_NULL.generation) return PAL_FILE_NULL;
+    pal_file_t file = pal_file_open(root, relative_path, flags);
+    pal_root_close(root);
+    return file;
+}
+
+static int rt_write_all(pal_file_t file, const void *data, int64_t length) {
+    if (length < 0 || (!data && length > 0)) return 0;
+    const unsigned char *bytes = (const unsigned char *)data;
+    int64_t offset = 0;
+    while (offset < length) {
+        int64_t written = pal_file_write(file, bytes + offset, length - offset);
+        if (written <= 0 || written > length - offset) return 0;
+        offset += written;
+    }
+    return 1;
+}
+
 // Computes the RFC 6455 WebSocket accept value without pulling a web
 // framework into the compiler runtime. The result is runtime-managed so a
 // Mire-only log server can perform a standards-compliant upgrade handshake.
@@ -102,14 +145,19 @@ char *rt_websocket_text_frame(const char *payload) {
  * reads or paths to the HTTP layer. The caller owns the fixed log location. */
 int64_t rt_web_log_append(const char *path, const char *line) {
     if (!path || !line) return -1;
-    if (!pal_sbx_permit_or_error(path)) return -1;
-    FILE *file = fopen(path, "ab");
-    if (!file) return -1;
+    pal_file_t file = rt_open_sandboxed_file(
+        path, PAL_OPEN_WRITE | PAL_OPEN_CREATE | PAL_OPEN_APPEND);
+    if (file.index == PAL_FILE_NULL.index &&
+        file.generation == PAL_FILE_NULL.generation) return -1;
     size_t length = strlen(line);
-    size_t written = fwrite(line, 1, length, file);
-    fputc('\n', file);
-    fclose(file);
-    return written == length ? 0 : -1;
+    if (length > (size_t)INT64_MAX) {
+        pal_file_close(file);
+        return -1;
+    }
+    int written = rt_write_all(file, line, (int64_t)length) &&
+                  rt_write_all(file, "\n", 1);
+    pal_file_close(file);
+    return written ? 0 : -1;
 }
 
 // Raw byte access from a managed string.
@@ -148,24 +196,44 @@ char *rt_crypto_sha512_hex(const char *s) {
 }
 
 // Reads a whole file as raw bytes (binary-safe, embedded NULs preserved).
-// On success returns a malloc'd buffer and stores the byte count in *out_len;
+// On success returns a PAL-allocated buffer and stores the byte count in *out_len;
 // the caller owns the buffer. Returns NULL on any failure.
 static unsigned char *rt_read_file_raw(const char *path, size_t *out_len) {
-    if (!path) return NULL;
-    if (!pal_sbx_permit_or_error(path)) return NULL;
-    FILE *file = fopen(path, "rb");
-    if (!file) return NULL;
-    if (fseek(file, 0, SEEK_END) != 0) { fclose(file); return NULL; }
-    long length = ftell(file);
-    if (length < 0) { fclose(file); return NULL; }
-    if (fseek(file, 0, SEEK_SET) != 0) { fclose(file); return NULL; }
-    unsigned char *buf = (unsigned char *)malloc(length ? (size_t)length : 1);
-    if (!buf) { fclose(file); return NULL; }
-    size_t read = fread(buf, 1, (size_t)length, file);
-    fclose(file);
-    if (read != (size_t)length) { free(buf); return NULL; }
-    *out_len = (size_t)length;
-    return buf;
+    if (!path) {
+        (void)pal_sbx_permit_or_error(path);
+        return NULL;
+    }
+    if (!out_len) return NULL;
+    pal_file_t file = rt_open_sandboxed_file(path, PAL_OPEN_READ);
+    if (file.index == PAL_FILE_NULL.index &&
+        file.generation == PAL_FILE_NULL.generation) return NULL;
+    int64_t signed_length = pal_file_size(file);
+    if (signed_length < 0 || signed_length >= INT64_MAX ||
+        (uint64_t)signed_length + 1 > SIZE_MAX) {
+        pal_file_close(file);
+        return NULL;
+    }
+    size_t length = (size_t)signed_length;
+    unsigned char *buffer = (unsigned char *)pal_alloc((int64_t)length + 1);
+    if (!buffer) {
+        pal_file_close(file);
+        return NULL;
+    }
+    size_t offset = 0;
+    while (offset < length) {
+        int64_t remaining = (int64_t)(length - offset);
+        int64_t received = pal_file_read(file, buffer + offset, remaining);
+        if (received <= 0 || received > remaining) {
+            pal_free(buffer);
+            pal_file_close(file);
+            return NULL;
+        }
+        offset += (size_t)received;
+    }
+    buffer[length] = '\0';
+    pal_file_close(file);
+    *out_len = length;
+    return buffer;
 }
 
 char *rt_crypto_sha256_file_hex(const char *path) {
@@ -174,7 +242,7 @@ char *rt_crypto_sha256_file_hex(const char *path) {
     if (!data) return rt_managed_from_cstr("");
     unsigned char digest[PAL_CRYPTO_SHA256_BYTES];
     pal_error_code_t rc = pal_crypto_sha256(data, length, digest);
-    free(data);
+    pal_free(data);
     if (rc != PAL_ERR_OK) return rt_managed_from_cstr("");
     return rt_crypto_hex(digest, sizeof(digest));
 }
@@ -185,7 +253,7 @@ char *rt_crypto_sha512_file_hex(const char *path) {
     if (!data) return rt_managed_from_cstr("");
     unsigned char digest[PAL_CRYPTO_SHA512_BYTES];
     pal_error_code_t rc = pal_crypto_sha512(data, length, digest);
-    free(data);
+    pal_free(data);
     if (rc != PAL_ERR_OK) return rt_managed_from_cstr("");
     return rt_crypto_hex(digest, sizeof(digest));
 }
@@ -269,7 +337,7 @@ char *rt_crypto_base64_file(const char *path) {
     unsigned char *data = rt_read_file_raw(path, &length);
     if (!data) return rt_managed_from_cstr("");
     char *out = rt_base64_encode(data, length);
-    free(data);
+    pal_free(data);
     return out;
 }
 
@@ -287,7 +355,7 @@ bool rt_crypto_ed25519_verify_b64(const char *pubkey_b64, const char *data_file,
     }
     free(pk);
     free(sg);
-    free(data);
+    pal_free(data);
     return ok;
 }
 
@@ -304,8 +372,8 @@ bool rt_crypto_ed25519_verify_file(const char *pubkey_b64, const char *data_file
         ok = pal_crypto_ed25519_verify(data, data_len, sg, sg_len, pk) == PAL_ERR_OK;
     }
     free(pk);
-    free(sg);
-    free(data);
+    pal_free(sg);
+    pal_free(data);
     return ok;
 }
 
@@ -317,7 +385,7 @@ char *rt_crypto_ed25519_pubkey_raw_b64(const char *pem_path) {
     unsigned char *pem = rt_read_file_raw(pem_path, &pem_len);
     if (!pem) return rt_managed_from_cstr("");
     char *body = (char *)malloc(pem_len + 1);
-    if (!body) { free(pem); return rt_managed_from_cstr(""); }
+    if (!body) { pal_free(pem); return rt_managed_from_cstr(""); }
     size_t bn = 0;
     size_t i = 0;
     while (i < pem_len) {
@@ -333,7 +401,7 @@ char *rt_crypto_ed25519_pubkey_raw_b64(const char *pem_path) {
         }
     }
     body[bn] = '\0';
-    free(pem);
+    pal_free(pem);
     size_t der_len = 0;
     unsigned char *der = rt_base64_decode(body, bn, &der_len);
     free(body);
@@ -356,19 +424,14 @@ char *rt_crypto_ed25519_pubkey_raw_b64(const char *pem_path) {
 // string — the same shape as "file not found", with last_error() carrying the
 // real reason.
 char *rt_read_bytes(const char *path) {
-    if (!pal_sbx_permit_or_error(path)) return NULL;
-    FILE *f = fopen(path, "rb");
-    if (!f) return NULL;
-    fseek(f, 0, SEEK_END);
-    long len = ftell(f);
-    fseek(f, 0, SEEK_SET);
-    if (len <= 0) { fclose(f); return NULL; }
-    char *buf = (char *)malloc((size_t)len + 1);
-    if (!buf) { fclose(f); return NULL; }
-    size_t rd = fread(buf, 1, (size_t)len, f);
-    fclose(f);
-    buf[rd] = '\0';
-    return buf;
+    size_t length = 0;
+    unsigned char *bytes = rt_read_file_raw(path, &length);
+    if (!bytes) return NULL;
+    if (length == 0) {
+        pal_free(bytes);
+        return NULL;
+    }
+    return (char *)bytes;
 }
 
 // Read an entire file and return it as a runtime-managed string.
@@ -380,29 +443,34 @@ char *rt_fs_read_bytes(const char *path) {
     char *raw = rt_read_bytes(path);
     if (!raw) return rt_managed_from_cstr("");
     char *managed = rt_managed_from_cstr(raw);
-    free(raw);
+    pal_free(raw);
     return managed;
 }
 
 // Decode a hex string and write the raw bytes to a file.
 int rt_hex_to_file(const char *path, const char *hex) {
     if (!path || !hex) return 0;
-    if (!pal_sbx_permit_or_error(path)) return 0;
     size_t hex_len = strlen(hex);
     size_t bin_len = hex_len / 2;
-    char *bin = (char *)malloc(bin_len);
-    if (!bin) return 0;
+    if (bin_len > (size_t)INT64_MAX) return 0;
+    char *bin = bin_len ? (char *)pal_alloc((int64_t)bin_len) : NULL;
+    if (bin_len && !bin) return 0;
     for (size_t i = 0; i < bin_len; i++) {
         unsigned int byte;
         sscanf(hex + 2 * i, "%2x", &byte);
         bin[i] = (char)byte;
     }
-    FILE *f = fopen(path, "wb");
-    if (!f) { free(bin); return 0; }
-    fwrite(bin, 1, bin_len, f);
-    fclose(f);
-    free(bin);
-    return 1;
+    pal_file_t file = rt_open_sandboxed_file(
+        path, PAL_OPEN_WRITE | PAL_OPEN_CREATE | PAL_OPEN_TRUNCATE);
+    if (file.index == PAL_FILE_NULL.index &&
+        file.generation == PAL_FILE_NULL.generation) {
+        pal_free(bin);
+        return 0;
+    }
+    int written = rt_write_all(file, bin, (int64_t)bin_len);
+    pal_file_close(file);
+    pal_free(bin);
+    return written;
 }
 
 // Runs a command via PAL capture and returns the output as a managed string.

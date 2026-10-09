@@ -42,6 +42,9 @@ jobs:
       - name: Test standard input in the minimal runtime
         run: ./scripts/test-runtime-io.sh
 
+      - name: Test runtime file helpers through PAL
+        run: ./scripts/test-runtime-files.sh
+
       - name: Checkout kioto (active PR #3 branch = v2.5.0 namespaced net API)
         uses: actions/checkout@v4
         with:

@@ -38,6 +38,13 @@ All notable changes to Avenys will be documented in this file.
   PAL virtual-memory operations; POSIX mapping calls and headers no longer leak
   into the runtime allocator module. Linux retains lazy `MAP_NORESERVE`
   semantics; WASI reports this capability as unsupported.
+- Runtime whole-file reads, file hashing, hex-to-file writes, and web-log
+  appends now use sandboxed PAL root/file handles instead of `stdio` file
+  operations. The Linux backend also passes a creation mode to `openat2` only
+  when `PAL_OPEN_CREATE` is set; non-creating reads previously failed because
+  Linux requires that mode argument to be zero. A binary-file and sandbox
+  regression smoke test now runs in CI using the existing C compiler and
+  libsodium CI dependencies; no installer packages were added.
 
 ## 4.3.12 - 2026-10-09
 
