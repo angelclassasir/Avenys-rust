@@ -50,7 +50,7 @@ set b :i16 = a :i16    // OK: explicit ascription
 ```mire
 set i :i64 = 42
 set f :f64 = i :f64    // OK: explicit i64 -> f64
-set i2 :i64 = f :i64   // OK: explicit f64 -> i64 (truncates)
+set i2 = f :i64        // OK: explicit f64 -> i64 (truncates)
 ```
 
 ##// Boolean
