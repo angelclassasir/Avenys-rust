@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
+#include <limits.h>
 #include <unistd.h>
 #include <sys/wait.h>
 #include "runtime.h"
@@ -886,10 +887,16 @@ const char *rt_sbx_detail(void) {
 }
 
 // The sandbox root captured at startup, before any program code runs, so that
-// a program cannot widen its own sandbox by being the first to ask. NULL
-// means "defer to the lazy working-directory capture".
+// a program cannot widen its own sandbox by being the first to ask. The PAL
+// deliberately treats NULL as "deny everything"; capture the working
+// directory here instead of relying on that fail-closed API value.
 void rt_sbx_init(void) {
-    pal_sbx_set_root(NULL);
+    char working_directory[PATH_MAX];
+    if (getcwd(working_directory, sizeof(working_directory)) != NULL) {
+        pal_sbx_set_root(working_directory);
+    } else {
+        pal_sbx_set_root(NULL);
+    }
 }
 
 void rt_sbx_set_tool_home(const char *path) {

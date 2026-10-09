@@ -1111,6 +1111,10 @@ fn runtime_symbol_to_c_file(sym: &str) -> Option<&'static str> {
         Some("thread.c")
     } else if sym.starts_with("rt_get_args") || sym.starts_with("rt_free_argv") {
         Some("helpers.c")
+    } else if sym.starts_with("rt_pal_") {
+        // Scalar FFI adapters for PAL handles. Mire represents handles as i64;
+        // the PAL keeps typed {index, generation} values internally.
+        Some("pal_bridge.c")
     } else if sym.starts_with("rt_sbx_") {
         // Sandbox bridges. They live in helpers.c rather than beside the policy in
         // pal_sandbox.c so that a program declaring one still resolves them on the

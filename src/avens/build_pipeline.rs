@@ -719,7 +719,12 @@ fn compile_file_inner(
                 .find(|line| line.contains("define") && line.contains("@fn_main("))
                 .map(|line| line.split_whitespace().nth(1) == Some("void"))
                 .unwrap_or(false);
+            ir.push_str("\ndeclare void @rt_sbx_init()\n");
             ir.push_str("\n\ndefine i32 @main(i32 %argc, ptr %argv) {\n");
+            // Capture the sandbox root before user code can perform any host
+            // filesystem operation. The runtime bridge preserves the PAL's
+            // fail-closed NULL semantics while binding the process to cwd.
+            ir.push_str("  call void @rt_sbx_init()\n");
             ir.push_str("  store i32 %argc, ptr @.argc\n");
             ir.push_str("  store ptr %argv, ptr @.argv\n");
             if main_returns_void {
