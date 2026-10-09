@@ -10,7 +10,7 @@
 #include <sys/wait.h>
 #include "runtime.h"
 #include "pal.h"
-#include "../pal/pal_crypto.h"
+#include "pal_crypto.h"
 
 #if PAL_ALLOW_LEGACY_SHELL
 extern const char *pal_proc_capture_output(const char *cmd);

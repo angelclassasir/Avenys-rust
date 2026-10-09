@@ -41,6 +41,27 @@ pub(super) fn runtime_base() -> PathBuf {
     manifest_dir.join("src")
 }
 
+/// Collect C sources from a runtime subtree, including its organized modules.
+pub(super) fn collect_c_sources(directory: &std::path::Path) -> std::io::Result<Vec<PathBuf>> {
+    fn visit(directory: &std::path::Path, sources: &mut Vec<PathBuf>) -> std::io::Result<()> {
+        for entry in std::fs::read_dir(directory)? {
+            let entry = entry?;
+            let path = entry.path();
+            if entry.file_type()?.is_dir() {
+                visit(&path, sources)?;
+            } else if path.extension().is_some_and(|extension| extension == "c") {
+                sources.push(path);
+            }
+        }
+        Ok(())
+    }
+
+    let mut sources = Vec::new();
+    visit(directory, &mut sources)?;
+    sources.sort();
+    Ok(sources)
+}
+
 pub(super) fn struct_field_llvm_type(dt: &DataType) -> &'static str {
     match dt {
         DataType::I64 | DataType::Char | DataType::U64 => "i64",
@@ -1039,37 +1060,37 @@ pub(super) fn strip_unused_decls(ir: &str, used: &UsedSymbols) -> String {
 }
 
 /// Map a runtime symbol name to the C source file that provides it.
-/// Returns the filename (relative to `runtime/`) or `None` if unknown.
+/// Returns the path relative to `runtime/` or `None` if unknown.
 fn runtime_symbol_to_c_file(sym: &str) -> Option<&'static str> {
     // Order matters: more specific prefixes first.
     //
     if sym.starts_with("rt_math_random") {
-        Some("random.c")
+        Some("core/random.c")
     } else if sym.starts_with("rt_math_") {
-        Some("math.c")
+        Some("core/math.c")
     } else if sym.starts_with("rt_maybe_")
         || sym.starts_with("rt_result_")
         || sym.starts_with("rt_arr_")
     {
-        Some("mire_types.c")
+        Some("core/mire_types.c")
     } else if sym.starts_with("rt_managed_") || sym.starts_with("rt_panic") {
-        Some("managed.c")
-      } else if sym.starts_with("rt_check_bounds") {
-          Some("safety.c")
-      } else if sym.starts_with("rt_io_") {
-          // Standard streams: stdin/stdout/stderr via the C stdio FILE*s.
-          // Before the rt_read_/rt_write_ arms below, which are byte helpers.
-          Some("mire_io.c")
-      } else if sym.starts_with("rt_list_")
+        Some("memory/allocator/managed.c")
+    } else if sym.starts_with("rt_check_bounds") {
+        Some("memory/safety/safety.c")
+    } else if sym.starts_with("rt_io_") {
+        // Standard streams: stdin/stdout/stderr via the C stdio FILE*s.
+        // Before the rt_read_/rt_write_ arms below, which are byte helpers.
+        Some("std/io/mire_io.c")
+    } else if sym.starts_with("rt_list_")
         || sym.starts_with("rt_lists_")
         || sym.starts_with("rt_vecs_")
     {
-        Some("vecs.c")
+        Some("collections/vec/vecs.c")
     } else if sym.starts_with("rt_dict_")
         || sym.starts_with("rt_dicts_")
         || sym.starts_with("rt_maps_")
     {
-        Some("maps.c")
+        Some("collections/map/maps.c")
     } else if sym.starts_with("rt_string_")
         || sym.starts_with("rt_strings_")
         || sym.starts_with("rt_i64_to_string")
@@ -1082,12 +1103,12 @@ fn runtime_symbol_to_c_file(sym: &str) -> Option<&'static str> {
         || sym.starts_with("rt_managed_from")
         || sym.starts_with("rt_managed_ensure")
     {
-        Some("strings.c")
+        Some("core/strings.c")
     } else if sym.starts_with("rt_closure_env") {
-        Some("safety.c")
+        Some("memory/safety/safety.c")
     } else if sym.starts_with("rt_read_bytes") || sym.starts_with("rt_read_tty") {
         // File/tty readers (need POSIX; stay in helpers.c)
-        Some("helpers.c")
+        Some("pal_bridge/helpers.c")
     } else if sym.starts_with("rt_crypto_")
         || sym.starts_with("rt_hex_to_file")
         || sym.starts_with("rt_proc_")
@@ -1097,7 +1118,7 @@ fn runtime_symbol_to_c_file(sym: &str) -> Option<&'static str> {
         || sym.starts_with("rt_web_")
         || sym.starts_with("rt_websocket_")
     {
-        Some("helpers.c")
+        Some("pal_bridge/helpers.c")
     } else if sym.starts_with("rt_alloc_raw")
         || sym.starts_with("rt_free_raw")
         || sym.starts_with("rt_ptr_")
@@ -1106,15 +1127,15 @@ fn runtime_symbol_to_c_file(sym: &str) -> Option<&'static str> {
         || sym.starts_with("rt_write_")
     {
         // Pure byte-access helpers (PAL-free; math.c, FFI bindings)
-        Some("bytes.c")
+        Some("core/bytes.c")
     } else if sym.starts_with("rt_thread_") {
-        Some("thread.c")
+        Some("pal_bridge/thread.c")
     } else if sym.starts_with("rt_get_args") || sym.starts_with("rt_free_argv") {
-        Some("helpers.c")
+        Some("pal_bridge/helpers.c")
     } else if sym.starts_with("rt_pal_") {
         // Scalar FFI adapters for PAL handles. Mire represents handles as i64;
         // the PAL keeps typed {index, generation} values internally.
-        Some("pal_bridge.c")
+        Some("pal_bridge/pal_bridge.c")
     } else if sym.starts_with("rt_sbx_") {
         // Sandbox bridges. They live in helpers.c rather than beside the policy in
         // pal_sandbox.c so that a program declaring one still resolves them on the
@@ -1123,7 +1144,7 @@ fn runtime_symbol_to_c_file(sym: &str) -> Option<&'static str> {
         // on its own would then leave these two undefined. helpers.c is already a
         // dependency of most runtime builds and bridges into the PAL at the C
         // level, so the symbol resolves on either tier.
-        Some("helpers.c")
+        Some("pal_bridge/helpers.c")
     } else {
         None
     }
@@ -1139,34 +1160,46 @@ pub(crate) fn minimal_runtime_c_files(used_runtime: &HashSet<String>) -> Vec<Str
         runtime_symbol_to_c_file(sym)
     }
 
-    // C→C transitive dependency graph (directed, has a cycle: strings ↔ vecs).
+    // C-to-C dependency graph (directed, with a strings/vecs cycle).
     // A file listed here needs all the files it points to.
     fn c_deps(file: &str) -> &'static [&'static str] {
         match file {
-            "strings.c" => &["vecs.c", "managed.c"],
-            "vecs.c" => &["strings.c", "managed.c", "safety.c"],
+            "core/strings.c" => &["collections/vec/vecs.c", "memory/allocator/managed.c"],
+            "collections/vec/vecs.c" => &[
+                "core/strings.c",
+                "memory/allocator/managed.c",
+                "memory/safety/safety.c",
+            ],
             // maps.c delegates hashing, storage sizing and growth to the
             // internal implementation; keeping this edge explicit is
             // required for minimal runtime builds and shared-library tests.
-            "maps.c" => &["maps_internal.c", "vecs.c", "managed.c"],
-            "maps_internal.c" => &["managed.c"],
-            "math.c" => &["vecs.c", "bytes.c"],
-            "random.c" => &[],
-            "mire_types.c" => &["strings.c", "managed.c", "safety.c"],
-            "bytes.c" => &["strings.c"],
-            "helpers.c" => &["strings.c", "managed.c"],
-            "mire_io.c" => &["managed.c"],
-            "thread.c" => &[],
-            "safety.c" => &[],
-            "managed.c" => &[],
+            "collections/map/maps.c" => &[
+                "collections/map/maps_internal.c",
+                "collections/vec/vecs.c",
+                "memory/allocator/managed.c",
+            ],
+            "collections/map/maps_internal.c" => &["memory/allocator/managed.c"],
+            "core/math.c" => &["collections/vec/vecs.c", "core/bytes.c"],
+            "core/random.c" => &[],
+            "core/mire_types.c" => &[
+                "core/strings.c",
+                "memory/allocator/managed.c",
+                "memory/safety/safety.c",
+            ],
+            "core/bytes.c" => &["core/strings.c"],
+            "pal_bridge/helpers.c" => &["core/strings.c", "memory/allocator/managed.c"],
+            "std/io/mire_io.c" => &["memory/allocator/managed.c"],
+            "pal_bridge/thread.c" => &[],
+            "memory/safety/safety.c" => &[],
+            "memory/allocator/managed.c" => &[],
             _ => &[],
         }
     }
 
     let mut needed: HashSet<String> = HashSet::new();
     // Always include managed and safety (core infrastructure)
-    needed.insert("managed.c".to_string());
-    needed.insert("safety.c".to_string());
+    needed.insert("memory/allocator/managed.c".to_string());
+    needed.insert("memory/safety/safety.c".to_string());
     // Add files directly needed by used symbols
     for sym in used_runtime {
         if let Some(file) = sym_to_file(sym) {
@@ -1197,7 +1230,10 @@ pub(crate) fn runtime_c_file_needs_pal(source_path: &std::path::Path) -> bool {
 
 #[cfg(test)]
 mod runtime_source_tests {
-    use super::{minimal_runtime_c_files, runtime_c_file_needs_pal, runtime_symbol_to_c_file};
+    use super::{
+        collect_c_sources, minimal_runtime_c_files, runtime_c_file_needs_pal,
+        runtime_symbol_to_c_file,
+    };
     use std::{collections::HashSet, path::Path};
 
     #[test]
@@ -1207,9 +1243,65 @@ mod runtime_source_tests {
 
         assert_eq!(
             runtime_symbol_to_c_file("rt_pal_unix_connect"),
-            Some("pal_bridge.c")
+            Some("pal_bridge/pal_bridge.c")
         );
-        assert!(runtime_files.iter().any(|file| file == "pal_bridge.c"));
-        assert!(runtime_c_file_needs_pal(Path::new("runtime/pal_bridge.c")));
+        assert!(runtime_files
+            .iter()
+            .any(|file| file == "pal_bridge/pal_bridge.c"));
+        assert!(runtime_c_file_needs_pal(Path::new("runtime/pal_bridge/pal_bridge.c")));
+    }
+
+    #[test]
+    fn runtime_symbol_providers_use_the_runtime_module_layout() {
+        assert_eq!(
+            runtime_symbol_to_c_file("rt_i64_to_string"),
+            Some("core/strings.c")
+        );
+        assert_eq!(
+            runtime_symbol_to_c_file("rt_managed_free"),
+            Some("memory/allocator/managed.c")
+        );
+        assert_eq!(
+            runtime_symbol_to_c_file("rt_dict_free"),
+            Some("collections/map/maps.c")
+        );
+
+        let symbols = HashSet::from(["rt_dict_free".to_string()]);
+        let files = minimal_runtime_c_files(&symbols);
+        assert!(files.iter().any(|file| file == "collections/map/maps.c"));
+        assert!(files
+            .iter()
+            .any(|file| file == "collections/map/maps_internal.c"));
+        assert!(files
+            .iter()
+            .any(|file| file == "memory/allocator/managed.c"));
+    }
+
+    #[test]
+    fn runtime_source_collection_descends_into_module_directories() {
+        let runtime_directory =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("src/runtime");
+        let sources = collect_c_sources(&runtime_directory).expect("runtime sources are readable");
+        let relative_sources: HashSet<String> = sources
+            .iter()
+            .map(|source| {
+                source
+                    .strip_prefix(&runtime_directory)
+                    .expect("source is inside runtime")
+                    .to_string_lossy()
+                    .replace('\\', "/")
+            })
+            .collect();
+
+        for expected in [
+            "core/strings.c",
+            "memory/allocator/managed.c",
+            "collections/vec/vecs.c",
+            "collections/map/maps.c",
+            "std/io/mire_io.c",
+            "pal_bridge/pal_bridge.c",
+        ] {
+            assert!(relative_sources.contains(expected), "missing {expected}");
+        }
     }
 }

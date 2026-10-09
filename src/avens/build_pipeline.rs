@@ -1,8 +1,8 @@
 use super::build_support::{
-    apply_cfg_filter, collect_used_symbols, dedup_llvm_declarations, generate_enum_constructors,
-    generate_runtime_declarations, generate_struct_constructors, inject_macros,
-    inject_test_harness, minimal_runtime_c_files, neutralise_ignored_tests, precompile_c_object,
-    progress_phase, runtime_base, runtime_c_file_needs_pal, set_c_defs,
+    apply_cfg_filter, collect_c_sources, collect_used_symbols, dedup_llvm_declarations,
+    generate_enum_constructors, generate_runtime_declarations, generate_struct_constructors,
+    inject_macros, inject_test_harness, minimal_runtime_c_files, neutralise_ignored_tests,
+    precompile_c_object, progress_phase, runtime_base, runtime_c_file_needs_pal, set_c_defs,
 };
 use super::*;
 use crate::compiler::check_warnings_with_origins;
@@ -156,7 +156,7 @@ fn compile_file_inner(
                     .chain(std::iter::once(&pal_platform))
                 {
                     let dir = runtime_base.join(directory);
-                    for entry in std::fs::read_dir(&dir)
+                    for path in collect_c_sources(&dir)
                         .map_err(|err| {
                             MireError::new(ErrorKind::Runtime {
                                 span: crate::error::Span::unknown(),
@@ -165,15 +165,11 @@ fn compile_file_inner(
                                 ),
                             })
                         })?
-                        .flatten()
                     {
-                        let path = entry.path();
-                        if path.extension().is_some_and(|e| e == "c") {
-                            let fname = path.file_name().unwrap().to_string_lossy();
-                            // Skip _minimal.c variants in full tier (they're for minimal tier only)
-                            if !fname.ends_with("_minimal.c") {
-                                files.push(path.to_string_lossy().into_owned());
-                            }
+                        let fname = path.file_name().unwrap().to_string_lossy();
+                        // Skip _minimal.c variants in full tier (they're for minimal tier only)
+                        if !fname.ends_with("_minimal.c") {
+                            files.push(path.to_string_lossy().into_owned());
                         }
                     }
                 }
@@ -183,27 +179,23 @@ fn compile_file_inner(
                 // and adds PAL .c files only if the program uses PAL symbols.
                 // The full hash is kept for conservative cache invalidation.
                 let dir = runtime_base.join("runtime");
-                for entry in std::fs::read_dir(&dir)
+                for path in collect_c_sources(&dir)
                     .map_err(|err| {
                         MireError::new(ErrorKind::Runtime {
                             span: crate::error::Span::unknown(),
                             message: format!("Could not read C sources from runtime: {err}"),
                         })
                     })?
-                    .flatten()
                 {
-                    let path = entry.path();
-                    if path.extension().is_some_and(|e| e == "c") {
-                        let fname = path.file_name().unwrap().to_string_lossy();
-                        // In minimal tier, prefer _minimal.c variants, but also include base files
-                        // that don't have a _minimal counterpart
-                        if fname.ends_with("_minimal.c")
-                            || !files
-                                .iter()
-                                .any(|f| f.contains(&fname.replace("_minimal", "")))
-                        {
-                            files.push(path.to_string_lossy().into_owned());
-                        }
+                    let fname = path.file_name().unwrap().to_string_lossy();
+                    // In minimal tier, prefer _minimal.c variants, but also include base files
+                    // that don't have a _minimal counterpart.
+                    if fname.ends_with("_minimal.c")
+                        || !files
+                            .iter()
+                            .any(|file| file.ends_with(&fname.replace("_minimal", "")))
+                    {
+                        files.push(path.to_string_lossy().into_owned());
                     }
                 }
             }
@@ -211,7 +203,7 @@ fn compile_file_inner(
             let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
             let compiler_runtime = manifest_dir.join("src/runtime");
             if compiler_runtime.exists() {
-                for entry in std::fs::read_dir(&compiler_runtime)
+                for path in collect_c_sources(&compiler_runtime)
                     .map_err(|err| {
                         MireError::new(ErrorKind::Runtime {
                             span: crate::error::Span::unknown(),
@@ -220,24 +212,18 @@ fn compile_file_inner(
                             ),
                         })
                     })?
-                    .flatten()
                 {
-                    let path = entry.path();
-                    if path.extension().is_some_and(|e| e == "c") {
-                        let fname = path.file_name().unwrap().to_string_lossy();
-                        if matches!(runtime_tier, RuntimeTier::Full) {
-                            if !fname.ends_with("_minimal.c") {
-                                files.push(path.to_string_lossy().into_owned());
-                            }
-                        } else {
-                            if fname.ends_with("_minimal.c")
-                                || !files
-                                    .iter()
-                                    .any(|f| f.contains(&fname.replace("_minimal", "")))
-                            {
-                                files.push(path.to_string_lossy().into_owned());
-                            }
+                    let fname = path.file_name().unwrap().to_string_lossy();
+                    if matches!(runtime_tier, RuntimeTier::Full) {
+                        if !fname.ends_with("_minimal.c") {
+                            files.push(path.to_string_lossy().into_owned());
                         }
+                    } else if fname.ends_with("_minimal.c")
+                        || !files
+                            .iter()
+                            .any(|file| file.ends_with(&fname.replace("_minimal", "")))
+                    {
+                        files.push(path.to_string_lossy().into_owned());
                     }
                 }
             }
@@ -586,12 +572,18 @@ fn compile_file_inner(
         let before = c_source_files.len();
         // Filter: keep only runtime files that are needed
         c_source_files.retain(|path| {
-            let fname = std::path::Path::new(path)
-                .file_name()
-                .unwrap_or_default()
-                .to_string_lossy()
-                .into_owned();
-            needed.contains(&fname)
+            let source_path = std::path::Path::new(path);
+            let runtime_roots = [
+                runtime_base.join("runtime"),
+                PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src/runtime"),
+            ];
+            runtime_roots.iter().any(|root| {
+                source_path
+                    .strip_prefix(root)
+                    .ok()
+                    .map(|relative| relative.to_string_lossy().replace('\\', "/"))
+                    .is_some_and(|relative| needed.contains(&relative))
+            })
         });
         // Add PAL files on demand: when the program's IR uses PAL symbols OR a
         // retained runtime .c file bridges into PAL at the C level (helpers.c,
@@ -615,12 +607,9 @@ fn compile_file_inner(
                 .collect();
             for directory in &pal_dirs {
                 let dir = runtime_base.join(directory);
-                if let Ok(entries) = std::fs::read_dir(&dir) {
-                    for entry in entries.flatten() {
-                        let p = entry.path();
-                        if p.extension().is_some_and(|e| e == "c") {
-                            c_source_files.push(p.to_string_lossy().into_owned());
-                        }
+                if let Ok(paths) = collect_c_sources(&dir) {
+                    for path in paths {
+                        c_source_files.push(path.to_string_lossy().into_owned());
                     }
                 }
             }
