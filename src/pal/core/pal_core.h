@@ -56,6 +56,11 @@ typedef struct pal_ops {
     int64_t (*file_clone)(int64_t internal);
     void (*file_close)(int64_t internal);
 
+    // Standard input. `stdin_available` returns 1, 0, or -1 if unsupported.
+    int64_t (*stdin_read)(void *buf, int64_t capacity);
+    int64_t (*stdin_available)(void);
+    int64_t (*stdin_is_tty)(void);
+
     // Directory
     int64_t (*dir_open)(int64_t root_internal, const char *rel_path);
     bool (*dir_next)(int64_t internal, pal_dir_entry_t *out);

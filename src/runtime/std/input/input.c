@@ -2,10 +2,9 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
-#include <poll.h>
-#include <unistd.h>
 #include <errno.h>
 #include <string.h>
+#include "pal.h"
 
 char *rt_io_read_line(void);
 
@@ -32,13 +31,7 @@ static int g_read_eof = 0;
 static int64_t io_input_available(void) {
     if (g_read_pos < g_read_len) return 1;
     if (g_read_eof) return 0;
-    struct pollfd pfd;
-    pfd.fd = 0;
-    pfd.events = POLLIN;
-    pfd.revents = 0;
-    int rc = poll(&pfd, 1, 0);
-    if (rc <= 0) return 0;
-    return (pfd.revents & (POLLIN | POLLHUP)) ? 1 : 0;
+    return pal_stdin_available() > 0 ? 1 : 0;
 }
 
 static size_t io_read_fill(void) {
@@ -47,7 +40,7 @@ static size_t io_read_fill(void) {
     g_read_pos = 0;
     g_read_len = 0;
     for (;;) {
-        ssize_t got = read(0, g_read_buf, sizeof(g_read_buf));
+        int64_t got = pal_stdin_read(g_read_buf, sizeof(g_read_buf));
         if (got > 0) {
             g_read_len = (size_t)got;
             return g_read_len;
@@ -152,5 +145,5 @@ int64_t rt_io_available(void) {
 }
 
 int64_t rt_io_is_tty(void) {
-    return isatty(0) ? 1 : 0;
+    return pal_stdin_is_tty() > 0 ? 1 : 0;
 }

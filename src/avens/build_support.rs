@@ -1235,7 +1235,7 @@ pub(crate) fn minimal_runtime_c_files(used_runtime: &HashSet<String>) -> Vec<Str
 pub(crate) fn runtime_c_file_needs_pal(source_path: &std::path::Path) -> bool {
     matches!(
         source_path.file_name().and_then(|name| name.to_str()),
-        Some("helpers.c" | "thread.c" | "pal_bridge.c" | "time.c")
+        Some("helpers.c" | "input.c" | "thread.c" | "pal_bridge.c" | "time.c")
     )
 }
 
@@ -1260,6 +1260,7 @@ mod runtime_source_tests {
             .iter()
             .any(|file| file == "pal_bridge/pal_bridge.c"));
         assert!(runtime_c_file_needs_pal(Path::new("runtime/pal_bridge/pal_bridge.c")));
+        assert!(runtime_c_file_needs_pal(Path::new("runtime/std/input/input.c")));
     }
 
     #[test]

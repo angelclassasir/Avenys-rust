@@ -22,11 +22,22 @@ typedef struct {
     size_t len;
 } WasiIovec;
 
+typedef struct {
+    void *buf;
+    size_t len;
+} WasiCiovec;
+
 #if defined(__wasm__)
 __attribute__((import_module("wasi_snapshot_preview1")))
 __attribute__((import_name("fd_write")))
 #endif
 extern uint32_t wasi_fd_write(uint32_t fd, const WasiIovec *iovs, size_t count, size_t *written);
+
+#if defined(__wasm__)
+__attribute__((import_module("wasi_snapshot_preview1")))
+__attribute__((import_name("fd_read")))
+#endif
+extern uint32_t wasi_fd_read(uint32_t fd, const WasiCiovec *iovs, size_t count, size_t *read_count);
 
 #if defined(__wasm__)
 __attribute__((import_module("wasi_snapshot_preview1")))
@@ -130,6 +141,13 @@ const char *pal_env_all(void) { return ""; }
 static int wasi_init(void) { return 0; }
 static void wasi_shutdown(void) {}
 
+static int64_t wasi_stdin_read(void *buffer, int64_t capacity) {
+    WasiCiovec iov = { buffer, (size_t)capacity };
+    size_t bytes_read = 0;
+    uint32_t error = wasi_fd_read(0, &iov, 1, &bytes_read);
+    return error == 0 ? (int64_t)bytes_read : -1;
+}
+
 static const pal_ops_t wasi_ops = {
     .init = wasi_init,
     .shutdown = wasi_shutdown,
@@ -144,6 +162,9 @@ static const pal_ops_t wasi_ops = {
     .file_size = NULL,
     .file_clone = NULL,
     .file_close = NULL,
+    .stdin_read = wasi_stdin_read,
+    .stdin_available = NULL,
+    .stdin_is_tty = NULL,
     .dir_open = NULL,
     .dir_next = NULL,
     .dir_close = NULL,

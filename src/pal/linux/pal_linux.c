@@ -21,6 +21,7 @@
 #include <sodium.h>
 #include <sys/resource.h>
 #include <time.h>
+#include <poll.h>
 
 #if defined(__has_include)
 #if __has_include(<linux/openat2.h>)
@@ -266,6 +267,22 @@ static int64_t linux_file_read(int64_t internal, void *buf, int64_t capacity) {
     ssize_t n = read(file->fd, buf, (size_t)capacity);
     if (n < 0) return -1;
     return (int64_t)n;
+}
+
+static int64_t linux_stdin_read(void *buffer, int64_t capacity) {
+    if (capacity > SSIZE_MAX) capacity = SSIZE_MAX;
+    return (int64_t)read(STDIN_FILENO, buffer, (size_t)capacity);
+}
+
+static int64_t linux_stdin_available(void) {
+    struct pollfd descriptor = { .fd = STDIN_FILENO, .events = POLLIN };
+    int result = poll(&descriptor, 1, 0);
+    if (result < 0) return -1;
+    return result > 0 && (descriptor.revents & (POLLIN | POLLHUP)) ? 1 : 0;
+}
+
+static int64_t linux_stdin_is_tty(void) {
+    return isatty(STDIN_FILENO) ? 1 : 0;
 }
 
 static int64_t linux_file_write(int64_t internal, const void *buf, int64_t length) {
@@ -1232,6 +1249,9 @@ static const pal_ops_t linux_ops = {
     .file_size = linux_file_size,
     .file_clone = linux_file_clone,
     .file_close = linux_file_close,
+    .stdin_read = linux_stdin_read,
+    .stdin_available = linux_stdin_available,
+    .stdin_is_tty = linux_stdin_is_tty,
     .dir_open = linux_dir_open,
     .dir_next = linux_dir_next,
     .dir_close = linux_dir_close,

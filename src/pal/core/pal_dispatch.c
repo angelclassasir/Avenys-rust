@@ -93,6 +93,31 @@ int64_t pal_file_write(pal_file_t file, const void *buf, int64_t length) {
     return ops->file_write(internal, buf, length);
 }
 
+int64_t pal_stdin_read(void *buffer, int64_t capacity) {
+    pal_ensure_init();
+    if (!ops || !ops->stdin_read) {
+        pal_set_error(PAL_ERR_UNSUPPORTED, "standard input is unavailable");
+        return -1;
+    }
+    if (!buffer || capacity < 0) {
+        pal_set_error(PAL_ERR_INVALID, "invalid standard input buffer");
+        return -1;
+    }
+    return ops->stdin_read(buffer, capacity);
+}
+
+int64_t pal_stdin_available(void) {
+    pal_ensure_init();
+    if (!ops || !ops->stdin_available) return -1;
+    return ops->stdin_available();
+}
+
+int64_t pal_stdin_is_tty(void) {
+    pal_ensure_init();
+    if (!ops || !ops->stdin_is_tty) return -1;
+    return ops->stdin_is_tty();
+}
+
 int64_t pal_file_seek(pal_file_t file, int64_t offset, pal_seek_from_t from) {
     if (!ops || !ops->file_seek) { pal_set_error(PAL_ERR_UNSUPPORTED, "no backend"); return -1; }
     int64_t internal = (int64_t)pal_core_validate_and_get(file.index, file.generation, PAL_RES_FILE);

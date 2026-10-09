@@ -256,6 +256,14 @@ bool pal_file_stat(pal_file_t file, pal_stat_t *out);
 int64_t pal_file_size(pal_file_t file);
 pal_file_t pal_file_clone(pal_file_t file);
 void pal_file_close(pal_file_t file);
+
+/// Read from process standard input. Returns bytes read, zero at EOF, or -1.
+int64_t pal_stdin_read(void *buffer, int64_t capacity);
+/// Returns 1 when input is ready, 0 when it is not, or -1 if unsupported.
+int64_t pal_stdin_available(void);
+/// Returns 1 for a terminal, 0 for a non-terminal, or -1 if unsupported.
+int64_t pal_stdin_is_tty(void);
+
 pal_dir_t pal_dir_open(pal_root_t root, const char *rel_path);
 
 /// Returns the next directory entry by value (struct return ABI). Use
