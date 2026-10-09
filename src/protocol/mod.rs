@@ -9,7 +9,7 @@ use std::fmt;
 mod messages;
 pub use messages::{
     CArtifact, CompileRequest, CompileResponse, CompileStatus, LoadPolicy, SecurityPolicy,
-    SourceEntry, SourceFlags,
+    SourceEntry, SourceFlags, PROTOCOL_VERSION,
 };
 
 /// Hard upper bound for one framed protocol payload.
