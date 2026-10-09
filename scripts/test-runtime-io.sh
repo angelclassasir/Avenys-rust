@@ -40,6 +40,11 @@ fi
 
 printf 'Runtime input, output, timing, and panic diagnostics passed through the minimal PAL runtime.\n'
 
+# The `full` runtime tier was removed: measurement showed `minimal` produces the
+# same output and diagnostics in ~74% of the binary size. This step keeps the
+# legacy name covered on purpose — a project that still says `runtime = "full"`
+# must keep building and keep producing the same diagnostic, rather than
+# failing on a name that no longer names a tier.
 "$compiler" build "$repository_directory/scripts/fixtures/runtime_panic_full_smoke.mire" \
     --release --runtime full -o "$temporary_directory/runtime-panic-full-smoke"
 
@@ -51,10 +56,10 @@ set -e
 
 if [ "$full_panic_status" -ne 101 ] || \
     ! grep -Fqx 'runtime error: managed diagnostic smoke' "$temporary_directory/full-panic.stderr"; then
-    printf 'Full-runtime panic diagnostic smoke test failed (status %s).\n' \
+    printf 'Legacy `--runtime full` compatibility smoke test failed (status %s).\n' \
         "$full_panic_status" >&2
     sed -n '1,4p' "$temporary_directory/full-panic.stderr" >&2
     exit 1
 fi
 
-printf 'Full-runtime panic diagnostics passed through the PAL.\n'
+printf 'The legacy `full` runtime name still builds and reports the same diagnostic.\n'

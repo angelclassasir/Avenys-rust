@@ -1003,18 +1003,14 @@ pub(crate) fn collect_used_symbols(ir: &str) -> UsedSymbols {
 }
 
 /// Filter `pal_extern_decls()` to emit only declarations for symbols that appear
-/// in the `used_pal` set.  When `runtime_tier` is `Minimal` or `None`, this is
-/// the only source of PAL declarations.  When `Full`, all declarations are emitted
-/// regardless (backward-compatible).
-pub(crate) fn filter_pal_decls(
-    used_pal: &HashSet<String>,
-    runtime_tier: crate::avens::config::RuntimeTier,
-) -> Vec<String> {
-    use crate::avens::config::RuntimeTier;
+/// in the `used_pal` set.
+///
+/// The declaration set is filtered by actual use rather than by tier. Emitting
+/// every declaration unconditionally was the previous `full`-tier behavior; it
+/// linked symbols no program referenced, and measurement showed no benefit over
+/// emitting only what is used.
+pub(crate) fn filter_pal_decls(used_pal: &HashSet<String>) -> Vec<String> {
     let all = crate::compiler::mir::codegen::builtins::pal_extern_decls();
-    if matches!(runtime_tier, RuntimeTier::Full) {
-        return all;
-    }
     all.into_iter()
         .filter(|decl| {
             // Extract the symbol name from `declare ... @sym_name(...)`

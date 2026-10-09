@@ -229,7 +229,7 @@ pub(crate) fn parse_common_with_file(
                     .ok_or_else(|| cli_msg("Missing runtime tier after --runtime"))?;
                 runtime = Some(
                     mire::RuntimeTier::parse(value)
-                        .ok_or_else(|| cli_msg("Runtime must be full, minimal, or none"))?,
+                        .ok_or_else(|| cli_msg("Runtime must be minimal or none"))?,
                 );
             }
             "--nostartfiles" => nostartfiles = true,

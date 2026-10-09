@@ -69,7 +69,7 @@ pub(crate) fn print_help() {
     println!("  -L, --link <path>     Native linker search directory");
     println!("  -l, --link-lib <name> Native library to link");
     println!("  --target <triple>     LLVM/Clang target triple");
-    println!("  --runtime <tier>      full|minimal|none");
+    println!("  --runtime <tier>      minimal|none");
     println!("  --artifact <type>     bin|static|shared");
     println!();
     println!("Native C (all repeatable, so a build orchestrator needs no config file):");

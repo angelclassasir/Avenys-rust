@@ -54,7 +54,7 @@ Use `mire debug --ir` to inspect the generated IR.
 
 ### Why does `mire build` produce a very large binary?
 
-Check `[c] runtime` in `owl.toml`. `runtime = "full"` includes all runtime functions. Use `runtime = "minimal"` or `runtime = "none"` to reduce size.
+Check `[c] runtime` in `owl.toml`. `runtime = "minimal"` links only the runtime and PAL units your program actually references. Use `runtime = "none"` to reduce size further. There is no `full` tier: it was removed after measurement showed it produced the same binary behavior at roughly 74% of the size, so `runtime = "full"` now resolves to `minimal`.
 
 ### How do I debug compilation errors?
 
@@ -124,7 +124,17 @@ match result {
 
 ### What is a "runtime tier"?
 
-The runtime tier controls which `rt_*` functions are available and compiled into your binary. Three tiers: `full`, `minimal`, `none`.
+The runtime tier controls which `rt_*` functions are linked into your binary. Two
+tiers: `minimal` and `none`.
+
+`minimal` is demand-driven. The compiler scans the generated IR, keeps only the
+runtime units the program references, and adds PAL sources only when a PAL
+symbol is actually called. A third tier, `full`, used to compile every runtime
+and PAL source regardless of use. It was measured against `minimal` on the C2
+allocation kernel and the panic diagnostic smoke — identical output, identical
+diagnostics, roughly 74% of the binary size, and no measurable runtime
+difference — and removed. A configuration that still says `runtime = "full"`
+resolves to `minimal` rather than failing.
 
 ### How do I use zero runtime?
 
@@ -188,7 +198,7 @@ Use `runtime = "none"`, `nostartfiles = true`, `nostdlib = true`, and `-Oz`. Pro
 
 ### How do I optimize for speed?
 
-Use `-O3`, `runtime = "full"`, and `libt = "cdylib"` for shared library linking.
+Use `-O3`, the default `minimal` runtime, and `libt = "cdylib"` for shared library linking.
 
 ### How do I profile my Mire program?
 

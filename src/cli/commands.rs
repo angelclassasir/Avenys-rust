@@ -76,7 +76,7 @@ pub(crate) fn build_help() {
     println!("  --cache-dir <dir>     Incremental cache directory (default: bin/.cache)");
     println!("  --config <file>       Owl-generated normalized compiler config");
     println!("  --artifact <type>     Output type: bin|static|shared (default: bin)");
-    println!("  --runtime <tier>      Runtime tier: full|minimal|none");
+    println!("  --runtime <tier>      Runtime tier: minimal|none");
     println!("  --target <triple>     LLVM/Clang target triple");
     println!("  -L, --link <dir>      Native linker search directory");
     println!("  -l, --link-lib <name> Native library to link");

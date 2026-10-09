@@ -73,7 +73,7 @@ mire debug src/main.mire --run     # Run with debug output
 | `--output-dir <dir>` | Output directory |
 | `--cache-dir <dir>` | Incremental cache location |
 | `--target <triple>` | LLVM target triple |
-| `--runtime <tier>` | full/minimal/none |
+| `--runtime <tier>` | minimal/none |
 | `--artifact <bin\|static\|shared>` | Output type |
 | `--release` | Release build |
 | `-O<0-3\|s\|z>` | Optimization level |
@@ -97,7 +97,7 @@ libt = "cdylib"    # or "staticlib", "bin"
 crate-type = "cdylib"   # hyphenated alias
 
 [c]
-runtime = "minimal"    # full | minimal | none
+runtime = "minimal"    # minimal | none
 target = "x86_64-unknown-linux-gnu"
 nostartfiles = false
 nostdlib = false

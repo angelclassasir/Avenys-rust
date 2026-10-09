@@ -105,7 +105,7 @@ mire debug src/main.mr --run     # Run with debug output
 | `--output-dir <dir>` | Output directory |
 | `--cache-dir <dir>` | Incremental cache location |
 | `--target <triple>` | LLVM target triple |
-| `--runtime <tier>` | full/minimal/none |
+| `--runtime <tier>` | minimal/none |
 | `--artifact <bin\|static\|shared>` | Output type |
 | `--release` | Release build |
 | `-O<0-3\|s\|z>` | Optimization level |
@@ -123,7 +123,7 @@ mire debug src/main.mr --run     # Run with debug output
 | Flag | Stage | Description |
 |------|-------|-------------|
 | `--target` | Codegen | LLVM target triple |
-| `--runtime` | Codegen | Tier gating (full/minimal/none) |
+| `--runtime` | Codegen | Tier gating (minimal/none) |
 | `--artifact` | Linker | Output type |
 | `--libt` | Linker | Legacy library type|
 | `-O` | opt | Optimization level |
@@ -159,7 +159,7 @@ libt = "cdylib"
 crate-type = "cdylib"
 
 [c]
-runtime = "full"
+runtime = "minimal"
 ```
 
 ---

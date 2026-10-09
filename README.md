@@ -366,7 +366,7 @@ mire build src/main.mire \
   --output-dir bin/release \
   --cache-dir bin/.cache \
   --target x86_64-unknown-linux-gnu \
-  --runtime full
+  --runtime minimal
 ```
 
 Relevant path flags are:
@@ -622,7 +622,7 @@ owl debug [FILE] [--tokens] [--ast] [--ir] [--run]
 
 # Native compiler link/runtime controls are available on build/run/debug:
 # --target <triple>  -L, --link <dir>  -l, --link-lib <name>
-# --artifact <bin|static|shared>  --runtime <full|minimal|none>
+# --artifact <bin|static|shared>  --runtime <minimal|none>
 ```
 
 Warnings are **off by default**. Enable with:

@@ -5,6 +5,19 @@ All notable changes to Avenys will be documented in this file.
 ## 4.3.13 - 2026-10-09
 
 ### Changed
+- **`full` runtime tier removed.** The tier compiled every runtime and PAL source
+  regardless of use. Measured against `minimal` on the C2 allocation kernel and
+  the panic diagnostic smoke, it produced identical output and identical
+  diagnostics at roughly 74% of the binary size (203,256 B → 150,064 B for C2)
+  with no measurable runtime difference across three timing replicas. The tier
+  and its two selection branches are removed, and `filter_pal_decls` no longer
+  takes a tier because PAL declarations are filtered by use rather than by tier.
+  **Compatibility:** `"full"` still parses, in both `RuntimeTier::parse` and the
+  serde deserializer, and resolves to `minimal`, so an existing project keeps
+  building and keeps producing the same diagnostic.
+  `scripts/test-runtime-io.sh` keeps that case covered deliberately.
+  Documentation updated in `README.md`, `docs/cli`, `docs/compiler`, `docs/faq`,
+  and `docs/rt`.
 - **Managed release contract pinned and the last silent release removed:** new
   `tests/runtime_managed_release_smoke.c` (driven by
   `scripts/test-runtime-managed-release.sh`) verifies that a managed string

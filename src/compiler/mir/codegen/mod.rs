@@ -116,11 +116,12 @@ pub fn mir_to_llvm_with_filename(
     out.push(format!("target triple = \"{}\"", target_triple));
     out.push(String::new());
     out.extend(extern_decls);
-    // Unified dependency collector: scan IR for used symbols, emit only needed declarations.
-    // In `full` mode we still emit everything for backward-compatibility.
+    // Unified dependency collector: scan IR for used symbols and emit only the
+    // declarations they need. The previous `full`-tier behavior of emitting
+    // every declaration unconditionally linked symbols no program referenced;
+    // measurement found no benefit over emitting only what is used.
     let used = collect_used_symbols(&out.join("\n"));
-    let runtime_tier = crate::avens::build_support::c_defs().runtime;
-    out.extend(filter_pal_decls(&used.pal, runtime_tier));
+    out.extend(filter_pal_decls(&used.pal));
     out.push(String::new());
     for (name, ty) in &program.globals {
         out.push(format!(

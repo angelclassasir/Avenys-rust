@@ -135,70 +135,45 @@ fn compile_file_inner(
     let runtime_base = runtime_base();
     set_c_defs(options.c_defs.clone());
     let (mut c_source_files, c_sources_hash) = if options.emit_binary {
-        let mut files = Vec::new();
+        let mut files: Vec<String> = Vec::new();
         // Tier-aware C file collection:
-        //   full:    compile all runtime + PAL C sources (backward-compatible)
-        //   minimal: compile PAL C sources only (runtime is demand-driven at IR level)
-        //   none:    compile no runtime/PAL C sources (freestanding; user provides their own)
+        //   minimal: collect the runtime sources; after IR generation the set
+        //             is filtered to the files the program actually needs and
+        //             PAL sources are added only when PAL symbols are used.
+        //   none:    compile no runtime/PAL C sources (freestanding; user
+        //             provides their own).
+        //
+        // The removed `full` tier compiled every runtime and PAL source here,
+        // except the `_minimal` variants. Measurement on the C2 allocation
+        // kernel and the panic diagnostic smoke showed the same output and
+        // diagnostics at ~74% of the binary size, so the unconditional
+        // inclusion bought size rather than speed.
         let runtime_tier = options.c_defs.runtime;
         if !matches!(runtime_tier, RuntimeTier::None) {
-            if matches!(runtime_tier, RuntimeTier::Full) {
-                // Full tier: compile all runtime and PAL sources (exclude _minimal.c variants)
-                let pal_platform = pal_platform_for_target(
-                    options
-                        .c_defs
-                        .target
-                        .as_deref()
-                        .unwrap_or("x86_64-unknown-linux-gnu"),
-                );
-                for directory in ["runtime", "pal/core"]
-                    .iter()
-                    .chain(std::iter::once(&pal_platform))
+            // Collect the runtime sources; PAL is added on demand after IR
+            // generation, when a PAL symbol is actually referenced.
+            let dir = runtime_base.join("runtime");
+            for path in collect_c_sources(&dir)
+                .map_err(|err| {
+                    MireError::new(ErrorKind::Runtime {
+                        span: crate::error::Span::unknown(),
+                        message: format!("Could not read C sources from runtime: {err}"),
+                    })
+                })?
+            {
+                let fname = path.file_name().unwrap().to_string_lossy();
+                // A `_minimal.c` variant supersedes its full counterpart when
+                // both are present; otherwise include the file unless its
+                // non-minimal sibling is already selected.
+                if fname.ends_with("_minimal.c")
+                    || !files
+                        .iter()
+                        .any(|file| file.ends_with(&fname.replace("_minimal", "")))
                 {
-                    let dir = runtime_base.join(directory);
-                    for path in collect_c_sources(&dir)
-                        .map_err(|err| {
-                            MireError::new(ErrorKind::Runtime {
-                                span: crate::error::Span::unknown(),
-                                message: format!(
-                                    "Could not read C sources from {directory}: {err}"
-                                ),
-                            })
-                        })?
-                    {
-                        let fname = path.file_name().unwrap().to_string_lossy();
-                        // Skip _minimal.c variants in full tier (they're for minimal tier only)
-                        if !fname.ends_with("_minimal.c") {
-                            files.push(path.to_string_lossy().into_owned());
-                        }
-                    }
-                }
-            } else {
-                // Minimal tier: collect only runtime sources (PAL added on demand).
-                // After IR generation, R3.2 filters runtime .c to only needed files,
-                // and adds PAL .c files only if the program uses PAL symbols.
-                // The full hash is kept for conservative cache invalidation.
-                let dir = runtime_base.join("runtime");
-                for path in collect_c_sources(&dir)
-                    .map_err(|err| {
-                        MireError::new(ErrorKind::Runtime {
-                            span: crate::error::Span::unknown(),
-                            message: format!("Could not read C sources from runtime: {err}"),
-                        })
-                    })?
-                {
-                    let fname = path.file_name().unwrap().to_string_lossy();
-                    // In minimal tier, prefer _minimal.c variants, but also include base files
-                    // that don't have a _minimal counterpart.
-                    if fname.ends_with("_minimal.c")
-                        || !files
-                            .iter()
-                            .any(|file| file.ends_with(&fname.replace("_minimal", "")))
-                    {
-                        files.push(path.to_string_lossy().into_owned());
-                    }
+                    files.push(path.to_string_lossy().into_owned());
                 }
             }
+        }
             // Also collect C sources from the compiler's runtime directory (standard library)
             let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
             let compiler_runtime = manifest_dir.join("src/runtime");
@@ -214,11 +189,14 @@ fn compile_file_inner(
                     })?
                 {
                     let fname = path.file_name().unwrap().to_string_lossy();
-                    if matches!(runtime_tier, RuntimeTier::Full) {
-                        if !fname.ends_with("_minimal.c") {
-                            files.push(path.to_string_lossy().into_owned());
-                        }
-                    } else if fname.ends_with("_minimal.c")
+                    // A `_minimal.c` variant supersedes its full counterpart
+                    // when both are present; otherwise include the file unless
+                    // its non-minimal sibling is already selected. The previous
+                    // `full` tier took the opposite branch and compiled every
+                    // runtime source except the `_minimal` variants, which
+                    // measurement showed was no faster and produced a larger
+                    // binary.
+                    if fname.ends_with("_minimal.c")
                         || !files
                             .iter()
                             .any(|file| file.ends_with(&fname.replace("_minimal", "")))
@@ -227,7 +205,6 @@ fn compile_file_inner(
                     }
                 }
             }
-        }
         for proj_src in &options.c_defs.sources {
             let root = crate::avens::manifest::find_project_root(source_path)
                 .unwrap_or_else(|| std::path::PathBuf::from("."));
@@ -942,15 +919,31 @@ mod tests {
                 .expect("none runtime must be lifted for a test");
         assert!(matches!(freestanding.c_defs.runtime, RuntimeTier::Minimal));
 
-        // A full-tier project keeps its tier. Paired with a shared artifact so
-        // there is a normalization to observe: only the artifact should move.
-        let full = normalize_test_build_options(&opts(LibType::Shared, RuntimeTier::Full, true))
-            .expect("shared artifact must be normalized alongside a full tier");
-        assert!(matches!(full.c_defs.runtime, RuntimeTier::Full));
-        assert!(matches!(full.c_defs.artifact, LibType::Bin));
+        // A minimal-tier project keeps its tier. Paired with a shared artifact
+        // so there is a normalization to observe: only the artifact moves.
+        let minimal = normalize_test_build_options(&opts(LibType::Shared, RuntimeTier::Minimal, true))
+            .expect("shared artifact must be normalized alongside a minimal tier");
+        assert!(matches!(minimal.c_defs.runtime, RuntimeTier::Minimal));
+        assert!(matches!(minimal.c_defs.artifact, LibType::Bin));
 
-        // Bin + full needs no normalization at all, and must not clone to say so.
-        assert!(normalize_test_build_options(&opts(LibType::Bin, RuntimeTier::Full, true)).is_none());
+        // Bin + minimal needs no normalization at all, and must not clone to
+        // say so.
+        assert!(normalize_test_build_options(&opts(LibType::Bin, RuntimeTier::Minimal, true)).is_none());
+    }
+
+    #[test]
+    fn the_removed_full_tier_name_resolves_to_minimal() {
+        // The `full` tier was removed after measurement. The name must keep
+        // resolving so an existing project keeps building, and it must resolve
+        // to the tier that exists rather than silently reaching a deleted one.
+        assert!(matches!(
+            RuntimeTier::parse("full"),
+            Some(RuntimeTier::Minimal)
+        ));
+        assert!(matches!(
+            RuntimeTier::parse("FULL"),
+            Some(RuntimeTier::Minimal)
+        ));
     }
 
     #[test]

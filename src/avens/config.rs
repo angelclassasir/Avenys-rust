@@ -194,7 +194,6 @@ pub struct MireMacros {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[derive(Default)]
 pub enum RuntimeTier {
-    Full,
     #[default]
     Minimal,
     None,
@@ -203,9 +202,15 @@ pub enum RuntimeTier {
 impl RuntimeTier {
     pub fn parse(value: &str) -> Option<Self> {
         match value.to_ascii_lowercase().as_str() {
-            "full" => Some(Self::Full),
             "minimal" => Some(Self::Minimal),
             "none" => Some(Self::None),
+            // `full` was removed after measuring it against `minimal` on the
+            // C2 allocation kernel and the panic diagnostic smoke: `minimal`
+            // produced identical output and diagnostics at ~74% of the binary
+            // size, with no measurable runtime difference. It is accepted as a
+            // name rather than rejected so that an existing project keeps
+            // building while it stops linking a tier that no longer exists.
+            "full" => Some(Self::Minimal),
             _ => None,
         }
     }
@@ -254,7 +259,6 @@ impl serde::Serialize for RuntimeTier {
         S: serde::Serializer,
     {
         serializer.serialize_str(match self {
-            RuntimeTier::Full => "full",
             RuntimeTier::Minimal => "minimal",
             RuntimeTier::None => "none",
         })
@@ -268,9 +272,12 @@ impl<'de> serde::Deserialize<'de> for RuntimeTier {
     {
         let s = String::deserialize(deserializer)?;
         match s.as_str() {
-            "full" => Ok(RuntimeTier::Full),
             "minimal" => Ok(RuntimeTier::Minimal),
             "none" => Ok(RuntimeTier::None),
+            // Accepted for compatibility with manifests written before the
+            // `full` tier was removed; it deserializes to the tier that
+            // actually exists now.
+            "full" => Ok(RuntimeTier::Minimal),
             _ => Err(serde::de::Error::custom(format!(
                 "invalid runtime tier: {}",
                 s

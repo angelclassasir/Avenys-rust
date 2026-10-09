@@ -349,17 +349,48 @@ Two findings from that smoke:
 Verification: 241 library + 14 CLI tests, 12/12 benchmark output equivalence,
 WASI compile gate unchanged, release build clean.
 
+## B4 — `full` runtime tier: removed
+
+The `full` tier compiled every runtime and PAL source regardless of use. It was
+removed after measuring `minimal` against it, because "no capability is lost" is
+a claim that has to be checked rather than assumed:
+
+| Program | `full` | `minimal` |
+|---|---|---|
+| panic diagnostic smoke | 201,424 B, status 101 | 148,232 B, status 101, same diagnostic |
+| C2 allocation kernel | 203,256 B, exit 0 | 150,064 B, exit 0 |
+| C2 wall time, 3 runs | 1506 / 1463 / 1505 ms | 1494 / 1505 / 1547 ms |
+
+Identical output, identical diagnostics, ~74% of the size, no measurable runtime
+difference. A build after the removal reproduces the `minimal` size exactly, so
+the change is behavior-neutral.
+
+`RuntimeTier::Full` and its two selection branches are gone. The first compiled
+every runtime source except the `_minimal` variants; the second also added
+`pal/core` unconditionally, which `minimal` adds on demand when a PAL symbol is
+referenced. `filter_pal_decls` lost its tier parameter for the same reason: its
+tier argument existed only to restore the unconditional path.
+
+The legacy name still resolves. `"full"` parses to `Minimal` in both
+`RuntimeTier::parse` and the serde deserializer, and
+`scripts/test-runtime-io.sh` keeps that case covered on purpose, so an existing
+project keeps building instead of failing on a name that no longer names a
+tier. Documentation updated across `README.md`, `docs/cli`, `docs/compiler`,
+`docs/faq`, and `docs/rt`.
+
+Verification: 242 library + 14 CLI tests, 11 runtime smokes, WASI compile gate,
+12/12 benchmark output equivalence.
+
 ## Remaining work
 
 - Complete PAL C0 on all supported backends; Windows is not implemented yet.
 - The planned FIFO bootstrap is not currently implementable with the exposed
   PAL: there is no FIFO-creation operation. Before using FIFOs, add a scoped,
   tested FIFO capability; otherwise finish C0 and use Unix sockets.
-- Runtime B1 (move-only source reorganization), B2 (host boundary), and B3
-  (managed release contract) are closed and verified. B4-B6 remain open: remove
-  the `full` tier only with explicit compatibility handling, prove the three
-  narrow Mire bootstrap modules, then measure the slab allocator against the
-  honest C2 baseline.
+- Runtime B1 (move-only source reorganization), B2 (host boundary), B3
+  (managed release contract), and B4 (`full` tier removal) are closed and
+  verified. B5-B6 remain open: prove the three narrow Mire bootstrap modules,
+  then measure the slab allocator against the honest C2 baseline.
 - PAL C1-C6, including actual WASI/Wasmtime coverage, Windows/Wine coverage,
   removal of weak stubs, capability reporting, and the incomplete WASM package,
   remain open.

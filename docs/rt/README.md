@@ -39,7 +39,7 @@ Mire supports **three runtime tiers** that control how much of the standard runt
 ```toml
 # owl.toml
 [c]
-runtime = "full"       # full | minimal | none
+runtime = "minimal"    # minimal | none
 target = "x86_64-unknown-linux-gnu"  # optional LLVM target override
 nostartfiles = false   # requires runtime = "none" or libt = static/shared
 nostdlib = false       # requires runtime = "none" + nostartfiles
