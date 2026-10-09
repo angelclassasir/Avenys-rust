@@ -30,12 +30,16 @@ does not claim that the full redesign is complete.
 - Linux PAL Unix-domain stream sockets have typed connect/bind operations,
   private-directory validation, mode-0600 socket nodes, inode-aware cleanup,
   and mapped missing-path errors. The two-thread exchange and path-security
-  smoke test passes outside the local execution sandbox.
+  smoke test passes outside the local execution sandbox. Scalar `rt_pal_*`
+  adapters preserve typed handle validation across Mire's `i64` FFI, and
+  minimal-runtime source selection now includes both the bridge and PAL
+  backend.
 
 Relevant commits on the active branches:
 
 - Avenys: `98bdf24` (schema dependency and CI validation), `12edb4f`
-  (process-spawn baseline diagnosis), `87407ee` (Linux Unix-domain sockets).
+  (process-spawn baseline diagnosis), `87407ee` (Linux Unix-domain sockets),
+  `c48ad5f` (Mire scalar-handle adapters and minimal-runtime PAL selection).
 - Owl: `ac41531` (schema dependency documentation), `0ce4193` and `9747cd4`
   (cross-decode CI and LLVM toolchain path).
 
