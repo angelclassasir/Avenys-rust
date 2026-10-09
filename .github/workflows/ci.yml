@@ -71,7 +71,7 @@ jobs:
       - name: Test
         env:
           LLVM_CONFIG_PATH: /usr/bin/llvm-config-22
-        run: cargo test --release
+        run: cargo test --release -j 2
 
       - name: Run modular Mire tests
         env:
@@ -96,6 +96,9 @@ jobs:
           cp target/release/mire dist/mire/
           cp -r src/runtime dist/mire/runtime
           cp -r src/pal dist/mire/pal
+          test -f dist/mire/runtime/core/strings.c
+          test -f dist/mire/runtime/collections/map/maps.c
+          test -f dist/mire/runtime/memory/allocator/managed.c
 
       - name: Upload mire artifact
         uses: actions/upload-artifact@v4

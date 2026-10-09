@@ -246,20 +246,24 @@ installer copies to `<prefix>/lib/mire/`.
 
 The script installs these automatically via your package manager when
 `--yes` is supplied (or asks for confirmation): `curl`, `tar`, `git`, Rust/
-Cargo, Clang/LLVM, `pkg-config`, OpenSSL, libsodium, zlib and zstd. SDL is a
-project dependency, not a compiler prerequisite.
+Cargo, Clang/LLVM and LLD, `pkg-config`, OpenSSL, libsodium, zlib, zstd, and
+libarchive. SDL is a project dependency, not a compiler prerequisite.
+`protobuf-compiler` is only used by repository CI to validate the checked-in
+Owl/Avenys schema; neither the installer nor the runtime needs it. Compiler
+release archives preserve the nested `runtime/` and `pal/` source trees, so
+reorganizing runtime modules does not add a host package dependency.
 
 Or install them manually:
 
 ```bash
 # Debian/Ubuntu
-sudo apt install curl tar git clang llvm-dev cargo pkg-config libssl-dev libsodium-dev zlib1g-dev libzstd-dev
+sudo apt install curl tar git clang llvm-dev lld cargo pkg-config libssl-dev libsodium-dev zlib1g-dev libzstd-dev libarchive-dev
 
 # Arch Linux
-sudo pacman -S curl tar git clang llvm rust openssl libsodium zlib zstd
+sudo pacman -S curl tar git clang llvm lld rust openssl libsodium zlib zstd libarchive
 
 # Fedora/RHEL
-sudo dnf install curl tar git clang llvm-devel rust cargo pkgconf-pkg-config openssl-devel libsodium-devel zlib-devel zstd-devel
+sudo dnf install curl tar git clang llvm-devel lld rust cargo pkgconf-pkg-config openssl-devel libsodium-devel zlib-devel zstd-devel libarchive-devel
 ```
 
 ### Post-install

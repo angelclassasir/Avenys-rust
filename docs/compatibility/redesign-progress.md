@@ -39,6 +39,23 @@ does not claim that the full redesign is complete.
   tests, and doc-tests; `bench/run.sh verify` matched all 12 Rust/Mire kernel
   outputs. The PAL C smoke test passed with approved access outside the local
   sandbox.
+- Runtime B1 move-only migration is in progress: C sources are now grouped under `core/`,
+  `memory/`, `collections/`, `std/io/`, and `pal_bridge/`. The compiler
+  recursively discovers sources, resolves minimal-runtime providers by their
+  relative module paths, and release packaging checks that nested runtime
+  sources are present. The requested `std/input/`, `std/output/`, and
+  `std/error/` split remains open because the existing `mire_io.c` implements
+  all three responsibilities in one file; it is temporarily grouped under
+  `std/io/` to preserve behavior. No runtime behavior or host dependency was
+  intentionally changed. CI tests are limited to two Cargo jobs to avoid the
+  previously observed linker memory thrashing. `cargo test --locked --release
+  -j 2` passed 239 library tests and 14 CLI tests; `bench/run.sh verify`
+  matched all 12 kernel outputs.
+- Installer and CI dependency audit for B1: no new host package is needed.
+  `protobuf-compiler` remains CI-only for schema validation, not a compiler or
+  runtime dependency. The README's manual package lists now match the installer's
+  runtime prerequisites, and CI/release packaging asserts the nested source
+  layout is retained.
 
 Relevant commits on the active branches:
 
@@ -70,10 +87,11 @@ restriction, not evidence that the socket implementation is unsupported.
 - The planned FIFO bootstrap is not currently implementable with the exposed
   PAL: there is no FIFO-creation operation. Before using FIFOs, add a scoped,
   tested FIFO capability; otherwise finish C0 and use Unix sockets.
-- Runtime B1-B6 remains unimplemented. Preserve source files while migrating,
-  route host operations through PAL, remove the `full` tier only with explicit
-  compatibility handling, prove the three narrow Mire bootstrap modules, then
-  measure the slab allocator against the honest C2 baseline.
+- Runtime B1's move-only source reorganization is implemented and verified.
+  B2-B6 remain open: route host operations through PAL, remove the `full` tier
+  only with explicit compatibility handling, prove the three narrow Mire
+  bootstrap modules, then measure the slab allocator against the honest C2
+  baseline.
 - PAL C1-C6, including actual WASI/Wasmtime coverage, Windows/Wine coverage,
   removal of weak stubs, capability reporting, and the incomplete WASM package,
   remain open.
