@@ -29,41 +29,41 @@ set u = ()  // Unit value (only in fn returns)
 
 ## Conversion Rules
 
-##// Integer Widening (Safe, Implicit)
+## Integer Widening (Safe, Implicit)
 
 ```mire
-set a :i16 = 100
-set b :i32 = a         // OK: i16 -> i32 (zero/sign extend)
-set c :i64 = b         // OK: i32 -> i64
+set a = 100 :i16
+set b = a :i32         // OK: i16 -> i32 (zero/sign extend)
+set c = b :i64         // OK: i32 -> i64
 ```
 
-##// Integer Narrowing (Explicit Required)
+## Integer Narrowing (Explicit Required)
 
 ```mire
-set a :i64 = 1000
-// set b :i16 = a       // Error: implicit narrowing forbidden
-set b :i16 = a :i16    // OK: explicit ascription
+set a = 1000 :i64
+// set b = a            // Error: implicit narrowing forbidden
+set b = a :i16         // OK: explicit ascription
 ```
 
-##// Int <-> Float (Explicit Required)
+## Integer <-> Float (Explicit Required)
 
 ```mire
-set i :i64 = 42
-set f :f64 = i :f64    // OK: explicit i64 -> f64
+set i = 42 :i64
+set f = i :f64         // OK: explicit i64 -> f64
 set i2 = f :i64        // OK: explicit f64 -> i64 (truncates)
 ```
 
-##// Boolean
+## Boolean
 
 ```mire
-set b :bool = true
-// set i :i64 = b       // Error: no implicit bool -> int
-set i :i64 = if b { 1 } else { 0 }
+set b = true :bool
+// set i = b            // Error: no implicit bool -> int
+set i = (if b { 1 } else { 0 }) :i64
 ```
 
 ## Composite Types
 
-##// Strings (`str`)
+## Strings (`str`)
 
 ```mire
 set s = "hello" :str
@@ -73,7 +73,7 @@ set s = "hello" :str
 - UTF-8 encoded, length-prefixed
 - Immutable (use `str::concat` etc. for new strings)
 
-##// Arrays (`arr[T N]`)
+## Arrays (`arr[T N]`)
 
 ```mire
 set arr = [1 2 3 4 5] :arr[i64 5]
@@ -81,7 +81,7 @@ set arr = [1 2 3 4 5] :arr[i64 5]
 set x = arr at 2       // Index access
 ```
 
-##// Vectors (`vec[T]`)
+## Vectors (`vec[T]`)
 
 ```mire
 set v = [] :vec[i64] mut
@@ -90,7 +90,7 @@ vec::push(v, 2)
 // Dynamic, heap-allocated
 ```
 
-##// Maps (`map[K V]`)
+## Maps (`map[K V]`)
 
 ```mire
 set m = {} :map[str i64] mut
@@ -98,7 +98,7 @@ map::set(m, "key", 42)
 // Hash map, heap-allocated
 ```
 
-##// References
+## References
 
 ```mire
 set x = 10 :i64 mut
