@@ -100,6 +100,7 @@ jobs:
           cp -r src/runtime dist/mire/runtime
           cp -r src/pal dist/mire/pal
           test -f dist/mire/runtime/core/strings.c
+          test -f dist/mire/runtime/core/time.c
           test -f dist/mire/runtime/collections/map/maps.c
           test -f dist/mire/runtime/memory/allocator/managed.c
           test -f dist/mire/runtime/std/input/input.c

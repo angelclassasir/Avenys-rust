@@ -1,5 +1,11 @@
+extern fn pal_time_monotonic_ns: () :i64 lib "c"
+extern fn rt_time_elapsed_ms_str: (start_ns :i64) :str lib "c"
+
 pub fn main: () :i32 {
+    set start_ns = pal_time_monotonic_ns()
+    set elapsed_ms = rt_time_elapsed_ms_str(start_ns)
     set input = ireru("Input: ")
     dasu(input)
+    dasu(elapsed_ms)
     return 0 :i32
 }

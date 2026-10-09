@@ -77,6 +77,7 @@ jobs:
           cp -r src/runtime dist/compiler/runtime
           cp -r src/pal dist/compiler/pal
           test -f dist/compiler/runtime/core/strings.c
+          test -f dist/compiler/runtime/core/time.c
           test -f dist/compiler/runtime/collections/map/maps.c
           test -f dist/compiler/runtime/memory/allocator/managed.c
           test -f dist/compiler/runtime/std/input/input.c
@@ -119,6 +120,7 @@ jobs:
           cp -r src/runtime dist/compiler/runtime
           cp -r src/pal dist/compiler/pal
           test -f dist/compiler/runtime/core/strings.c
+          test -f dist/compiler/runtime/core/time.c
           test -f dist/compiler/runtime/collections/map/maps.c
           test -f dist/compiler/runtime/memory/allocator/managed.c
           test -f dist/compiler/runtime/std/input/input.c

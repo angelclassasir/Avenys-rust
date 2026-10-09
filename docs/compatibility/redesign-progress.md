@@ -59,6 +59,15 @@ does not claim that the full redesign is complete.
   runtime prerequisites; the installer documents that it installs the complete
   nested source tree, and CI/release packaging asserts that the layout is
   retained.
+- Runtime B2 has its first host-boundary slice: `rt_time_elapsed_ms_str` no
+  longer calls `clock_gettime` directly. It uses the new
+  `pal_time_monotonic_ns()` capability through `runtime/core/time.c`, keeping
+  the PAL dependency isolated to that runtime unit. Linux and WASI backends
+  implement the operation; the PAL socket smoke test verifies monotonic
+  ordering, and the CI runtime smoke fixture calls the function from Mire in a
+  minimal build. The WASI SDK compiles both the backend and runtime unit.
+  B2 remains open: stdin still uses `read`/`poll`/`isatty`, the managed arena
+  uses `mmap`/`munmap`, and process helpers still use `fork`/`pipe`/`waitpid`.
 
 Relevant commits on the active branches:
 
@@ -69,6 +78,9 @@ Relevant commits on the active branches:
   `465c89a` (nested packaging and dependency audit), `87597da` (4.3.13
   version/changelog), and `d70ece9`/`02baedb` (standard-stream source split
   and B1 checkpoint).
+- Avenys: `70ae793` routes elapsed-time formatting through a monotonic PAL
+  operation. This change adds no external package dependency; CI/release checks
+  verify the new runtime source is included in packaged distributions.
 - Owl: `ac41531` (schema dependency documentation), `0ce4193` and `9747cd4`
   (cross-decode CI and LLVM toolchain path).
 
@@ -94,7 +106,9 @@ restriction, not evidence that the socket implementation is unsupported.
   PAL: there is no FIFO-creation operation. Before using FIFOs, add a scoped,
   tested FIFO capability; otherwise finish C0 and use Unix sockets.
 - Runtime B1's move-only source reorganization is implemented and verified.
-  B2-B6 remain open: route host operations through PAL, remove the `full` tier
+  B2 has started with monotonic elapsed-time routing; its remaining host
+  operations must also move through PAL before B2 is complete. B3-B6 remain
+  open: remove the `full` tier
   only with explicit compatibility handling, prove the three narrow Mire
   bootstrap modules, then measure the slab allocator against the honest C2
   baseline.

@@ -18,6 +18,10 @@ All notable changes to Avenys will be documented in this file.
   analysis, receives its LLVM declaration, and selects the new input module.
   Previously it was accepted by validation but emitted as an undeclared LLVM
   call. A piped-input runtime smoke test now protects this path in CI.
+- **Monotonic runtime timing uses the PAL:** elapsed-time formatting now calls
+  `pal_time_monotonic_ns()` through an isolated `core/time.c` module. Linux and
+  WASI provide the monotonic clock, and minimal builds include the PAL backend
+  only when this runtime function is used.
 
 ## 4.3.12 - 2026-10-09
 

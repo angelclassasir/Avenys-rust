@@ -10,11 +10,14 @@ compiler=${MIRE_BIN:-"$repository_directory/target/release/mire"}
     --release --runtime minimal -o "$temporary_directory/runtime-io-smoke"
 
 actual_output=$(printf 'verified\n' | "$temporary_directory/runtime-io-smoke")
-expected_output='Input: verified'
-if [ "$actual_output" != "$expected_output" ]; then
-    printf 'runtime I/O smoke test failed: expected <%s>, got <%s>\n' \
-        "$expected_output" "$actual_output" >&2
+actual_input=$(printf '%s\n' "$actual_output" | sed -n '1p')
+actual_elapsed=$(printf '%s\n' "$actual_output" | sed -n '2p')
+if [ "$actual_input" != 'Input: verified' ] || \
+    [ -z "$actual_elapsed" ] || \
+    ! printf '%s' "$actual_elapsed" | grep -Eq '^[0-9]+$'; then
+    printf 'runtime I/O/time smoke test failed: got <%s>\n' \
+        "$actual_output" >&2
     exit 1
 fi
 
-printf 'Runtime input smoke test passed through the minimal runtime.\n'
+printf 'Runtime input and monotonic-time smoke tests passed through the minimal runtime.\n'
