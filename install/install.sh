@@ -22,6 +22,9 @@ set -e
 #   • LLVM/Clang 18-22 (any distribution-native version works: mire lowers
 #     plain-text LLVM IR, so distro `opt`/`llc`/`lld`/`clang` are used as-is)
 #   • openssl / libsodium / zlib / zstd / libarchive development libraries
+# `protobuf-compiler` (protoc) is used by repository CI to validate the checked-
+# in Owl/Avenys schema. It is a contributor-only verification tool, not a
+# runtime dependency, so the end-user installer deliberately does not install it.
 #
 # Distributions below the glibc floor (Ubuntu <24.04, Debian <13,
 # Fedora <41, RHEL/Oracle/… <10, musl/Alpine) print

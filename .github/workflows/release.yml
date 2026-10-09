@@ -23,8 +23,23 @@ permissions:
 # the installer places the bundled libsodium.so.23.
 
 jobs:
+  validate-protocol:
+    name: Validate Owl/Avenys protocol schema
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install schema validation dependency
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq protobuf-compiler
+
+      - name: Validate frozen schema
+        run: ./scripts/validate-protocol-schema.sh "$RUNNER_TEMP/owl_avenys_schema.pb"
+
   compiler:
     name: compiler (${{ matrix.triple }})
+    needs: validate-protocol
     strategy:
       fail-fast: false
       matrix:
@@ -76,6 +91,7 @@ jobs:
 
   compiler-riscv64:
     name: compiler (riscv64-unknown-linux-gnu, experimental)
+    needs: validate-protocol
     runs-on: ubuntu-24.04
     continue-on-error: true
     steps:

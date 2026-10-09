@@ -1,0 +1,91 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// OWL <-> AVENYS — IPC contract (FROZEN / FRONTEND)
+//
+// This is the repository-owned schema used by CI and releases. The Arch
+// workspace copy at ../protocol/owl_avenys.proto is kept byte-identical for
+// cross-repository design work; update both copies in the same change.
+// Field numbers and message names are permanent: never reuse or reorder them.
+// An incompatible change requires a new protocol_version accepted by both
+// sides.
+// ─────────────────────────────────────────────────────────────────────────────
+
+syntax = "proto3";
+
+package owl.avenys.v1;
+
+// ── MANIFEST ────────────────────────────────────────────────────────────────
+
+message SourceEntry {
+  string id = 1;
+  string path = 2;
+  string sha256 = 3;
+  uint64 size = 4;
+  uint32 flags = 5;
+}
+
+enum SourceFlags {
+  SOURCE_FLAG_UNSPECIFIED = 0;
+  SOURCE_FLAG_ENTRY = 1;
+  SOURCE_FLAG_MACRO_FILE = 2;
+  SOURCE_FLAG_PACKAGE_ROOT = 4;
+}
+
+message CArtifact {
+  string path = 1;
+  string sha256 = 2;
+  string kind = 3;
+  string symbol = 4;
+}
+
+message SecurityPolicy {
+  string mode = 1;
+  repeated string externs = 2;
+  repeated string extern_libs = 3;
+  repeated string macros = 4;
+  repeated string allowed_builtins = 5;
+  bool allow_unsafe = 6;
+  bool allow_asm = 7;
+}
+
+message LoadPolicy {
+  // `load! /x` resolves to <project_root>/x, never the operating-system root.
+  string project_root = 1;
+  bool descend_only = 2;
+  bool reject_symlink_escape = 3;
+}
+
+// ── OWL -> AVENYS ───────────────────────────────────────────────────────────
+
+message CompileReq {
+  uint32 protocol_version = 1;
+  string request_id = 2;
+  string entry = 3;
+  LoadPolicy load_policy = 4;
+  repeated SourceEntry manifest = 5;
+  repeated CArtifact c_artifacts = 6;
+  SecurityPolicy security = 7;
+  repeated string flags = 8;
+  string artifact = 9;
+  string target = 10;
+  string cache_dir = 11;
+  string output_dir = 12;
+  reserved 13;
+}
+
+// ── AVENYS -> OWL ───────────────────────────────────────────────────────────
+
+enum Status {
+  STATUS_UNSPECIFIED = 0;
+  STATUS_DONE = 1;
+  STATUS_ERROR = 2;
+  reserved 3, 4;
+}
+
+message CompileResp {
+  string request_id = 1;
+  Status status = 2;
+  string output_path = 3;
+  repeated string errors = 4;
+  repeated string warnings = 5;
+  reserved 6, 7;
+}
