@@ -634,7 +634,8 @@ void rt_runtime_write_panic_location(const char *message, int64_t line,
 void rt_runtime_write_panic_message(const char *message, int use_unknown_fallback);
 void   *rt_get_args(int argc, char **argv);
 char   *rt_time_elapsed_ms_str(int64_t start_ns);
-char   *rt_cpu_elapsed_ms_str(int64_t start_ns);
+// start_ms must come from pal_cpu_time_ms().
+char   *rt_cpu_elapsed_ms_str(int64_t start_ms);
 
 // ═══════════════════════════════════════════════════════════════════════
 //  11. Byte / file utilities (used by kioto)

@@ -240,6 +240,13 @@ Relevant commits on the active branches:
   process smoke tests pass, and the Rust release suite passes (241 library + 14
   CLI + doc-tests). No benchmark gain is claimed; installer dependencies are
   unchanged.
+- CPU elapsed-time B2 slice (current worktree): `rt_cpu_elapsed_ms_str` now
+  uses the existing `pal_cpu_time_ms()` capability instead of libc `clock()`;
+  its input is explicitly a timestamp in the same millisecond unit. A focused
+  C test verifies the result. The WASI deprecation warning for `clock()` is
+  gone from `strings.c`, and the runtime audit finds no direct allocator or
+  clock calls in selected runtime sources; `strings_minimal.c` remains an
+  unreferenced legacy file whose integration/disposition is still open.
 - Owl: `ac41531` (schema dependency documentation), `0ce4193` and `9747cd4`
   (cross-decode CI and LLVM toolchain path).
 

@@ -101,6 +101,11 @@ All notable changes to Avenys will be documented in this file.
   string module PAL-dependent; the WASI compile gate covers it. Focused C
   allocator tests and Mire padding tests protect the pairing and output. No
   installer dependency changed.
+- CPU elapsed-time formatting now reads `pal_cpu_time_ms()` instead of calling
+  the C library `clock()` directly. Its argument is documented as a timestamp
+  from that PAL clock, and a focused smoke test protects the millisecond-unit
+  subtraction. The runtime string module no longer includes POSIX headers for
+  this path.
 
 ## 4.3.12 - 2026-10-09
 

@@ -390,7 +390,7 @@ the complete vector.
 | `ireru(prompt)` | `*mut` | Read line from stdin |
 | `rt_get_args(argc, argv)` | `*mut` | Get arguments |
 | `rt_time_elapsed_ms_str(start_ns)` | `*mut` | Time elapsed |
-| `rt_cpu_elapsed_ms_str(start_ns)` | `*mut` | CPU elapsed |
+| `rt_cpu_elapsed_ms_str(start_ms)` | `*mut` | CPU elapsed from a `pal_cpu_time_ms()` timestamp |
 
 ### Byte/File Utilities
 
@@ -472,7 +472,7 @@ the complete vector.
 
 | Symbol Pattern | C File |
 |----------------|--------|
-| `rt_managed_*`, `rt_string_*`, `rt_i64_to_string`, etc. | `strings.c` / `strings_minimal.c` |
+| `rt_string_*`, `rt_i64_to_string`, etc. | `strings.c` |
 | `rt_list_*`, `rt_vecs_*`, `rt_lists_*` | `vecs.c` |
 | `rt_dict_*`, `rt_dicts_*`, `rt_maps_*` | `maps.c` / `maps_internal.c` |
 | `rt_math_*` | `math.c` |

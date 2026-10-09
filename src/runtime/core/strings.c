@@ -1,12 +1,8 @@
-#define _POSIX_C_SOURCE 200809L
-
 #include "runtime.h"
 #include "pal.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <time.h>
-#include <unistd.h>
 
 // ── Internal helpers ──────────────────────────────────────────────────
 
@@ -442,8 +438,8 @@ void rt_free_argv(char **argv, int64_t argc) {
     pal_free(argv);
 }
 
-char *rt_cpu_elapsed_ms_str(int64_t start_ns) {
-    int64_t ms = (int64_t)(clock() / (CLOCKS_PER_SEC / 1000)) - start_ns;
+char *rt_cpu_elapsed_ms_str(int64_t start_ms) {
+    int64_t ms = pal_cpu_time_ms() - start_ms;
     return rt_managed_printf_i64("%lld", (long long)ms);
 }
 
