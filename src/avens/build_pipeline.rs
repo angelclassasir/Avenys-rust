@@ -559,7 +559,11 @@ fn compile_file_inner(
         }
     };
     // Scan IR for used symbols (used for both tier enforcement and selective .c compilation).
-    let used = collect_used_symbols(&ir);
+    let mut used = collect_used_symbols(&ir);
+    // The generated native entry point initializes the sandbox before calling
+    // user code. Keep its runtime source in the selective minimal-runtime set
+    // even though the call is injected below this scan.
+    used.runtime.insert("rt_sbx_init".to_string());
     // Enforce runtime tier contract: runtime="none" means no rt_* calls are allowed.
     if matches!(options.c_defs.runtime, RuntimeTier::None) && !used.runtime.is_empty() {
         let mut symbols: Vec<&str> = used.runtime.iter().map(|s| s.as_str()).collect();
