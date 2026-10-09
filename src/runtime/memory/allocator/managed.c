@@ -395,5 +395,5 @@ int64_t rt_strings_index_of_utf8(const char *s, const char *sub) {
 
 void rt_panic(const char *message) {
     rt_runtime_write_panic_message(message, 0);
-    exit(101);
+    pal_process_exit(101);
 }

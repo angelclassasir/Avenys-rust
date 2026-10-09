@@ -166,6 +166,10 @@ int64_t pal_stdio_clear_error(int64_t selector) {
     return ops->stdio_clear_error(selector == 2 ? 2 : 1);
 }
 
+_Noreturn void pal_process_exit(int status_code) {
+    exit(status_code);
+}
+
 int64_t pal_file_seek(pal_file_t file, int64_t offset, pal_seek_from_t from) {
     if (!ops || !ops->file_seek) { pal_set_error(PAL_ERR_UNSUPPORTED, "no backend"); return -1; }
     int64_t internal = (int64_t)pal_core_validate_and_get(file.index, file.generation, PAL_RES_FILE);

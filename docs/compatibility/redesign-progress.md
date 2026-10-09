@@ -10,6 +10,14 @@ does not claim that the full redesign is complete.
 
 ## Verified milestones
 
+- Runtime B2 termination boundary: runtime panic paths and managed allocator
+  failure now use `pal_process_exit()` instead of direct C `exit()` calls.
+  Existing minimal/full panic smoke checks preserve statuses 1 and 101, the
+  WASI PAL compile gate passes, and the full release test suite passes (241
+  library + 14 CLI + doc-tests). A broader call audit has no remaining direct
+  `exit()` call in runtime C sources. This is an uncommitted working slice at
+  the time of this update; B2 remains open and no performance gain is claimed.
+
 - Collection destruction carries semantic ownership; the C2 allocation leak
   fix is present in the branch history. Later same-target map mutation
   stabilization is recorded separately in the compatibility baseline.

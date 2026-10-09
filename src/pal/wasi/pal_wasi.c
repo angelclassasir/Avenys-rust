@@ -5,6 +5,7 @@
 #include "pal_core.h"
 #include <stddef.h>
 #include <stdint.h>
+#include <stdlib.h>
 
 extern void *malloc(size_t size);
 extern void free(void *ptr);
@@ -58,6 +59,10 @@ void pal_io_print_err(const char *msg) {
     WasiIovec iov = { msg, wasi_strlen(msg) };
     size_t written = 0;
     (void)wasi_fd_write(2, &iov, 1, &written);
+}
+
+_Noreturn void pal_process_exit(int status_code) {
+    exit(status_code);
 }
 
 int64_t pal_time_now_ns(void) {

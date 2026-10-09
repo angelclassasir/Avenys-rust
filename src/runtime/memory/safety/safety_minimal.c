@@ -2,13 +2,12 @@
 #include "pal.h"
 
 #include <stdint.h>
-#include <stdlib.h>
 
 /* Minimal safety support uses PAL diagnostics and process termination. */
 
 void rt_panic_loc(const char *msg, int64_t line, int64_t col, const char *file) {
     rt_runtime_write_panic_location(msg, line, col, file);
-    exit(1);
+    pal_process_exit(1);
 }
 
 int64_t rt_div_i64(int64_t a, int64_t b, int64_t line, int64_t col, const char *file) {
@@ -35,5 +34,5 @@ void rt_closure_env_free(void *env) { pal_free(env); }
 
 void rt_panic(const char *message) {
     rt_runtime_write_panic_message(message, 1);
-    exit(1);
+    pal_process_exit(1);
 }

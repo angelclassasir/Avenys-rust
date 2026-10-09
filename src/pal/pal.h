@@ -278,6 +278,8 @@ int64_t pal_tty_read_line(char *buffer, int64_t capacity);
 int64_t pal_stdio_write(int64_t selector, const void *buffer, int64_t length);
 int64_t pal_stdio_error(int64_t selector);
 int64_t pal_stdio_clear_error(int64_t selector);
+// Terminate the current process with the supplied status code.
+_Noreturn void pal_process_exit(int status_code);
 
 pal_dir_t pal_dir_open(pal_root_t root, const char *rel_path);
 
