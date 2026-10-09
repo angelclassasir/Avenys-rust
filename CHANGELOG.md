@@ -5,6 +5,18 @@ All notable changes to Avenys will be documented in this file.
 ## 4.3.13 - 2026-10-09
 
 ### Changed
+- **Managed release contract pinned and the last silent release removed:** new
+  `tests/runtime_managed_release_smoke.c` (driven by
+  `scripts/test-runtime-managed-release.sh`) verifies that a managed string
+  releases by refcount, that the last release returns its block to a size-class
+  free list and a same-size allocation reuses it, that a foreign pointer —
+  stack or heap — is never read as a managed header, and that releasing `NULL`
+  or an already-released pointer does not corrupt the arena. The
+  `MirOp::Add` string-concatenation path no longer decides to release its left
+  operand by matching the LLVM type name against `"ptr"`; that inference could
+  not distinguish a string from a vector, a map, or a borrow, and it duplicated
+  the decision A1 moved into `MirOp::Drop`'s `Ownership`. Its condition now
+  matches `MirOp::Concat`'s lowering. No behavior change.
 - **Runtime host boundary closed:** runtime C sources now reach the host only
   through `pal_*` capabilities. `grep` for host headers (`unistd`, `sys/*`,
   `poll`, `errno`, `fcntl`, `signal`, `time`, `process`) and for direct host calls

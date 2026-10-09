@@ -97,8 +97,17 @@ pub(crate) fn compile_inst(inst: &MirInst, ctx: &mut LlvmCtx) -> Vec<String> {
                     "%t{} = call ptr @rt_string_concat(ptr {}, ptr {})",
                     result, lhs, rhs
                 );
-                // If left operand is a temporary, it's likely an intermediate in a concat chain
-                // and can be freed after use
+                // A left operand that is a temporary is an intermediate in a
+                // concat chain, and `rt_string_concat` copies the bytes, so
+                // the allocation can be released after use.
+                //
+                // The condition must match `MirOp::Concat`'s lowering, which
+                // decides with `concat_operand_is_owned`: a fresh allocation
+                // whose result is a pointer. Testing the LLVM type name here
+                // instead would free a borrowed variable that happens to be
+                // held in a `ptr`-typed slot — LLVM's `ptr` does not
+                // distinguish a string from a vector, a map, or a borrow, so
+                // the type name cannot answer the ownership question.
                 let free_lhs = if lt == "ptr" && l_str.starts_with('%') {
                     format!("\n  call void @rt_managed_free(ptr {})", lhs)
                 } else {

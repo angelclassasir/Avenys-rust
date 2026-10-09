@@ -300,7 +300,7 @@ runtime parity: Windows is still unimplemented in the PAL (C1-C6 open), so
 "no direct host calls" means "the runtime expresses every host need through the
 PAL interface", not "the runtime runs on every backend".
 
-B3-B6 remain open: remove the `full` tier only with explicit compatibility
+B4-B6 remain open: remove the `full` tier only with explicit compatibility
 handling, prove the three narrow Mire bootstrap modules, then measure the slab
 allocator against the honest C2 baseline.
 
@@ -319,16 +319,47 @@ The local sandbox denies `bind(2)` with `EPERM`; the PAL socket regression was
 therefore executed with approved elevated test access. This is an environment
 restriction, not evidence that the socket implementation is unsupported.
 
+## B3 — Managed release contract: closed
+
+The ownership decision moved to the compiler in A1: `MirOp::Drop` carries
+`Ownership` and lowering selects the destructor while the semantic type is still
+known. B3 removes the remaining silent path and pins the surviving contract in
+`tests/runtime_managed_release_smoke.c` (`scripts/test-runtime-managed-release.sh`):
+
+- a managed string releases by refcount and stays readable while a reference
+  remains;
+- the last release returns the block to a size-class free list, and a same-size
+  allocation reuses it;
+- a foreign pointer, on the stack or on the heap, is never read as a managed
+  header — the refcount lives at a negative offset from the payload, so a
+  wrong guess would write at an arbitrary address;
+- releasing `NULL` or an already-released pointer does not corrupt the arena.
+
+Two findings from that smoke:
+
+- `rt_managed_contains` reports **arena membership**, not liveness; a released
+  block stays inside the arena range. The refcount is the real signal. The
+  initial assertions tested membership, failed against correct code, and were
+  corrected rather than the implementation.
+- A second `rt_managed_free` emission sat outside `Ownership`, in the
+  `MirOp::Add` concatenation path, and chose to release its left operand by
+  matching the LLVM type name against `"ptr"` — the inference A1 removed from
+  the destructor path. Its condition now matches `MirOp::Concat`'s lowering.
+
+Verification: 241 library + 14 CLI tests, 12/12 benchmark output equivalence,
+WASI compile gate unchanged, release build clean.
+
 ## Remaining work
 
 - Complete PAL C0 on all supported backends; Windows is not implemented yet.
 - The planned FIFO bootstrap is not currently implementable with the exposed
   PAL: there is no FIFO-creation operation. Before using FIFOs, add a scoped,
   tested FIFO capability; otherwise finish C0 and use Unix sockets.
-- Runtime B1 (move-only source reorganization) and B2 (host boundary) are
-  closed and verified. B3-B6 remain open: remove the `full` tier only with
-  explicit compatibility handling, prove the three narrow Mire bootstrap
-  modules, then measure the slab allocator against the honest C2 baseline.
+- Runtime B1 (move-only source reorganization), B2 (host boundary), and B3
+  (managed release contract) are closed and verified. B4-B6 remain open: remove
+  the `full` tier only with explicit compatibility handling, prove the three
+  narrow Mire bootstrap modules, then measure the slab allocator against the
+  honest C2 baseline.
 - PAL C1-C6, including actual WASI/Wasmtime coverage, Windows/Wine coverage,
   removal of weak stubs, capability reporting, and the incomplete WASM package,
   remain open.
