@@ -1,3 +1,4 @@
+use crate::builtins::is_unimplemented_builtin;
 use crate::error::{ErrorKind, MireError, Result, type_error_at_span};
 use crate::parser::ast::{DataType, Expression, Literal, Statement};
 
@@ -9,6 +10,32 @@ impl TypeChecker {
         arg_types: &[DataType],
         data_type: &mut DataType,
     ) -> Result<Option<DataType>> {
+        // Collection helpers have special type inference, but a real function
+        // supplied by the program or a loaded module must take precedence.
+        let mut candidate = name.to_string();
+        loop {
+            if self.functions.contains_key(&candidate) {
+                return Ok(None);
+            }
+            let Some(stripped) = Self::strip_root_namespace(&candidate) else {
+                break;
+            };
+            if stripped == candidate {
+                break;
+            }
+            candidate = stripped;
+        }
+
+        if is_unimplemented_builtin(name) {
+            return Err(type_error_at_span(
+                self.current_span,
+                format!(
+                    "builtin '{}' is registered but has no compiler lowering",
+                    name
+                ),
+            ));
+        }
+
         if name == "dicts.get" {
             let resolved = match arg_types.first().cloned().unwrap_or(DataType::Unknown) {
                 DataType::Map { value_type, .. } => *value_type,
@@ -199,7 +226,7 @@ impl TypeChecker {
                     return Ok(Some(resolved));
                 }
                 Err(err) => {
-                    if self.builtin_returns.contains_key(name) {
+                    if self.builtin_returns.contains_key(name) && !is_unimplemented_builtin(name) {
                         // User-defined function signature didn't match but a
                         // builtin exists (e.g. lists.len). Fall through to try
                         // the builtin return type, which may be more permissive.
@@ -223,7 +250,9 @@ impl TypeChecker {
                             return Ok(Some(resolved));
                         }
                         Err(err) => {
-                            if !self.builtin_returns.contains_key(&next) {
+                            if !self.builtin_returns.contains_key(&next)
+                                || is_unimplemented_builtin(&next)
+                            {
                                 return Err(err);
                             }
                         }
@@ -234,6 +263,15 @@ impl TypeChecker {
         }
 
         if let Some(ret) = self.builtin_returns.get(name).cloned() {
+            if is_unimplemented_builtin(name) {
+                return Err(type_error_at_span(
+                    self.current_span,
+                    format!(
+                        "builtin '{}' is registered but has no compiler lowering",
+                        name
+                    ),
+                ));
+            }
             if !self.is_builtin_allowed(name) {
                 return Err(type_error_at_span(
                     self.current_span,
@@ -250,6 +288,15 @@ impl TypeChecker {
         if let Some(rest) = name.strip_prefix("std.")
             && let Some(ret) = self.builtin_returns.get(rest).cloned()
         {
+            if is_unimplemented_builtin(rest) {
+                return Err(type_error_at_span(
+                    self.current_span,
+                    format!(
+                        "builtin '{}' is registered but has no compiler lowering",
+                        name
+                    ),
+                ));
+            }
             if !self.is_builtin_allowed(rest) {
                 return Err(type_error_at_span(
                     self.current_span,

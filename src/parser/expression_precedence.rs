@@ -35,7 +35,9 @@ impl Parser {
                 operator: "^".to_string(),
                 left: Box::new(expr),
                 right: Box::new(right),
-                data_type: DataType::Bool,
+                // XOR supports both bool and integer operands, so its result
+                // type must come from type checking rather than a bool default.
+                data_type: DataType::Unknown,
             };
             self.skip_newlines();
         }

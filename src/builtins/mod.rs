@@ -258,3 +258,248 @@ pub fn default_builtin_returns() -> HashMap<String, DataType> {
 
     builtins
 }
+
+/// Builtins whose call path has a compiler lowering or a declared PAL/runtime
+/// target. Keep this inventory explicit so registry changes require review.
+#[cfg(test)]
+const LOWERED_BUILTINS: &[&str] = &[
+    "__do_while",
+    "__if_expr",
+    "__type_matches",
+    "abs",
+    "call",
+    "ceil",
+    "contains",
+    "cpu.count",
+    "dasu",
+    "env_args",
+    "floor",
+    "ireru",
+    "len",
+    "lists.filter",
+    "lists.fold",
+    "lists.map",
+    "mem.process",
+    "range",
+    "round",
+    "str",
+    "time.now.ms",
+    "time.now.ns",
+];
+
+/// Registered return types with no direct lowering. An explicitly loaded
+/// function with one of these names still takes precedence in type checking;
+/// this list only prevents the builtin fallback from pretending an
+/// implementation exists.
+const UNIMPLEMENTED_BUILTINS: &[&str] = &[
+    "__is",
+    "__mire_fmt",
+    "append",
+    "bool",
+    "clamp",
+    "concat",
+    "cpu.cycles_est",
+    "cpu.elapsed_ms",
+    "cpu.mark",
+    "cpu.snapshot",
+    "cpu_cycles_est",
+    "cpu_elapsed_ms",
+    "cpu_elapsed_ns",
+    "cpu_freq_mhz",
+    "cpu_loadavg",
+    "cpu_mark",
+    "cpu_snapshot",
+    "cpu_time_ms",
+    "cpu_time_ns",
+    "dicts.get",
+    "dicts.keys",
+    "dicts.set",
+    "dicts.to_string",
+    "dicts.values",
+    "env_all",
+    "env_chdir",
+    "env_cwd",
+    "env_set",
+    "first",
+    "flatten",
+    "float",
+    "fs.read",
+    "fs_append",
+    "fs_copy",
+    "fs_dir",
+    "fs_drop",
+    "fs_exists",
+    "fs_ext",
+    "fs_is_dir",
+    "fs_is_file",
+    "fs_join",
+    "fs_list",
+    "fs_mkdir",
+    "fs_move",
+    "fs_name",
+    "fs_rmdir",
+    "fs_size",
+    "fs_write",
+    "gpu.snapshot",
+    "gpu_available",
+    "gpu_snapshot",
+    "index_of",
+    "int",
+    "is_bool",
+    "is_dict",
+    "is_float",
+    "is_int",
+    "is_list",
+    "is_none",
+    "is_str",
+    "last",
+    "lists.get",
+    "lists.keys",
+    "lists.len",
+    "lists.push",
+    "lists.set",
+    "lists.slice",
+    "lists.values",
+    "ltrim",
+    "max",
+    "mem.format",
+    "mem.snapshot",
+    "mem.used",
+    "mem_available",
+    "mem_format_bytes",
+    "mem_free",
+    "mem_percent",
+    "mem_process",
+    "mem_snapshot",
+    "mem_total",
+    "min",
+    "pad_left",
+    "pad_right",
+    "proc.on",
+    "proc.run",
+    "proc_exec",
+    "proc_exec_bg",
+    "proc_exec_pipe",
+    "proc_exists",
+    "proc_exit",
+    "proc_kill",
+    "proc_on",
+    "proc_pipe",
+    "proc_read",
+    "proc_shell",
+    "proc_spawn",
+    "proc_wait",
+    "proc_write",
+    "push",
+    "ram_usage",
+    "remove",
+    "reverse",
+    "rtrim",
+    "slice",
+    "sort",
+    "strings.concat",
+    "strings.ends_with",
+    "strings.join",
+    "strings.len",
+    "strings.replace",
+    "strings.replace_first",
+    "strings.split",
+    "strings.starts_with",
+    "strings.to_lower",
+    "strings.to_string",
+    "strings.to_upper",
+    "strings.trim",
+    "substr",
+    "sum",
+    "thread.join",
+    "thread.spawn",
+    "time.elapsed_ms",
+    "time.elapsed_ns",
+    "time.mark",
+    "time_elapsed_ms",
+    "time_elapsed_ns",
+    "time_mark",
+    "time_since_ms",
+    "time_since_ns",
+    "time_sleep_ms",
+    "time_sleep_ns",
+    "trim",
+    "type",
+    "unique",
+];
+
+/// These names are compiler syntax or ownership intrinsics, not callable
+/// function symbols, so they do not participate in call lowering.
+#[cfg(test)]
+const LANGUAGE_INTRINSICS: &[&str] = &["drop::", "move::", "new::", "own::"];
+
+pub fn is_unimplemented_builtin(name: &str) -> bool {
+    UNIMPLEMENTED_BUILTINS.contains(&name)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        LANGUAGE_INTRINSICS, LOWERED_BUILTINS, UNIMPLEMENTED_BUILTINS, default_builtin_returns,
+        is_unimplemented_builtin,
+    };
+    use crate::{compiler::typeck::check_program_types, parse};
+    use std::collections::HashSet;
+
+    #[test]
+    fn every_registered_builtin_has_an_explicit_lowering_disposition() {
+        let registered = default_builtin_returns();
+        let mut classified = HashSet::new();
+
+        for name in LOWERED_BUILTINS
+            .iter()
+            .chain(UNIMPLEMENTED_BUILTINS)
+            .chain(LANGUAGE_INTRINSICS)
+        {
+            assert!(
+                classified.insert(*name),
+                "builtin `{name}` is classified twice"
+            );
+            assert!(registered.contains_key(*name), "`{name}` is not registered");
+        }
+
+        let unclassified: Vec<_> = registered
+            .keys()
+            .filter(|name| !classified.contains(name.as_str()))
+            .collect();
+        assert!(
+            unclassified.is_empty(),
+            "registered builtins need an explicit lowering disposition: {unclassified:?}"
+        );
+    }
+
+    #[test]
+    fn unsupported_builtin_fallback_is_explicitly_identified() {
+        for name in UNIMPLEMENTED_BUILTINS {
+            assert!(is_unimplemented_builtin(name));
+        }
+        for name in LOWERED_BUILTINS.iter().chain(LANGUAGE_INTRINSICS) {
+            assert!(!is_unimplemented_builtin(name));
+        }
+    }
+
+    #[test]
+    fn every_unimplemented_builtin_call_fails_before_mir_lowering() {
+        for name in UNIMPLEMENTED_BUILTINS {
+            let source = format!("pub fn main: () {{ {name}() }}\n");
+            let mut program = match parse(&source) {
+                Ok(program) => program,
+                Err(_) if *name == "type" => continue,
+                Err(error) => panic!("registered call syntax for `{name}` failed: {error}"),
+            };
+
+            let error = check_program_types(&mut program, &source).expect_err(&format!(
+                "unimplemented builtin `{name}` passed type checking"
+            ));
+            assert!(
+                error.to_string().contains("no compiler lowering"),
+                "`{name}` produced an unexpected diagnostic: {error}"
+            );
+        }
+    }
+}

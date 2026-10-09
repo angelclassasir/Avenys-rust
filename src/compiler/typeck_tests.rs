@@ -662,6 +662,30 @@ fn integer_literal_range_validation_does_not_scan_unrelated_scope_bindings() {
 }
 
 #[test]
+fn unimplemented_builtin_fallback_has_a_direct_type_error() {
+    let source = "pub fn main: () { fs_write() }\n";
+    let mut program = parse(source).expect("source should parse");
+
+    let error = check_program_types(&mut program, source)
+        .expect_err("unimplemented builtin must not pass type checking");
+    assert!(
+        error.to_string().contains("fs_write")
+            && error.to_string().contains("no compiler lowering"),
+        "expected a direct unsupported-builtin diagnostic, got: {error}"
+    );
+}
+
+#[test]
+fn loaded_function_can_override_an_unimplemented_builtin_name() {
+    let source =
+        "pub fn fs_write: () :i64 { return 1 }\npub fn main: () { set result = fs_write() }\n";
+    let mut program = parse(source).expect("source should parse");
+
+    check_program_types(&mut program, source)
+        .expect("an explicitly defined function must take precedence over builtin fallback");
+}
+
+#[test]
 fn binary_expression_ascription_survives_type_checking() {
     let source =
         "pub fn main: () {\n    set floating = 2.5 :f64\n    set narrowed = 1 + floating :i64\n}\n";
@@ -701,6 +725,22 @@ fn binary_expression_ascription_survives_type_checking() {
         panic!("expected binary expression binding");
     };
     assert_eq!(*expression_type, DataType::I64);
+    assert_eq!(*data_type, DataType::I64);
+}
+
+#[test]
+fn integer_xor_uses_operand_type_instead_of_a_boolean_parser_default() {
+    let source = "pub fn main: () {\nset left = 6\nset right = 3\nset result = left ^ right\n}\n";
+    let mut program = parse(source).expect("source should parse");
+
+    check_program_types(&mut program, source).expect("integer XOR should type check");
+
+    let Statement::Function { body, .. } = &program.statements[0] else {
+        panic!("expected function");
+    };
+    let Statement::Let { data_type, .. } = &body[2] else {
+        panic!("expected XOR result binding");
+    };
     assert_eq!(*data_type, DataType::I64);
 }
 
@@ -1040,8 +1080,7 @@ fn bare_return_stays_legal_in_a_void_function() {
 fn bare_return_stays_legal_in_a_conditional_void_path() {
     // The shape an early exit actually takes: one branch leaves, the other
     // falls through. Only the value-returning version of this is an error.
-    let source =
-        "pub fn f: (stop :bool) {\nif stop { return }\nuse dasu(str(1))\n}\n";
+    let source = "pub fn f: (stop :bool) {\nif stop { return }\nuse dasu(str(1))\n}\n";
     let mut program = parse(source).expect("parse should succeed");
     check_program_types(&mut program, source).expect("an early return in a void function is fine");
 }
