@@ -290,6 +290,7 @@ static __thread int linux_stdio_error_flags[2];
 static int64_t linux_stdio_write(int64_t selector, const void *buffer, int64_t length) {
     int stream_index = selector == 2 ? 1 : 0;
     int descriptor = selector == 2 ? STDERR_FILENO : STDOUT_FILENO;
+    if (length > SSIZE_MAX) length = SSIZE_MAX;
     ssize_t written = write(descriptor, buffer, (size_t)length);
     if (written < 0) linux_stdio_error_flags[stream_index] = 1;
     return (int64_t)written;

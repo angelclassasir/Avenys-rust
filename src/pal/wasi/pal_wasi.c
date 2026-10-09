@@ -153,6 +153,7 @@ static int wasi_stdio_error_flags[2];
 static int64_t wasi_stdio_write(int64_t selector, const void *buffer, int64_t length) {
     int stream_index = selector == 2 ? 1 : 0;
     uint32_t descriptor = selector == 2 ? 2 : 1;
+    if ((uint64_t)length > SIZE_MAX) return -1;
     WasiIovec iov = { buffer, (size_t)length };
     size_t bytes_written = 0;
     uint32_t error = wasi_fd_write(descriptor, &iov, 1, &bytes_written);

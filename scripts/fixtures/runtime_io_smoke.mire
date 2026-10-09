@@ -15,5 +15,6 @@ pub fn main: () :i32 {
     set input = ireru("Input: ")
     dasu(input)
     dasu(elapsed_ms)
+    if rt_io_error(1) != 0 { return 6 :i32 }
     return 0 :i32
 }
