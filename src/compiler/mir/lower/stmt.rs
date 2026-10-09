@@ -81,19 +81,24 @@ fn borrow_source_name(expr: &Expression) -> Option<&str> {
     }
 }
 
-/// Collection push mutates its input and returns the same owned storage, or a
-/// reallocated replacement. In `set values = vec::push(values, item)`, the
-/// assignment must transfer that storage into the same slot without dropping
-/// the old pointer first. Dropping it after the call would free the returned
-/// pointer when the allocator did not grow, and would double-free/reuse an
-/// invalid pointer when it did grow.
+/// Collection mutators return the same owned collection they update. In
+/// `set values = collection::set(values, key, item)`, the assignment must
+/// transfer that storage into the same slot without dropping the old pointer
+/// first. Otherwise the returned pointer may already have been freed.
 fn collection_call_reuses_assignment_target(expr: &Expression, target: &str) -> bool {
     let Expression::Call { name, args, .. } = expr else {
         return false;
     };
-    let is_collection_push =
-        name == "lists.push" || name == "vec.push" || name.starts_with("vec.push.");
-    if !is_collection_push {
+    let is_collection_mutator = name == "lists.push"
+        || name == "vec.push"
+        || name.starts_with("vec.push.")
+        || name == "map.set"
+        || name.starts_with("map.set.")
+        || name == "maps.set"
+        || name.starts_with("maps.set.")
+        || name == "dicts.set"
+        || name.starts_with("dicts.set.");
+    if !is_collection_mutator {
         return false;
     }
     matches!(args.first(), Some(Expression::Identifier(identifier)) if identifier.name == target)

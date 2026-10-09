@@ -27,3 +27,13 @@ pub fn map_multiple_keys_values_len: () :bool {
     // Verifies multiple keys, len, keys, and values access
     return len_val == 2 && vec::len(keys) == 2 && vec::len(stored) == 2
 }
+
+@[test]
+pub fn map_rebinding_preserves_mutated_dictionary: () :bool {
+    set values = {} :map[str i64] mut
+    set values = map::set::i64(values "alpha" 10)
+    set values = map::set::i64(values "beta" 20)
+    return map::get::i64(values "alpha") == 10
+        && map::get::i64(values "beta") == 20
+        && map::len(values) == 2
+}
