@@ -2,6 +2,33 @@
 
 All notable changes to Avenys will be documented in this file.
 
+## 4.3.12 - 2026-10-09
+
+### Fixed
+- **Collection drops now use the semantic destructor.** `MirOp::Drop` carries
+  ownership from lowering, so vectors and maps use `rt_list_free` and
+  `rt_dict_free` instead of the managed-string free path. This fixes the
+  collection leak caused by ordinary malloc-backed values being ignored by
+  `rt_managed_free`. The related `vec.push` assignment-reuse ownership defect
+  was fixed before accepting any post-fix performance number; the preliminary
+  3.12x result is invalidated in the benchmark documentation.
+- **Binary expression type ascriptions survive type checking.** The trailing
+  ascription in `1 + floating :i64` belongs to the whole expression. Integer
+  XOR also infers its result from its operands rather than a boolean parser
+  default.
+- **Registered but unsupported builtins fail before code generation.** The
+  builtin registry now has an exhaustive explicit lowering disposition, and
+  unsupported calls produce a direct type-checking error. User-defined
+  functions retain precedence over builtin fallback. Qualified unresolved
+  calls are no longer skipped by codegen validation.
+- **Type documentation uses accepted syntax.** Invalid declarations such as
+  `set value :i64 = expression` have been replaced with
+  `set value = expression :i64`.
+- **BETA compatibility regressions corrected:** comparisons involving `&str`,
+  the accidental `/tmp/owl.toml` configuration path, and unitary `main`
+  functions. These frontend compatibility cases are recorded explicitly so
+  ecosystem projects can include them in their regression audit.
+
 ## 4.3.11 - 2026-10-08
 
 ### Fixed

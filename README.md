@@ -1,4 +1,4 @@
-# Avenys v4.3.11
+# Avenys v4.3.12
 
 **A compiled, ownership-aware systems language with an LLVM backend.**
 
@@ -10,6 +10,26 @@ overhead beyond what you ask for.
 The compiler, Avenys, translates Mire source through a multi-stage pipeline into
 native binaries via LLVM. It ships with Kioto, a standard library covering
 strings, collections, math, filesystem, processes, and more.
+
+## Recent Changes (v4.3.12)
+- **Collection drops use semantic ownership.** Vectors and maps now use their
+  collection destructors instead of the managed-string free path. The former
+  path silently ignored ordinary malloc-backed collections. A second ownership
+  defect in reused `vec.push` assignment targets was fixed before publishing
+  performance results; the earlier 3.12x result is invalid and is not claimed.
+- **Builtin registrations are checked against lowering.** Every registered
+  builtin has an explicit implementation or unsupported disposition, and
+  unsupported calls receive a type-checking diagnostic instead of producing
+  unresolved LLVM symbols. Qualified calls are validated as well.
+- **Binary expression ascriptions are preserved.** The trailing type in
+  `1 + floating :i64` is applied to the whole expression; integer XOR now
+  infers its result from its operands rather than a parser boolean default.
+- **Type documentation uses valid declaration syntax.** Examples use
+  `set name = value :Type`, not the rejected `set name :Type = value` form.
+- **BETA compatibility fixes:** string-reference comparisons, the accidental
+  `/tmp/owl.toml` configuration path, and unitary `main` functions were
+  corrected. These are recorded as compatibility fixes; projects depending on
+  the affected valid frontend forms must continue to pass the ecosystem audit.
 
 ## Recent Changes (v4.3.11)
 - **Path sandbox**: every absolute-path entry point in the PAL consults one

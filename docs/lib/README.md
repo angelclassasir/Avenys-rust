@@ -2,7 +2,7 @@
 
 > Library creation, dependencies, and Owl integration.
 
-Version: **4.3.11**
+Version: **4.3.12**
 Status: **Stable**
 Date: **2026-09-12**
 
