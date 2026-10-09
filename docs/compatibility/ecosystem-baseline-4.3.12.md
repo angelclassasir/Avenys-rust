@@ -21,8 +21,8 @@ directory name that directory explicitly.
 | `token` | `~/.owl/libs-beta` | Could not resolve its declared SDL dependency; this library directory contains Kioto, Mire, and testlib, but not SDL. This is a dependency-resolution failure, not a compiler regression result. |
 | MireData, initial run | `~/.owl/libs-beta` | 48 passed, 26 failed, 74 total. `advanced` and `collections` test binaries terminated with signal 11; `proc` had assertion failures. |
 | MireData, after map-rebind fix | `~/.owl/libs-beta` | 77 passed, 5 failed, 82 total (including isolated probes and the new map regression). `advanced`, `collections`, and every map probe passed. The remaining failures are in `proc`; investigate separately. |
-| SDL | `~/.owl/libs` | 47 tests failed before execution because generated test sources could not resolve `fs.owl.build_level`. The same diagnostic appeared across all test files. |
-| Stress | `~/.owl/libs` | No test files were found. Building `code/main.mire` failed on unresolved `fs.owl.build_level` at line 509. |
+| SDL | `~/.owl/libs` and the Arch library fallback | 47 tests failed before execution because imported Kioto filesystem code could not resolve `fs.owl.build_level`. Supplying the current Kioto source checkout exposed another unresolved same-module qualified call, `fs.path.join`, from the same file. |
+| Stress | `~/.owl/libs` | No test files were found. Building `code/main.mire` failed on unresolved `fs.owl.build_level` at line 509 in imported Kioto filesystem code. |
 | SQLite | `~/.owl/libs` | 8 generated tests failed during compilation. The linker reported missing `sqlite3_*` and `mire_sqlite_text_to_str` symbols; another test source contains an unexpected semicolon at line 13. No runtime behavior was tested. |
 | WASM package | Isolated package root supplied as library directory | `code/mod.mire` built as a host shared library. This does not verify a WASI target, wasmtime execution, or the package's declared `wasm_*` externs. No test files were present. |
 
@@ -31,10 +31,12 @@ directory name that directory explicitly.
 The results show why an ecosystem-wide pass/fail count is misleading: the
 outcome changes with the Kioto library directory, and several suites fail
 before their tests execute. The `fs.owl.build_level` failure is a reproducible
-compiler-facing blocker in SDL and Stress, but this snapshot alone does not
-prove whether it is caused by Avenys, Owl-generated configuration, or their
-integration. It must be isolated with a minimal generated-source reproduction
-before changing qualified-call validation.
+compiler-facing blocker in SDL and Stress. The current Kioto source contains
+the helper and documents that same-module qualified `fs::x` references do not
+resolve at link time; directly compiling its filesystem module stops at
+`fs.path.join`. Avenys is correct to reject the unresolved call rather than
+emit invalid IR, but the Kioto module-call pattern still needs a minimal fix
+and a clean pinned Kioto baseline before changing Avenys validation.
 
 The initial collection SIGSEGVs in MireData were reproduced with two
 `map::set` calls that rebind the same variable. Lowering released the old map
