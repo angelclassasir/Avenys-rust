@@ -124,6 +124,16 @@ Relevant commits on the active branches:
   format and exit status in both minimal and full runtime builds.
 - Avenys: `4950cbe` moves managed-arena virtual-memory reservation behind the
   PAL; `46c6a59` routes a small set of runtime allocations through the PAL.
+- Avenys: `67eefc2` routes whole-file reads, hashes, hex writes, and web-log
+  appends through PAL file handles and adds the regression smoke test to CI.
+- Runtime filesystem B2 slice (`67eefc2`): whole-file binary reads, file hashing,
+  hex-to-file writes, and web-log append now use root-relative PAL handles.
+  A C smoke test verifies exact file bytes, append behavior, hashing, and
+  sandbox traversal denial. It exposed a Linux `openat2` call passing a
+  creation mode without `O_CREAT`; the backend now passes mode zero for read
+  opens. The smoke test is in CI and reuses existing dependencies, so no
+  installer packages changed. `rt_read_tty` and direct process calls remain
+  open host-boundary work.
 - Owl: `ac41531` (schema dependency documentation), `0ce4193` and `9747cd4`
   (cross-decode CI and LLVM toolchain path).
 
