@@ -68,6 +68,17 @@ kernels immediately beforehand.
 interpreted as a reliable performance comparison. Most other measured kernels
 remain close to Rust; the outstanding measured gap is vector allocation.
 
+### Focused C2 retest — Avenys 4.3.12
+
+After the map-rebinding ownership fix, the branch-built Avenys 4.3.12 compiler
+passed `./run.sh verify` for all 12 kernels. Two consecutive best-of-five C2
+runs measured Rust at 39–40 ms and Mire at 1280–1282 ms (32.87x and 32.00x,
+respectively). The latest run is **40 ms Rust / 1280 ms Mire / 32.00x**. This
+is a focused retest, not a regenerated full-kernel table; the table above
+remains the complete historical Avenys 4.3.11 run. Timing varies enough that
+these figures should not be compared as a compiler regression without a
+same-session full rerun.
+
 ## Measurement safeguards
 
 - **Opaque input:** verification uses a deterministic seed. Measurement
