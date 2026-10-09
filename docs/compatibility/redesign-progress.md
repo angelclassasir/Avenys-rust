@@ -34,12 +34,18 @@ does not claim that the full redesign is complete.
   adapters preserve typed handle validation across Mire's `i64` FFI, and
   minimal-runtime source selection now includes both the bridge and PAL
   backend.
+- Combined-branch verification after the bridge change: the full release suite
+  (`cargo test --locked --release -j 2`) passed 237 library tests, 14 CLI
+  tests, and doc-tests; `bench/run.sh verify` matched all 12 Rust/Mire kernel
+  outputs. The PAL C smoke test passed with approved access outside the local
+  sandbox.
 
 Relevant commits on the active branches:
 
 - Avenys: `98bdf24` (schema dependency and CI validation), `12edb4f`
   (process-spawn baseline diagnosis), `87407ee` (Linux Unix-domain sockets),
-  `c48ad5f` (Mire scalar-handle adapters and minimal-runtime PAL selection).
+  `c48ad5f` (Mire scalar-handle adapters and minimal-runtime PAL selection),
+  `a265138` (progress ledger update).
 - Owl: `ac41531` (schema dependency documentation), `0ce4193` and `9747cd4`
   (cross-decode CI and LLVM toolchain path).
 
