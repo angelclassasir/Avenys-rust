@@ -140,7 +140,7 @@ Relevant commits on the active branches:
   fallback is preserved. A `forkpty` smoke test checks real line input and a
   `setsid` process checks fallback behavior; CI uses existing system libraries.
   No installer dependency was added.
-- Runtime process B2 slice (pending commit): argv-based runtime capture now
+- Runtime process B2 slice (`ebdcade`): argv-based runtime capture now
   creates processes, captures stdout, reads output, and obtains exit status
   through PAL process/channel APIs instead of calling `fork`, `execvp`, `pipe`,
   `read`, and `waitpid` from runtime code. PAL process creation accepts an
@@ -154,7 +154,7 @@ Relevant commits on the active branches:
   scripts still report the previously observed comment and sandbox-path
   truncation warnings. This is one Linux process-helper slice, not completion
   of B2 or cross-platform process support. No installer dependency changed.
-- Runtime vector-allocation B2 slice (pending commit): list creation, growth,
+- Runtime vector-allocation B2 slice (`ab68030`): list creation, growth,
   concatenation, slicing, and destruction now use `pal_alloc`, `pal_realloc`,
   and `pal_free`. Size calculations reject values that cannot be represented
   by the PAL's signed size parameter. Minimal runtime selection now includes
@@ -168,7 +168,7 @@ Relevant commits on the active branches:
   expanded WASI check surfaces 11 existing unused-variable/parameter warnings
   from `vecs.c`; compilation succeeds. This does not finish B2 or demonstrate
   a performance improvement, and no package dependency changed.
-- Runtime input-buffer B2 slice (pending commit): `rt_io_read_line`,
+- Runtime input-buffer B2 slice (`d447bdd`): `rt_io_read_line`,
   `rt_io_read_bytes`, and `rt_io_read_all` now allocate and release temporary
   buffers through PAL memory functions. The shared growth helper checks the
   signed PAL size limit and avoids capacity arithmetic overflow. The runtime
@@ -177,7 +177,7 @@ Relevant commits on the active branches:
   (241 library + 14 CLI + doc-tests), and 12/12 benchmark equivalence also
   passed. No installer dependency changed. This only migrates input buffers;
   other runtime allocations remain.
-- Runtime math-allocation B2 slice (pending commit): the median helper's
+- Runtime math-allocation B2 slice (`9e1226a`): the median helper's
   temporary sorted copy now uses `pal_alloc`/`pal_free` and rejects element
   counts that overflow the PAL's signed byte-size argument. Minimal-runtime
   source selection marks `math.c` as PAL-dependent, and the WASI compile smoke
@@ -186,7 +186,7 @@ Relevant commits on the active branches:
   It passes, as do the 241 library + 14 CLI Rust tests, WASI compilation, and
   all 12 benchmark output comparisons. The WASI build still surfaces the 11
   existing warnings from vector code. No installer dependency changed.
-- Runtime Maybe/Result allocation B2 slice (pending commit): heap descriptors
+- Runtime Maybe/Result allocation B2 slice (`ab56816`): heap descriptors
   for `Maybe` and `Result` now use PAL allocation/free functions. The change
   deliberately leaves payload ownership, representation, and destructor
   behavior untouched. Minimal-runtime source selection marks `mire_types.c`
@@ -195,7 +195,7 @@ Relevant commits on the active branches:
   as do the Rust release suite (241 library + 14 CLI + doc-tests), runtime I/O
   smoke, WASI compilation, and 12/12 benchmark equivalence. No installer
   dependency changed.
-- Minimal managed-string B2 slice (pending commit): raw string copies,
+- Minimal managed-string B2 slice (`f149daa`): raw string copies,
   formatting buffers, owned-string buffers, registry growth, and managed frees
   now use PAL allocation/reallocation/release calls. Registry-growth failure
   is reported to `rt_managed_alloc`, which releases the unregistered buffer
@@ -207,7 +207,7 @@ Relevant commits on the active branches:
   tests (241 library + 14 CLI + doc-tests), runtime I/O smoke, WASI compile, and
   12/12 benchmark equivalence pass. WASI compile now covers both full and
   minimal allocators. No installer dependency changed.
-- PAL bridge scratch-buffer B2 slice (pending commit): base64 encode/decode,
+- PAL bridge scratch-buffer B2 slice (`1817898`): base64 encode/decode,
   PEM parsing, Ed25519 temporary buffers, PAL-owned shell/capture output, and
   the per-thread shell result buffer now allocate/reallocate/release through
   PAL APIs. Size arithmetic is checked before base64/PEM allocation. The
