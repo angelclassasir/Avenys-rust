@@ -98,7 +98,8 @@ Relevant commits on the active branches:
   verify the new runtime source is included in packaged distributions.
 - Avenys: `13aaf62` routes standard input through the PAL and adds the pinned
   WASI compile check; `89b60f9` routes the runtime standard-stream APIs
-  through PAL byte writes and records per-thread stream errors.
+  through PAL byte writes and records per-thread stream errors; `febffb3`
+  verifies a clean output error state after the end-to-end input/output smoke.
 - Owl: `ac41531` (schema dependency documentation), `0ce4193` and `9747cd4`
   (cross-decode CI and LLVM toolchain path).
 
