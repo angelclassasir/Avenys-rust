@@ -9,6 +9,7 @@ pub mod incremental;
 pub mod lexer;
 pub mod loader;
 pub mod parser;
+pub mod protocol;
 pub mod types;
 
 pub use avens::{
