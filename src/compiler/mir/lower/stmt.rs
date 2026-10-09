@@ -158,6 +158,18 @@ impl MirLower {
                     }),
                     loc,
                 );
+                // A declaration can execute repeatedly when it is inside a
+                // loop. Initialize owned slots so the first cleanup is safe;
+                // later iterations release the previous iteration's value
+                // before storing the replacement.
+                if is_owned_ptr_type(data_type) {
+                    let last = self.current_block;
+                    self.func.blocks[last].push(
+                        None,
+                        MirOp::Store(MirValue::temp(ptr), MirValue::Const(MirConst::None)),
+                        loc,
+                    );
+                }
                 self.vars.insert(name.clone(), ptr);
                 self.var_types.insert(name.clone(), data_type.clone());
 
@@ -201,6 +213,26 @@ impl MirLower {
                             .unwrap_or(true)
                     {
                         self.emit_retain(v.clone(), loc);
+                    }
+                    if is_owned_ptr_type(data_type) {
+                        let loaded = self.new_temp();
+                        let last = self.current_block;
+                        self.func.blocks[last].push(
+                            Some(loaded),
+                            MirOp::Load(
+                                MirValue::temp(ptr),
+                                MirType {
+                                    data_type: data_type.clone(),
+                                },
+                            ),
+                            loc,
+                        );
+                        let last = self.current_block;
+                        self.func.blocks[last].push(
+                            None,
+                            MirOp::Drop(MirValue::temp(loaded), ownership_of(data_type)),
+                            loc,
+                        );
                     }
                     let last = self.current_block;
                     self.func.blocks[last].push(None, MirOp::Store(MirValue::temp(ptr), v), loc);
