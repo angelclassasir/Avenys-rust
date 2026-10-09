@@ -1,7 +1,6 @@
 #include "runtime.h"
 #include <stdint.h>
 #include <stdlib.h>
-#include <errno.h>
 #include <string.h>
 #include "pal.h"
 
@@ -69,7 +68,6 @@ static size_t io_read_fill(void) {
             g_read_eof = 1;
             return 0;
         }
-        if (errno == EINTR) continue;
         g_read_eof = 1;
         return 0;
     }

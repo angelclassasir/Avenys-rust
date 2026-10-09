@@ -273,7 +273,11 @@ static int64_t linux_file_read(int64_t internal, void *buf, int64_t capacity) {
 
 static int64_t linux_stdin_read(void *buffer, int64_t capacity) {
     if (capacity > SSIZE_MAX) capacity = SSIZE_MAX;
-    return (int64_t)read(STDIN_FILENO, buffer, (size_t)capacity);
+    ssize_t bytes_read;
+    do {
+        bytes_read = read(STDIN_FILENO, buffer, (size_t)capacity);
+    } while (bytes_read < 0 && errno == EINTR);
+    return (int64_t)bytes_read;
 }
 
 static int64_t linux_stdin_available(void) {

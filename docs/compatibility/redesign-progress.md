@@ -14,9 +14,10 @@ does not claim that the full redesign is complete.
   failure now use `pal_process_exit()` instead of direct C `exit()` calls.
   Existing minimal/full panic smoke checks preserve statuses 1 and 101, the
   WASI PAL compile gate passes, and the full release test suite passes (241
-  library + 14 CLI + doc-tests). A broader call audit has no remaining direct
-  `exit()` call in runtime C sources. This is an uncommitted working slice at
-  the time of this update; B2 remains open and no performance gain is claimed.
+  library + 14 CLI + doc-tests). The 12-kernel output-equivalence gate passes,
+  and a broader call audit has no remaining direct `exit()`/`abort()` call in
+  runtime C sources. Commit `be735f5` records this slice; B2 remains open and
+  no performance gain is claimed.
 
 - Collection destruction carries semantic ownership; the C2 allocation leak
   fix is present in the branch history. Later same-target map mutation
