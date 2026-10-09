@@ -6,6 +6,12 @@
 
 use std::fmt;
 
+mod messages;
+pub use messages::{
+    CArtifact, CompileRequest, CompileResponse, CompileStatus, LoadPolicy, SecurityPolicy,
+    SourceEntry, SourceFlags,
+};
+
 /// Hard upper bound for one framed protocol payload.
 pub const MAX_FRAME_SIZE: usize = 64 * 1024 * 1024;
 
@@ -18,6 +24,10 @@ pub enum ProtocolError {
     InvalidWireType(u8),
     LengthOverflow,
     InvalidUtf8,
+    IntegerOverflow,
+    InvalidProtocolVersion(u32),
+    InvalidMessageStatus(u64),
+    MissingMessageStatus,
 }
 
 impl fmt::Display for ProtocolError {
@@ -36,6 +46,18 @@ impl fmt::Display for ProtocolError {
             }
             Self::LengthOverflow => write!(formatter, "protocol length does not fit in memory"),
             Self::InvalidUtf8 => write!(formatter, "protocol string is not valid UTF-8"),
+            Self::IntegerOverflow => {
+                write!(formatter, "protocol integer does not fit its field type")
+            }
+            Self::InvalidProtocolVersion(version) => {
+                write!(formatter, "unsupported protocol version: {version}")
+            }
+            Self::InvalidMessageStatus(status) => {
+                write!(formatter, "invalid compile response status: {status}")
+            }
+            Self::MissingMessageStatus => {
+                write!(formatter, "compile response is missing its status")
+            }
         }
     }
 }
