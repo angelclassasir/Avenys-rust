@@ -97,7 +97,7 @@ does not claim that the full redesign is complete.
   collection allocation/reallocation behavior, not a reason to claim the
   allocator is optimized.
 - The managed arena's virtual-memory operations are now PAL-backed in commit
-  `4950cbe`. A follow-up B2 slice routes raw-buffer, closure-environment, and
+  `4950cbe`. Commit `46c6a59` routes raw-buffer, closure-environment, and
   thread-closure allocations through `pal_alloc`/`pal_free` in four runtime
   modules. Validation after this slice: 241 library tests, 14 CLI tests,
   runtime I/O/panic smoke, WASI compilation, and 12/12 benchmark output
@@ -123,7 +123,7 @@ Relevant commits on the active branches:
   `25b0605` routes panic diagnostics through PAL and verifies the diagnostic
   format and exit status in both minimal and full runtime builds.
 - Avenys: `4950cbe` moves managed-arena virtual-memory reservation behind the
-  PAL; the currently uncommitted B2 allocation slice is still under test.
+  PAL; `46c6a59` routes a small set of runtime allocations through the PAL.
 - Owl: `ac41531` (schema dependency documentation), `0ce4193` and `9747cd4`
   (cross-decode CI and LLVM toolchain path).
 
