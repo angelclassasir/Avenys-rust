@@ -99,6 +99,9 @@ jobs:
           test -f dist/mire/runtime/core/strings.c
           test -f dist/mire/runtime/collections/map/maps.c
           test -f dist/mire/runtime/memory/allocator/managed.c
+          test -f dist/mire/runtime/std/input/input.c
+          test -f dist/mire/runtime/std/output/output.c
+          test -f dist/mire/runtime/std/error/error.c
 
       - name: Upload mire artifact
         uses: actions/upload-artifact@v4

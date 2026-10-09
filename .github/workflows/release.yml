@@ -79,6 +79,9 @@ jobs:
           test -f dist/compiler/runtime/core/strings.c
           test -f dist/compiler/runtime/collections/map/maps.c
           test -f dist/compiler/runtime/memory/allocator/managed.c
+          test -f dist/compiler/runtime/std/input/input.c
+          test -f dist/compiler/runtime/std/output/output.c
+          test -f dist/compiler/runtime/std/error/error.c
           cd dist
           tar czf ../mire-compiler-${{ matrix.triple }}.tar.gz compiler/
           cd ..
@@ -118,6 +121,9 @@ jobs:
           test -f dist/compiler/runtime/core/strings.c
           test -f dist/compiler/runtime/collections/map/maps.c
           test -f dist/compiler/runtime/memory/allocator/managed.c
+          test -f dist/compiler/runtime/std/input/input.c
+          test -f dist/compiler/runtime/std/output/output.c
+          test -f dist/compiler/runtime/std/error/error.c
           cd dist
           tar czf ../mire-compiler-riscv64-unknown-linux-gnu.tar.gz compiler/
           cd ..

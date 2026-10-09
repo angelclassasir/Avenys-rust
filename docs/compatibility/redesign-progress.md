@@ -39,23 +39,23 @@ does not claim that the full redesign is complete.
   tests, and doc-tests; `bench/run.sh verify` matched all 12 Rust/Mire kernel
   outputs. The PAL C smoke test passed with approved access outside the local
   sandbox.
-- Runtime B1 move-only migration is in progress: C sources are now grouped under `core/`,
-  `memory/`, `collections/`, `std/io/`, and `pal_bridge/`. The compiler
-  recursively discovers sources, resolves minimal-runtime providers by their
-  relative module paths, and release packaging checks that nested runtime
-  sources are present. The requested `std/input/`, `std/output/`, and
-  `std/error/` split remains open because the existing `mire_io.c` implements
-  all three responsibilities in one file; it is temporarily grouped under
-  `std/io/` to preserve behavior. No runtime behavior or host dependency was
-  intentionally changed. CI tests are limited to two Cargo jobs to avoid the
+- Runtime B1 move-only migration: C sources are now grouped under `core/`,
+  `memory/`, `collections/`, `std/input/`, `std/output/`, `std/error/`, and
+  `pal_bridge/`. The compiler recursively discovers sources, resolves
+  minimal-runtime providers by their relative module paths, and release
+  packaging checks that nested runtime sources are present. The former
+  combined `mire_io.c` was split by responsibility without changing public
+  symbols or I/O behavior. CI tests are limited to two Cargo jobs to avoid the
   previously observed linker memory thrashing. `cargo test --locked --release
   -j 2` passed 239 library tests and 14 CLI tests; `bench/run.sh verify`
-  matched all 12 kernel outputs.
+  matched all 12 kernel outputs. Both `minimal` and `full` runtime tiers
+  linked and ran a smoke program.
 - Installer and CI dependency audit for B1: no new host package is needed.
   `protobuf-compiler` remains CI-only for schema validation, not a compiler or
   runtime dependency. The README's manual package lists now match the installer's
-  runtime prerequisites, and CI/release packaging asserts the nested source
-  layout is retained.
+  runtime prerequisites; the installer documents that it installs the complete
+  nested source tree, and CI/release packaging asserts that the layout is
+  retained.
 
 Relevant commits on the active branches:
 

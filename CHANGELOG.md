@@ -6,7 +6,8 @@ All notable changes to Avenys will be documented in this file.
 
 ### Changed
 - **Runtime source layout:** C runtime modules are organized by responsibility
-  under `core/`, `memory/`, `collections/`, `std/io/`, and `pal_bridge/`.
+  under `core/`, `memory/`, `collections/`, `std/input/`, `std/output/`,
+  `std/error/`, and `pal_bridge/`.
   Compiler source discovery and release packaging now recurse through those
   directories. This is a source-layout change only; runtime behavior and host
   dependencies are unchanged.

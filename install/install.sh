@@ -25,6 +25,8 @@ set -e
 # `protobuf-compiler` (protoc) is used by repository CI to validate the checked-
 # in Owl/Avenys schema. It is a contributor-only verification tool, not a
 # runtime dependency, so the end-user installer deliberately does not install it.
+# The compiler archive carries the complete nested runtime/ and pal/ source
+# trees; reorganizing a runtime module does not add an operating-system package.
 #
 # Distributions below the glibc floor (Ubuntu <24.04, Debian <13,
 # Fedora <41, RHEL/Oracle/… <10, musl/Alpine) print
