@@ -1,4 +1,4 @@
-# Avenys v4.3.12
+# Avenys v4.3.13
 
 **A compiled, ownership-aware systems language with an LLVM backend.**
 
@@ -10,6 +10,13 @@ overhead beyond what you ask for.
 The compiler, Avenys, translates Mire source through a multi-stage pipeline into
 native binaries via LLVM. It ships with Kioto, a standard library covering
 strings, collections, math, filesystem, processes, and more.
+
+## Recent Changes (v4.3.13)
+- Runtime elapsed-time formatting and standard input now cross the PAL instead
+  of calling host clock and input APIs directly. The WASI PAL can read standard
+  input; readiness and terminal detection are explicitly unavailable there.
+  CI compiles the affected modules with WASI SDK 27.0. The SDK is a contributor
+  and CI tool only; it is not installed by the end-user installer.
 
 ## Recent Changes (v4.3.12)
 - **Collection drops use semantic ownership.** Vectors and maps now use their

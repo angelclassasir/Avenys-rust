@@ -66,8 +66,17 @@ does not claim that the full redesign is complete.
   implement the operation; the PAL socket smoke test verifies monotonic
   ordering, and the CI runtime smoke fixture calls the function from Mire in a
   minimal build. The WASI SDK compiles both the backend and runtime unit.
-  B2 remains open: stdin still uses `read`/`poll`/`isatty`, the managed arena
-  uses `mmap`/`munmap`, and process helpers still use `fork`/`pipe`/`waitpid`.
+  B2 remains open: the managed arena uses `mmap`/`munmap`, and process
+  helpers still use `fork`/`pipe`/`waitpid`.
+- Runtime input now goes through `pal_stdin_read`, `pal_stdin_available`, and
+  `pal_stdin_is_tty`; Linux implements all three, while WASI explicitly leaves
+  readiness and terminal detection unsupported. The piped-input smoke test
+  checks readiness and non-terminal behavior before reading. These additions
+  use existing host interfaces and add no external package dependency.
+- CI now installs pinned WASI SDK 27.0 and compiles the WASI backend plus the
+  changed input and timing modules. This development-only dependency is
+  documented in the installer and README; the end-user installer does not
+  install it. `scripts/test-wasi-runtime-compile.sh` is the local equivalent.
 
 Relevant commits on the active branches:
 
@@ -81,6 +90,8 @@ Relevant commits on the active branches:
 - Avenys: `70ae793` routes elapsed-time formatting through a monotonic PAL
   operation. This change adds no external package dependency; CI/release checks
   verify the new runtime source is included in packaged distributions.
+- Avenys: `13aaf62` routes standard input through the PAL and adds the pinned
+  WASI compile check.
 - Owl: `ac41531` (schema dependency documentation), `0ce4193` and `9747cd4`
   (cross-decode CI and LLVM toolchain path).
 

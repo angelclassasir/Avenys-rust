@@ -22,9 +22,10 @@ set -e
 #   • LLVM/Clang 18-22 (any distribution-native version works: mire lowers
 #     plain-text LLVM IR, so distro `opt`/`llc`/`lld`/`clang` are used as-is)
 #   • openssl / libsodium / zlib / zstd / libarchive development libraries
-# `protobuf-compiler` (protoc) is used by repository CI to validate the checked-
-# in Owl/Avenys schema. It is a contributor-only verification tool, not a
-# runtime dependency, so the end-user installer deliberately does not install it.
+# `protobuf-compiler` (protoc) validates the checked-in schema in repository CI.
+# The pinned WASI SDK is used by CI and developers to compile WASI targets.
+# Neither tool is a runtime dependency, so the end-user installer deliberately
+# does not install them.
 # The compiler archive carries the complete nested runtime/ and pal/ source
 # trees; reorganizing a runtime module does not add an operating-system package.
 #

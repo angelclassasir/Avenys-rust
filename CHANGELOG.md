@@ -22,6 +22,11 @@ All notable changes to Avenys will be documented in this file.
   `pal_time_monotonic_ns()` through an isolated `core/time.c` module. Linux and
   WASI provide the monotonic clock, and minimal builds include the PAL backend
   only when this runtime function is used.
+- **Standard input uses the PAL:** runtime reads, readiness checks, and
+  terminal detection no longer invoke POSIX input calls directly. Linux
+  implements all three operations; WASI supports reads and explicitly reports
+  readiness and terminal detection as unsupported. CI compiles the affected
+  modules with pinned WASI SDK 27.0, which remains a development-only tool.
 
 ## 4.3.12 - 2026-10-09
 
