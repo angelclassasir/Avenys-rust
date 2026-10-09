@@ -20,7 +20,7 @@ directory name that directory explicitly.
 | `token` | `~/.owl/libs` (active Kioto 3.0 tree) | 5/5 tests passed. |
 | `token` | `~/.owl/libs-beta` | Could not resolve its declared SDL dependency; this library directory contains Kioto, Mire, and testlib, but not SDL. This is a dependency-resolution failure, not a compiler regression result. |
 | MireData, initial run | `~/.owl/libs-beta` | 48 passed, 26 failed, 74 total. `advanced` and `collections` test binaries terminated with signal 11; `proc` had assertion failures. |
-| MireData, after map-rebind fix | `~/.owl/libs-beta` | 77 passed, 5 failed, 82 total (including isolated probes and the new map regression). `advanced`, `collections`, and every map probe passed. The remaining failures are in `proc`; investigate separately. |
+| MireData, after map-rebind fix | `~/.owl/libs-beta` | 77 passed, 5 reported failures, 82 total (including isolated probes and the new map regression). `advanced`, `collections`, and every map probe passed. An isolated verbose rerun of `proc.mire` reports four of five test functions passing; `test_proc_spawn_no_shell` fails because `proc::run::spawn("/bin/true", [])` returns `-1`. The same test fails with installed Avenys 4.3.11, so this predates the current branch. The call crosses Kioto's process-handle FFI and PAL; the precise boundary defect remains to be isolated. |
 | SDL | `~/.owl/libs` and the Arch library fallback | 47 tests failed before execution because imported Kioto filesystem code could not resolve `fs.owl.build_level`. Supplying the current Kioto source checkout exposed another unresolved same-module qualified call, `fs.path.join`, from the same file. |
 | Stress | `~/.owl/libs` | No test files were found. Building `code/main.mire` failed on unresolved `fs.owl.build_level` at line 509 in imported Kioto filesystem code. |
 | SQLite | `~/.owl/libs` | 8 generated tests failed during compilation. The linker reported missing `sqlite3_*` and `mire_sqlite_text_to_str` symbols; another test source contains an unexpected semicolon at line 13. No runtime behavior was tested. |
@@ -31,7 +31,9 @@ directory name that directory explicitly.
 The results show why an ecosystem-wide pass/fail count is misleading: the
 outcome changes with the Kioto library directory, and several suites fail
 before their tests execute. The `fs.owl.build_level` failure is a reproducible
-compiler-facing blocker in SDL and Stress. The current Kioto source contains
+compiler-facing blocker in SDL and Stress. The process-spawn failure also
+predates the current compiler branch and needs a focused Kioto/PAL ABI
+diagnosis. The current Kioto source contains
 the helper and documents that same-module qualified `fs::x` references do not
 resolve at link time; directly compiling its filesystem module stops at
 `fs.path.join`. Avenys is correct to reject the unresolved call rather than
@@ -43,7 +45,8 @@ The initial collection SIGSEGVs in MireData were reproduced with two
 even though the mutator returned the same map pointer. The Avenys follow-up fix
 now exempts same-target map mutators as well as vector push; the isolated probe
 passes in debug and release, and the Map suite passes 3/3. The MireData rerun
-has no collection crashes; its five remaining failures are in `proc` and are
+has no collection crashes. Its remaining `proc` failure is reproducible on
+both the current branch and installed 4.3.11; its process-handle boundary is
 still open. SQLite needs its C link inputs and invalid test syntax separated
 before it can serve as a compiler compatibility signal. The WASM host build is
 only a compile smoke test; C2 must still validate the actual WASI target and
