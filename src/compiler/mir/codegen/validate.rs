@@ -52,9 +52,6 @@ pub(crate) fn find_first_undefined_call(program: &MirProgram) -> Option<(String,
                     _ => None,
                 };
                 if let Some(n) = name {
-                    if n.contains('.') || n.contains(':') {
-                        continue;
-                    }
                     if n.starts_with("rt_")
                         || n.starts_with("pal_")
                         || n.starts_with("fn_")
@@ -81,4 +78,53 @@ pub(crate) fn find_first_undefined_call(program: &MirProgram) -> Option<(String,
         }
     }
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::find_first_undefined_call;
+    use crate::compiler::mir::{
+        DataType, MirBlock, MirFunction, MirInst, MirOp, MirProgram, MirTerminator, MirType,
+        MirValue,
+    };
+    use std::collections::HashMap;
+
+    #[test]
+    fn unresolved_qualified_builtin_is_not_hidden_from_validation() {
+        let program = MirProgram {
+            functions: vec![MirFunction {
+                name: "main".to_string(),
+                params: Vec::new(),
+                ret_type: DataType::None,
+                body_hash: 0,
+                noinline: false,
+                blocks: vec![MirBlock {
+                    id: 0,
+                    label: "entry".to_string(),
+                    insts: vec![MirInst {
+                        result: Some(0),
+                        op: MirOp::Call(
+                            MirValue::Global("env.get".to_string()),
+                            Vec::new(),
+                            MirType {
+                                data_type: DataType::Str,
+                            },
+                        ),
+                        loc: (1, 1),
+                    }],
+                    terminator: MirTerminator::Ret(None),
+                }],
+            }],
+            entry_point: Some("main".to_string()),
+            extern_functions: Vec::new(),
+            extern_libs: Vec::new(),
+            struct_types: HashMap::new(),
+            globals: HashMap::new(),
+        };
+
+        assert_eq!(
+            find_first_undefined_call(&program),
+            Some(("env.get".to_string(), (1, 1)))
+        );
+    }
 }
