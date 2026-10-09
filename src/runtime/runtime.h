@@ -235,6 +235,17 @@ char   *rt_read_tty(void);
 // Read an entire file as a runtime-managed string.
 char   *rt_fs_read_bytes(const char *path);
 
+// ── PAL handle bridges ──
+// Scalar FFI adapters for PAL socket handles. Mire represents opaque handles
+// as i64; these bridges preserve the PAL's typed, generation-checked ABI.
+int64_t rt_pal_unix_connect(const char *path, int32_t flags);
+int64_t rt_pal_unix_bind(const char *path, int32_t flags);
+int64_t rt_pal_listener_accept(int64_t listener);
+int64_t rt_pal_socket_send(int64_t socket, const char *data, int64_t length);
+int64_t rt_pal_socket_recv(int64_t socket, char *buffer, int64_t capacity);
+void rt_pal_socket_close(int64_t socket);
+void rt_pal_listener_close(int64_t listener);
+
 // ── Sandbox policy bridges ──
 // The `pal_sbx_*` accessors are [BORROWED]; these `rt_` wrappers exist so they
 // cross into Mire without the compiler treating them as owned buffers. See the

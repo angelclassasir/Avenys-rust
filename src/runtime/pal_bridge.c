@@ -69,3 +69,31 @@ void rt_pal_dir_close(int64_t directory) {
 bool rt_pal_root_remove(int64_t root, const char *path) {
     return pal_root_remove(decode_handle(root), path);
 }
+
+int64_t rt_pal_unix_connect(const char *path, int32_t flags) {
+    return encode_handle(pal_unix_connect(path, (pal_socket_flags)flags));
+}
+
+int64_t rt_pal_unix_bind(const char *path, int32_t flags) {
+    return encode_handle(pal_unix_bind(path, (pal_socket_flags)flags));
+}
+
+int64_t rt_pal_listener_accept(int64_t listener) {
+    return encode_handle(pal_listener_accept(decode_handle(listener)));
+}
+
+int64_t rt_pal_socket_send(int64_t socket, const char *data, int64_t length) {
+    return pal_socket_send(decode_handle(socket), data, length);
+}
+
+int64_t rt_pal_socket_recv(int64_t socket, char *buffer, int64_t capacity) {
+    return pal_socket_recv(decode_handle(socket), buffer, capacity);
+}
+
+void rt_pal_socket_close(int64_t socket) {
+    pal_socket_close(decode_handle(socket));
+}
+
+void rt_pal_listener_close(int64_t listener) {
+    pal_listener_close(decode_handle(listener));
+}

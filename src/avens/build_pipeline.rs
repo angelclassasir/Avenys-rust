@@ -2,7 +2,7 @@ use super::build_support::{
     apply_cfg_filter, collect_used_symbols, dedup_llvm_declarations, generate_enum_constructors,
     generate_runtime_declarations, generate_struct_constructors, inject_macros,
     inject_test_harness, minimal_runtime_c_files, neutralise_ignored_tests, precompile_c_object,
-    progress_phase, runtime_base, set_c_defs,
+    progress_phase, runtime_base, runtime_c_file_needs_pal, set_c_defs,
 };
 use super::*;
 use crate::compiler::check_warnings_with_origins;
@@ -595,14 +595,11 @@ fn compile_file_inner(
         });
         // Add PAL files on demand: when the program's IR uses PAL symbols OR a
         // retained runtime .c file bridges into PAL at the C level (helpers.c,
-        // thread.c call pal_* directly, invisible to the IR symbol scan).
-        let runtime_needs_pal = c_source_files.iter().any(|path| {
-            let fname = std::path::Path::new(path)
-                .file_name()
-                .unwrap_or_default()
-                .to_string_lossy();
-            matches!(fname.as_ref(), "helpers.c" | "thread.c")
-        });
+        // thread.c, and pal_bridge.c call pal_* directly, invisible to the IR
+        // symbol scan).
+        let runtime_needs_pal = c_source_files
+            .iter()
+            .any(|path| runtime_c_file_needs_pal(std::path::Path::new(path)));
         if !used.pal.is_empty() || runtime_needs_pal {
             let pal_platform = pal_platform_for_target(
                 options

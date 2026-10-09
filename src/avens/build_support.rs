@@ -1187,3 +1187,29 @@ pub(crate) fn minimal_runtime_c_files(used_runtime: &HashSet<String>) -> Vec<Str
     files.sort();
     files
 }
+
+pub(crate) fn runtime_c_file_needs_pal(source_path: &std::path::Path) -> bool {
+    matches!(
+        source_path.file_name().and_then(|name| name.to_str()),
+        Some("helpers.c" | "thread.c" | "pal_bridge.c")
+    )
+}
+
+#[cfg(test)]
+mod runtime_source_tests {
+    use super::{minimal_runtime_c_files, runtime_c_file_needs_pal, runtime_symbol_to_c_file};
+    use std::{collections::HashSet, path::Path};
+
+    #[test]
+    fn scalar_pal_socket_bridges_select_the_runtime_bridge_and_pal_backend() {
+        let symbols = HashSet::from(["rt_pal_unix_connect".to_string()]);
+        let runtime_files = minimal_runtime_c_files(&symbols);
+
+        assert_eq!(
+            runtime_symbol_to_c_file("rt_pal_unix_connect"),
+            Some("pal_bridge.c")
+        );
+        assert!(runtime_files.iter().any(|file| file == "pal_bridge.c"));
+        assert!(runtime_c_file_needs_pal(Path::new("runtime/pal_bridge.c")));
+    }
+}
