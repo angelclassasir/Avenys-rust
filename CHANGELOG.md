@@ -14,6 +14,10 @@ All notable changes to Avenys will be documented in this file.
 - CI uses two Cargo test jobs to avoid memory pressure during concurrent LLVM
   links, and release packaging verifies that nested runtime modules are
   included in compiler archives.
+- **Minimal-runtime input calls:** `ireru` is now retained by runtime symbol
+  analysis, receives its LLVM declaration, and selects the new input module.
+  Previously it was accepted by validation but emitted as an undeclared LLVM
+  call. A piped-input runtime smoke test now protects this path in CI.
 
 ## 4.3.12 - 2026-10-09
 

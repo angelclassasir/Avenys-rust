@@ -47,9 +47,12 @@ does not claim that the full redesign is complete.
   combined `mire_io.c` was split by responsibility without changing public
   symbols or I/O behavior. CI tests are limited to two Cargo jobs to avoid the
   previously observed linker memory thrashing. `cargo test --locked --release
-  -j 2` passed 239 library tests and 14 CLI tests; `bench/run.sh verify`
+  -j 2` passed 240 library tests and 14 CLI tests; `bench/run.sh verify`
   matched all 12 kernel outputs. Both `minimal` and `full` runtime tiers
-  linked and ran a smoke program.
+  linked and ran a smoke program. A real `ireru` stdin-pipe test also exposed
+  and fixed its previously missing LLVM declaration and minimal-runtime
+  provider selection; the persisted `scripts/test-runtime-io.sh` smoke test
+  now runs that path in CI.
 - Installer and CI dependency audit for B1: no new host package is needed.
   `protobuf-compiler` remains CI-only for schema validation, not a compiler or
   runtime dependency. The README's manual package lists now match the installer's
@@ -62,7 +65,10 @@ Relevant commits on the active branches:
 - Avenys: `98bdf24` (schema dependency and CI validation), `12edb4f`
   (process-spawn baseline diagnosis), `87407ee` (Linux Unix-domain sockets),
   `c48ad5f` (Mire scalar-handle adapters and minimal-runtime PAL selection),
-  `a265138` (progress ledger update).
+  `a265138` (progress ledger update), `2d75dec` (runtime source organization),
+  `465c89a` (nested packaging and dependency audit), `87597da` (4.3.13
+  version/changelog), and `d70ece9`/`02baedb` (standard-stream source split
+  and B1 checkpoint).
 - Owl: `ac41531` (schema dependency documentation), `0ce4193` and `9747cd4`
   (cross-decode CI and LLVM toolchain path).
 

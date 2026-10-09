@@ -1,0 +1,5 @@
+pub fn main: () :i32 {
+    set input = ireru("Input: ")
+    dasu(input)
+    return 0 :i32
+}
