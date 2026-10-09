@@ -1,4 +1,5 @@
 #include "runtime.h"
+#include "pal.h"
 
 #include <stdint.h>
 #include <stdlib.h>
@@ -26,8 +27,11 @@ void rt_check_bounds_i64(int64_t index, int64_t len, int64_t line, int64_t col, 
     if (index < 0 || index >= len) rt_panic_loc("index out of bounds", line, col, file);
 }
 
-void *rt_closure_env_alloc(int64_t size) { return malloc((size_t)size); }
-void rt_closure_env_free(void *env) { free(env); }
+void *rt_closure_env_alloc(int64_t size) {
+    if (size <= 0) return NULL;
+    return pal_alloc(size);
+}
+void rt_closure_env_free(void *env) { pal_free(env); }
 
 void rt_panic(const char *message) {
     rt_runtime_write_panic_message(message, 1);

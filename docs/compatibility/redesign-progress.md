@@ -66,8 +66,8 @@ does not claim that the full redesign is complete.
   implement the operation; the PAL socket smoke test verifies monotonic
   ordering, and the CI runtime smoke fixture calls the function from Mire in a
   minimal build. The WASI SDK compiles both the backend and runtime unit.
-  B2 remains open: the managed arena uses `mmap`/`munmap`, and process
-  helpers still use `fork`/`pipe`/`waitpid`.
+  B2 remains open: runtime file and process helpers still contain direct host
+  calls, as do several collection and string allocation paths.
 - Runtime input now goes through `pal_stdin_read`, `pal_stdin_available`, and
   `pal_stdin_is_tty`; Linux implements all three, while WASI explicitly leaves
   readiness and terminal detection unsupported. The piped-input smoke test
@@ -96,6 +96,13 @@ does not claim that the full redesign is complete.
   All 12 benchmark outputs still match. The large gap remains and points to
   collection allocation/reallocation behavior, not a reason to claim the
   allocator is optimized.
+- The managed arena's virtual-memory operations are now PAL-backed in commit
+  `4950cbe`. A follow-up B2 slice routes raw-buffer, closure-environment, and
+  thread-closure allocations through `pal_alloc`/`pal_free` in four runtime
+  modules. Validation after this slice: 241 library tests, 14 CLI tests,
+  runtime I/O/panic smoke, WASI compilation, and 12/12 benchmark output
+  equivalence pass. This does not close B2: filesystem/process helpers and
+  collection/string allocation paths still need an audited migration.
 
 Relevant commits on the active branches:
 
@@ -115,6 +122,8 @@ Relevant commits on the active branches:
   verifies a clean output error state after the end-to-end input/output smoke;
   `25b0605` routes panic diagnostics through PAL and verifies the diagnostic
   format and exit status in both minimal and full runtime builds.
+- Avenys: `4950cbe` moves managed-arena virtual-memory reservation behind the
+  PAL; the currently uncommitted B2 allocation slice is still under test.
 - Owl: `ac41531` (schema dependency documentation), `0ce4193` and `9747cd4`
   (cross-decode CI and LLVM toolchain path).
 

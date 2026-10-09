@@ -1,12 +1,12 @@
-// bytes.c — Pure byte/buffer access helpers (PAL-free).
+// bytes.c — Byte/buffer access helpers with PAL-backed raw allocation.
 // Extracted from helpers.c so the minimal runtime tier can pull in the
 // raw memory readers/writers (used by math.c and FFI bindings) WITHOUT
 // dragging helpers.c's PAL-dependent file/process/crypto functions.
 
 #include <stdint.h>
 #include <limits.h>
-#include <stdlib.h>
 #include "runtime.h"
+#include "pal.h"
 
 // ── Raw buffer allocation ─────────────────────────────────────────
 // Unmanaged malloc/free for passing opaque buffers (SDL_Event, SDL_Rect,
@@ -14,10 +14,10 @@
 // runtime never touches the memory (not managed, not GC'd).
 void *rt_alloc_raw(int64_t size) {
     if (size <= 0) return NULL;
-    return malloc((size_t)size);
+    return pal_alloc(size);
 }
 void rt_free_raw(void *ptr) {
-    if (ptr) free(ptr);
+    if (ptr) pal_free(ptr);
 }
 
 // ── Pointer arithmetic ─────────────────────────────────────────────
