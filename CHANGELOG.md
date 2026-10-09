@@ -2,6 +2,18 @@
 
 All notable changes to Avenys will be documented in this file.
 
+## 4.3.13 - 2026-10-09
+
+### Changed
+- **Runtime source layout:** C runtime modules are organized by responsibility
+  under `core/`, `memory/`, `collections/`, `std/io/`, and `pal_bridge/`.
+  Compiler source discovery and release packaging now recurse through those
+  directories. This is a source-layout change only; runtime behavior and host
+  dependencies are unchanged.
+- CI uses two Cargo test jobs to avoid memory pressure during concurrent LLVM
+  links, and release packaging verifies that nested runtime modules are
+  included in compiler archives.
+
 ## 4.3.12 - 2026-10-09
 
 ### Fixed
