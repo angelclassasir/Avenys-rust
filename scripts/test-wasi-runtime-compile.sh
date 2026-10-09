@@ -33,5 +33,6 @@ compile_wasi_source "$repository_directory/src/runtime/memory/safety/safety_mini
 compile_wasi_source "$repository_directory/src/runtime/memory/allocator/managed.c" runtime_managed.o
 compile_wasi_source "$repository_directory/src/runtime/core/time.c" runtime_time.o
 compile_wasi_source "$repository_directory/src/runtime/collections/vec/vecs.c" runtime_vecs.o
+compile_wasi_source "$repository_directory/src/runtime/core/math.c" runtime_math.o
 
-printf 'WASI PAL, standard-stream, safety, allocator, monotonic-time, and vector modules compiled successfully.\n'
+printf 'WASI PAL, standard-stream, safety, allocator, timing, vector, and math modules compiled successfully.\n'

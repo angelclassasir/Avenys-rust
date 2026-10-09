@@ -68,6 +68,11 @@ All notable changes to Avenys will be documented in this file.
   prevents overflow; the input smoke now tests a line longer than the initial
   buffer. This is a scoped allocation-boundary migration, not a complete runtime
   allocator conversion. No installer dependency changed.
+- The math median helper now allocates and releases its temporary sorted copy
+  through PAL memory functions, with a checked size conversion. Minimal-runtime
+  source selection and the WASI compile smoke include the math module; a C test
+  verifies odd/even medians and matching PAL allocation/release counts. No
+  installer dependency changed.
 
 ## 4.3.12 - 2026-10-09
 

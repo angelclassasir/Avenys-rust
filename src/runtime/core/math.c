@@ -1,4 +1,5 @@
 #include "runtime.h"
+#include "pal.h"
 #define _GNU_SOURCE
 #include <math.h>
 #include <stdint.h>
@@ -245,7 +246,8 @@ static void sort_i64(int64_t *values, int64_t len) {
 double rt_math_median_i64(void *list) {
     int64_t len = rt_list_len(list);
     if (len <= 0) return 0.0;
-    int64_t *copy = (int64_t *)malloc((size_t)len * sizeof(int64_t));
+    if (len > INT64_MAX / (int64_t)sizeof(int64_t)) return 0.0;
+    int64_t *copy = (int64_t *)pal_alloc(len * (int64_t)sizeof(int64_t));
     if (!copy) return 0.0;
     for (int64_t i = 0; i < len; i++) {
         copy[i] = rt_list_get_i64(list, i);
@@ -257,7 +259,7 @@ double rt_math_median_i64(void *list) {
     } else {
         result = ((double)copy[(len / 2) - 1] + (double)copy[len / 2]) / 2.0;
     }
-    free(copy);
+    pal_free(copy);
     return result;
 }
 

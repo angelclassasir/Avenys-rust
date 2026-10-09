@@ -177,6 +177,15 @@ Relevant commits on the active branches:
   (241 library + 14 CLI + doc-tests), and 12/12 benchmark equivalence also
   passed. No installer dependency changed. This only migrates input buffers;
   other runtime allocations remain.
+- Runtime math-allocation B2 slice (pending commit): the median helper's
+  temporary sorted copy now uses `pal_alloc`/`pal_free` and rejects element
+  counts that overflow the PAL's signed byte-size argument. Minimal-runtime
+  source selection marks `math.c` as PAL-dependent, and the WASI compile smoke
+  now includes both math and vector modules. A focused C regression exercises
+  odd/even median values and verifies exactly two PAL allocations and releases.
+  It passes, as do the 241 library + 14 CLI Rust tests, WASI compilation, and
+  all 12 benchmark output comparisons. The WASI build still surfaces the 11
+  existing warnings from vector code. No installer dependency changed.
 - Owl: `ac41531` (schema dependency documentation), `0ce4193` and `9747cd4`
   (cross-decode CI and LLVM toolchain path).
 

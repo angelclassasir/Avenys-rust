@@ -51,6 +51,9 @@ jobs:
       - name: Test runtime process helpers through PAL
         run: ./scripts/test-runtime-process.sh
 
+      - name: Test runtime math allocation through PAL
+        run: ./scripts/test-runtime-math-pal.sh
+
       - name: Checkout kioto (active PR #3 branch = v2.5.0 namespaced net API)
         uses: actions/checkout@v4
         with:
