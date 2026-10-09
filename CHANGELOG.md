@@ -63,6 +63,11 @@ All notable changes to Avenys will be documented in this file.
   stayed within the benchmark harness's noise threshold (1,361 ms before,
   1,381 ms after; Rust 26 ms in both runs), so this is a portability-boundary
   change, not a measured performance gain. No installer dependency changed.
+- Temporary buffers in runtime input line, byte-count, and read-all helpers now
+  use PAL memory operations. Capacity growth checks PAL's signed size limit and
+  prevents overflow; the input smoke now tests a line longer than the initial
+  buffer. This is a scoped allocation-boundary migration, not a complete runtime
+  allocator conversion. No installer dependency changed.
 
 ## 4.3.12 - 2026-10-09
 

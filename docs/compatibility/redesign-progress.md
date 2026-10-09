@@ -168,6 +168,15 @@ Relevant commits on the active branches:
   expanded WASI check surfaces 11 existing unused-variable/parameter warnings
   from `vecs.c`; compilation succeeds. This does not finish B2 or demonstrate
   a performance improvement, and no package dependency changed.
+- Runtime input-buffer B2 slice (pending commit): `rt_io_read_line`,
+  `rt_io_read_bytes`, and `rt_io_read_all` now allocate and release temporary
+  buffers through PAL memory functions. The shared growth helper checks the
+  signed PAL size limit and avoids capacity arithmetic overflow. The runtime
+  I/O smoke now supplies a 257-character line, exercising buffer growth beyond
+  the initial capacity. The smoke passed; the WASI compile, Rust release suite
+  (241 library + 14 CLI + doc-tests), and 12/12 benchmark equivalence also
+  passed. No installer dependency changed. This only migrates input buffers;
+  other runtime allocations remain.
 - Owl: `ac41531` (schema dependency documentation), `0ce4193` and `9747cd4`
   (cross-decode CI and LLVM toolchain path).
 

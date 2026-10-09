@@ -9,10 +9,11 @@ compiler=${MIRE_BIN:-"$repository_directory/target/release/mire"}
 "$compiler" build "$repository_directory/scripts/fixtures/runtime_io_smoke.mire" \
     --release --runtime minimal -o "$temporary_directory/runtime-io-smoke"
 
-actual_output=$(printf 'verified\n' | "$temporary_directory/runtime-io-smoke")
+long_input=$(awk 'BEGIN { for (i = 0; i < 257; i++) printf "x" }')
+actual_output=$(printf '%s\n' "$long_input" | "$temporary_directory/runtime-io-smoke")
 actual_input=$(printf '%s\n' "$actual_output" | sed -n '1p')
 actual_elapsed=$(printf '%s\n' "$actual_output" | sed -n '2p')
-if [ "$actual_input" != 'Input: verified' ] || \
+if [ "$actual_input" != "Input: $long_input" ] || \
     [ -z "$actual_elapsed" ] || \
     ! printf '%s' "$actual_elapsed" | grep -Eq '^[0-9]+$'; then
     printf 'runtime I/O/time smoke test failed: got <%s>\n' \

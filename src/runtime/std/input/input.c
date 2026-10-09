@@ -26,6 +26,28 @@ static size_t g_read_len = 0;
 static size_t g_read_pos = 0;
 static int g_read_eof = 0;
 
+static int io_buffer_reserve(char **buffer, size_t *capacity,
+                             size_t used, size_t additional) {
+    if (!buffer || !*buffer || !capacity || used >= (size_t)INT64_MAX ||
+        additional > (size_t)INT64_MAX - used - 1) return 0;
+    size_t required = used + additional + 1;
+    if (required <= *capacity) return 1;
+
+    size_t new_capacity = *capacity;
+    while (new_capacity < required) {
+        if (new_capacity > (size_t)INT64_MAX / 2) {
+            new_capacity = required;
+            break;
+        }
+        new_capacity *= 2;
+    }
+    char *resized = (char *)pal_realloc(*buffer, (int64_t)new_capacity);
+    if (!resized) return 0;
+    *buffer = resized;
+    *capacity = new_capacity;
+    return 1;
+}
+
 static int64_t io_input_available(void) {
     if (g_read_pos < g_read_len) return 1;
     if (g_read_eof) return 0;
@@ -71,19 +93,14 @@ static int io_read_peek(const char **out, size_t *out_len) {
 
 char *rt_io_read_line(void) {
     size_t cap = 128, len = 0;
-    char *buf = (char *)malloc(cap);
+    char *buf = (char *)pal_alloc((int64_t)cap);
     if (!buf) return rt_managed_from_slice("", 0);
     const char *chunk;
     size_t chunk_len;
     while (io_read_peek(&chunk, &chunk_len)) {
         const char *nl = (const char *)memchr(chunk, '\n', chunk_len);
         size_t take = nl ? (size_t)(nl - chunk) : chunk_len;
-        if (len + take + 1 > cap) {
-            while (len + take + 1 > cap) cap *= 2;
-            char *nb = (char *)realloc(buf, cap);
-            if (!nb) break;
-            buf = nb;
-        }
+        if (!io_buffer_reserve(&buf, &cap, len, take)) break;
         memcpy(buf + len, chunk, take);
         len += take;
         g_read_pos += take + (nl ? 1 : 0);
@@ -91,13 +108,13 @@ char *rt_io_read_line(void) {
     }
     if (len > 0 && buf[len - 1] == '\r') len--;
     char *result = rt_managed_from_slice(buf, len);
-    free(buf);
+    pal_free(buf);
     return result;
 }
 
 char *rt_io_read_bytes(int64_t count) {
     if (count <= 0) return rt_managed_from_slice("", 0);
-    char *buf = (char *)malloc((size_t)count);
+    char *buf = (char *)pal_alloc(count);
     if (!buf) return rt_managed_from_slice("", 0);
     size_t total = 0;
     while (total < (size_t)count) {
@@ -111,30 +128,25 @@ char *rt_io_read_bytes(int64_t count) {
         g_read_pos += take;
     }
     char *result = rt_managed_from_slice(buf, total);
-    free(buf);
+    pal_free(buf);
     return result;
 }
 
 char *rt_io_read_all(void) {
     size_t cap = 8192, len = 0;
-    char *buf = (char *)malloc(cap);
+    char *buf = (char *)pal_alloc((int64_t)cap);
     if (!buf) return rt_managed_from_slice("", 0);
     for (;;) {
         const char *chunk;
         size_t chunk_len;
         if (!io_read_peek(&chunk, &chunk_len)) break;
-        if (len + chunk_len + 1 > cap) {
-            while (len + chunk_len + 1 > cap) cap *= 2;
-            char *nb = (char *)realloc(buf, cap);
-            if (!nb) break;
-            buf = nb;
-        }
+        if (!io_buffer_reserve(&buf, &cap, len, chunk_len)) break;
         memcpy(buf + len, chunk, chunk_len);
         len += chunk_len;
         g_read_pos += chunk_len;
     }
     char *result = rt_managed_from_slice(buf, len);
-    free(buf);
+    pal_free(buf);
     return result;
 }
 
