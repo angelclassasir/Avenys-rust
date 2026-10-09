@@ -285,6 +285,25 @@ static int64_t linux_stdin_is_tty(void) {
     return isatty(STDIN_FILENO) ? 1 : 0;
 }
 
+static __thread int linux_stdio_error_flags[2];
+
+static int64_t linux_stdio_write(int64_t selector, const void *buffer, int64_t length) {
+    int stream_index = selector == 2 ? 1 : 0;
+    int descriptor = selector == 2 ? STDERR_FILENO : STDOUT_FILENO;
+    ssize_t written = write(descriptor, buffer, (size_t)length);
+    if (written < 0) linux_stdio_error_flags[stream_index] = 1;
+    return (int64_t)written;
+}
+
+static int64_t linux_stdio_error(int64_t selector) {
+    return linux_stdio_error_flags[selector == 2 ? 1 : 0] ? 1 : 0;
+}
+
+static int64_t linux_stdio_clear_error(int64_t selector) {
+    linux_stdio_error_flags[selector == 2 ? 1 : 0] = 0;
+    return 0;
+}
+
 static int64_t linux_file_write(int64_t internal, const void *buf, int64_t length) {
     linux_file_t *file = (linux_file_t *)internal;
     // A zero length is a valid no-op that POSIX reports as 0 bytes written,
@@ -1252,6 +1271,9 @@ static const pal_ops_t linux_ops = {
     .stdin_read = linux_stdin_read,
     .stdin_available = linux_stdin_available,
     .stdin_is_tty = linux_stdin_is_tty,
+    .stdio_write = linux_stdio_write,
+    .stdio_error = linux_stdio_error,
+    .stdio_clear_error = linux_stdio_clear_error,
     .dir_open = linux_dir_open,
     .dir_next = linux_dir_next,
     .dir_close = linux_dir_close,

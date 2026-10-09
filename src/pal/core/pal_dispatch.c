@@ -118,6 +118,31 @@ int64_t pal_stdin_is_tty(void) {
     return ops->stdin_is_tty();
 }
 
+int64_t pal_stdio_write(int64_t selector, const void *buffer, int64_t length) {
+    pal_ensure_init();
+    if (!ops || !ops->stdio_write) {
+        pal_set_error(PAL_ERR_UNSUPPORTED, "standard output is unavailable");
+        return -1;
+    }
+    if ((!buffer && length != 0) || length < 0) {
+        pal_set_error(PAL_ERR_INVALID, "invalid standard output buffer");
+        return -1;
+    }
+    return ops->stdio_write(selector == 2 ? 2 : 1, buffer, length);
+}
+
+int64_t pal_stdio_error(int64_t selector) {
+    pal_ensure_init();
+    if (!ops || !ops->stdio_error) return -1;
+    return ops->stdio_error(selector == 2 ? 2 : 1);
+}
+
+int64_t pal_stdio_clear_error(int64_t selector) {
+    pal_ensure_init();
+    if (!ops || !ops->stdio_clear_error) return -1;
+    return ops->stdio_clear_error(selector == 2 ? 2 : 1);
+}
+
 int64_t pal_file_seek(pal_file_t file, int64_t offset, pal_seek_from_t from) {
     if (!ops || !ops->file_seek) { pal_set_error(PAL_ERR_UNSUPPORTED, "no backend"); return -1; }
     int64_t internal = (int64_t)pal_core_validate_and_get(file.index, file.generation, PAL_RES_FILE);

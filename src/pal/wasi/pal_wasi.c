@@ -148,6 +148,30 @@ static int64_t wasi_stdin_read(void *buffer, int64_t capacity) {
     return error == 0 ? (int64_t)bytes_read : -1;
 }
 
+static int wasi_stdio_error_flags[2];
+
+static int64_t wasi_stdio_write(int64_t selector, const void *buffer, int64_t length) {
+    int stream_index = selector == 2 ? 1 : 0;
+    uint32_t descriptor = selector == 2 ? 2 : 1;
+    WasiIovec iov = { buffer, (size_t)length };
+    size_t bytes_written = 0;
+    uint32_t error = wasi_fd_write(descriptor, &iov, 1, &bytes_written);
+    if (error != 0) {
+        wasi_stdio_error_flags[stream_index] = 1;
+        return -1;
+    }
+    return (int64_t)bytes_written;
+}
+
+static int64_t wasi_stdio_error(int64_t selector) {
+    return wasi_stdio_error_flags[selector == 2 ? 1 : 0] ? 1 : 0;
+}
+
+static int64_t wasi_stdio_clear_error(int64_t selector) {
+    wasi_stdio_error_flags[selector == 2 ? 1 : 0] = 0;
+    return 0;
+}
+
 static const pal_ops_t wasi_ops = {
     .init = wasi_init,
     .shutdown = wasi_shutdown,
@@ -165,6 +189,9 @@ static const pal_ops_t wasi_ops = {
     .stdin_read = wasi_stdin_read,
     .stdin_available = NULL,
     .stdin_is_tty = NULL,
+    .stdio_write = wasi_stdio_write,
+    .stdio_error = wasi_stdio_error,
+    .stdio_clear_error = wasi_stdio_clear_error,
     .dir_open = NULL,
     .dir_next = NULL,
     .dir_close = NULL,

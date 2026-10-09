@@ -263,6 +263,10 @@ int64_t pal_stdin_read(void *buffer, int64_t capacity);
 int64_t pal_stdin_available(void);
 /// Returns 1 for a terminal, 0 for a non-terminal, or -1 if unsupported.
 int64_t pal_stdin_is_tty(void);
+/// Write bytes to stdout (selector 1) or stderr (selector 2). Returns bytes written.
+int64_t pal_stdio_write(int64_t selector, const void *buffer, int64_t length);
+int64_t pal_stdio_error(int64_t selector);
+int64_t pal_stdio_clear_error(int64_t selector);
 
 pal_dir_t pal_dir_open(pal_root_t root, const char *rel_path);
 

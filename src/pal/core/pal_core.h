@@ -61,6 +61,11 @@ typedef struct pal_ops {
     int64_t (*stdin_available)(void);
     int64_t (*stdin_is_tty)(void);
 
+    // Standard output/error. Stream selectors use 1 for stdout, 2 for stderr.
+    int64_t (*stdio_write)(int64_t selector, const void *buf, int64_t length);
+    int64_t (*stdio_error)(int64_t selector);
+    int64_t (*stdio_clear_error)(int64_t selector);
+
     // Directory
     int64_t (*dir_open)(int64_t root_internal, const char *rel_path);
     bool (*dir_next)(int64_t internal, pal_dir_entry_t *out);

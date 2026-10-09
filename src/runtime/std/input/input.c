@@ -1,5 +1,4 @@
 #include "runtime.h"
-#include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <errno.h>
@@ -10,8 +9,7 @@ char *rt_io_read_line(void);
 
 char *ireru(const char *prompt) {
     if (prompt && *prompt) {
-        printf("%s", prompt);
-        fflush(stdout);
+        (void)pal_stdio_write(1, prompt, (int64_t)strlen(prompt));
     }
     // Share the read buffer with the stdin APIs below. Mixing getchar() with
     // descriptor-level reads can hide buffered bytes from rt_io_available().
