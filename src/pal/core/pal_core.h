@@ -60,6 +60,9 @@ typedef struct pal_ops {
     int64_t (*stdin_read)(void *buf, int64_t capacity);
     int64_t (*stdin_available)(void);
     int64_t (*stdin_is_tty)(void);
+    // Read one line from the controlling terminal, NUL-terminate, return bytes
+    // excluding the terminator, or a negative result when unavailable.
+    int64_t (*tty_read_line)(char *buf, int64_t capacity);
 
     // Standard output/error. Stream selectors use 1 for stdout, 2 for stderr.
     int64_t (*stdio_write)(int64_t selector, const void *buf, int64_t length);

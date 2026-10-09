@@ -190,6 +190,7 @@ static const pal_ops_t wasi_ops = {
     .stdin_read = wasi_stdin_read,
     .stdin_available = NULL,
     .stdin_is_tty = NULL,
+    .tty_read_line = NULL,
     .stdio_write = wasi_stdio_write,
     .stdio_error = wasi_stdio_error,
     .stdio_clear_error = wasi_stdio_clear_error,

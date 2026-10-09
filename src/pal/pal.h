@@ -268,6 +268,9 @@ int64_t pal_stdin_read(void *buffer, int64_t capacity);
 int64_t pal_stdin_available(void);
 /// Returns 1 for a terminal, 0 for a non-terminal, or -1 if unsupported.
 int64_t pal_stdin_is_tty(void);
+/// Read one line from the controlling terminal. NUL-terminates when capacity
+/// is positive; returns bytes excluding NUL, or -1 when unavailable.
+int64_t pal_tty_read_line(char *buffer, int64_t capacity);
 /// Write bytes to stdout (selector 1) or stderr (selector 2). Returns bytes written.
 int64_t pal_stdio_write(int64_t selector, const void *buffer, int64_t length);
 int64_t pal_stdio_error(int64_t selector);

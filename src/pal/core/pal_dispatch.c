@@ -118,6 +118,29 @@ int64_t pal_stdin_is_tty(void) {
     return ops->stdin_is_tty();
 }
 
+int64_t pal_tty_read_line(char *buffer, int64_t capacity) {
+    pal_ensure_init();
+    if (!buffer || capacity <= 0) {
+        pal_set_error(PAL_ERR_INVALID, "invalid controlling terminal buffer");
+        return -1;
+    }
+    if (!ops || !ops->tty_read_line) {
+        pal_set_error(PAL_ERR_UNSUPPORTED, "controlling terminal input is unavailable");
+        return -1;
+    }
+    int64_t length = ops->tty_read_line(buffer, capacity);
+    if (length < 0) {
+        pal_set_error(pal_core_errno_map(errno), "controlling terminal read failed");
+        return -1;
+    }
+    if (length >= capacity) {
+        pal_set_error(PAL_ERR_IO, "controlling terminal backend exceeded buffer capacity");
+        return -1;
+    }
+    buffer[length] = '\0';
+    return length;
+}
+
 int64_t pal_stdio_write(int64_t selector, const void *buffer, int64_t length) {
     pal_ensure_init();
     if (!ops || !ops->stdio_write) {

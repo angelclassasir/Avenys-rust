@@ -653,15 +653,11 @@ char *rt_proc_capture_argv2(const char *cmd, void *args_vec, const char *cwd, in
 // Non-interactive contexts (no /dev/tty) default to "y" so a Y/n prompt can
 // proceed — the same default the shell-based `read ... || echo y` produced.
 char *rt_read_tty(void) {
-    FILE *tty = fopen("/dev/tty", "r");
-    if (!tty) return rt_managed_from_cstr("y");
     char buf[256];
-    if (fgets(buf, sizeof(buf), tty) == NULL) {
-        fclose(tty);
+    int64_t read_length = pal_tty_read_line(buf, (int64_t)sizeof(buf));
+    if (read_length <= 0 || read_length >= (int64_t)sizeof(buf))
         return rt_managed_from_cstr("y");
-    }
-    fclose(tty);
-    size_t len = strlen(buf);
+    size_t len = (size_t)read_length;
     while (len > 0 && (buf[len - 1] == '\n' || buf[len - 1] == '\r')) {
         buf[--len] = '\0';
     }

@@ -287,6 +287,31 @@ static int64_t linux_stdin_is_tty(void) {
     return isatty(STDIN_FILENO) ? 1 : 0;
 }
 
+static int64_t linux_tty_read_line(char *buffer, int64_t capacity) {
+    if (!buffer || capacity <= 0) { errno = EINVAL; return -1; }
+    int descriptor = open("/dev/tty", O_RDONLY | O_CLOEXEC | O_NOCTTY);
+    if (descriptor < 0) return -1;
+
+    int64_t length = 0;
+    while (length < capacity - 1) {
+        unsigned char byte;
+        ssize_t received = read(descriptor, &byte, 1);
+        if (received == 0) break;
+        if (received < 0) {
+            if (errno == EINTR) continue;
+            int saved_error = errno;
+            close(descriptor);
+            errno = saved_error;
+            return -1;
+        }
+        buffer[length++] = (char)byte;
+        if (byte == '\n') break;
+    }
+    close(descriptor);
+    buffer[length] = '\0';
+    return length;
+}
+
 static __thread int linux_stdio_error_flags[2];
 
 static int64_t linux_stdio_write(int64_t selector, const void *buffer, int64_t length) {
@@ -1284,6 +1309,7 @@ static const pal_ops_t linux_ops = {
     .stdin_read = linux_stdin_read,
     .stdin_available = linux_stdin_available,
     .stdin_is_tty = linux_stdin_is_tty,
+    .tty_read_line = linux_tty_read_line,
     .stdio_write = linux_stdio_write,
     .stdio_error = linux_stdio_error,
     .stdio_clear_error = linux_stdio_clear_error,

@@ -45,6 +45,11 @@ All notable changes to Avenys will be documented in this file.
   Linux requires that mode argument to be zero. A binary-file and sandbox
   regression smoke test now runs in CI using the existing C compiler and
   libsodium CI dependencies; no installer packages were added.
+- The runtime's controlling-terminal prompt now uses `pal_tty_read_line()`.
+  Linux reads from `/dev/tty`; WASI declares the capability unsupported, and
+  the runtime preserves its existing non-interactive `"y"` fallback. A PTY
+  smoke test exercises both interactive input and the detached-process
+  fallback in CI without adding a package dependency.
 
 ## 4.3.12 - 2026-10-09
 

@@ -45,6 +45,9 @@ jobs:
       - name: Test runtime file helpers through PAL
         run: ./scripts/test-runtime-files.sh
 
+      - name: Test controlling-terminal input through PAL
+        run: ./scripts/test-runtime-tty.sh
+
       - name: Checkout kioto (active PR #3 branch = v2.5.0 namespaced net API)
         uses: actions/checkout@v4
         with:
