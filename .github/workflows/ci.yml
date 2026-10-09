@@ -30,7 +30,7 @@ jobs:
           tar -xzf "$wasi_sdk_archive" -C "$RUNNER_TEMP"
           echo "WASI_SDK_PATH=$RUNNER_TEMP/wasi-sdk-27.0-x86_64-linux" >> "$GITHUB_ENV"
 
-      - name: Compile PAL and runtime input modules for WASI
+      - name: Compile PAL and runtime standard-stream modules for WASI
         run: ./scripts/test-wasi-runtime-compile.sh
 
       - name: Validate Owl/Avenys protocol schema

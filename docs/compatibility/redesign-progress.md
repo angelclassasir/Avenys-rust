@@ -73,6 +73,12 @@ does not claim that the full redesign is complete.
   readiness and terminal detection unsupported. The piped-input smoke test
   checks readiness and non-terminal behavior before reading. These additions
   use existing host interfaces and add no external package dependency.
+- Runtime standard output and error now use PAL writes and PAL-managed error
+  flags. `dasu`, string/numeric writers, input prompts, and stream error
+  queries in `runtime/std/*` no longer access host stdio directly. The Linux
+  runtime smoke checks output ordering and error state; the WASI compile gate
+  includes both stream modules. Panic and safety diagnostics still print
+  directly to stdio and remain part of B2.
 - CI now installs pinned WASI SDK 27.0 and compiles the WASI backend plus the
   changed input and timing modules. This development-only dependency is
   documented in the installer and README; the end-user installer does not
@@ -91,7 +97,8 @@ Relevant commits on the active branches:
   operation. This change adds no external package dependency; CI/release checks
   verify the new runtime source is included in packaged distributions.
 - Avenys: `13aaf62` routes standard input through the PAL and adds the pinned
-  WASI compile check.
+  WASI compile check; `89b60f9` routes the runtime standard-stream APIs
+  through PAL byte writes and records per-thread stream errors.
 - Owl: `ac41531` (schema dependency documentation), `0ce4193` and `9747cd4`
   (cross-decode CI and LLVM toolchain path).
 

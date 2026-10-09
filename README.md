@@ -13,10 +13,12 @@ strings, collections, math, filesystem, processes, and more.
 
 ## Recent Changes (v4.3.13)
 - Runtime elapsed-time formatting and standard input now cross the PAL instead
-  of calling host clock and input APIs directly. The WASI PAL can read standard
-  input; readiness and terminal detection are explicitly unavailable there.
+  of calling host clock and input APIs directly. Runtime standard output/error
+  APIs use PAL writes as well. The WASI PAL can read and write standard
+  streams; readiness and terminal detection are explicitly unavailable there.
   CI compiles the affected modules with WASI SDK 27.0. The SDK is a contributor
-  and CI tool only; it is not installed by the end-user installer.
+  and CI tool only; it is not installed by the end-user installer. Panic and
+  safety diagnostics still have direct stdio paths and remain B2 work.
 
 ## Recent Changes (v4.3.12)
 - **Collection drops use semantic ownership.** Vectors and maps now use their

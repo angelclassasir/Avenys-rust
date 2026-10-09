@@ -27,6 +27,9 @@ All notable changes to Avenys will be documented in this file.
   implements all three operations; WASI supports reads and explicitly reports
   readiness and terminal detection as unsupported. CI compiles the affected
   modules with pinned WASI SDK 27.0, which remains a development-only tool.
+- The runtime `std/output` and `std/error` APIs now use PAL byte writes and
+  PAL-managed error flags. Runtime prompts and numeric/string output no longer
+  call host stdio output functions directly.
 
 ## 4.3.12 - 2026-10-09
 
