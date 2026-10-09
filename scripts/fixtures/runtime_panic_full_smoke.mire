@@ -1,0 +1,6 @@
+extern fn rt_panic: (message :str) lib "c"
+
+pub fn main: () :i32 {
+    rt_panic("managed diagnostic smoke")
+    return 0 :i32
+}

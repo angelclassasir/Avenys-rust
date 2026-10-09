@@ -395,11 +395,6 @@ int64_t rt_strings_index_of_utf8(const char *s, const char *sub) {
 // ── Runtime utilities ────────────────────────────────────────────────
 
 void rt_panic(const char *message) {
-    if (message && *message) {
-        fprintf(stderr, "runtime error: %s\n", message);
-    } else {
-        fprintf(stderr, "runtime error\n");
-    }
-    fflush(stderr);
+    rt_runtime_write_panic_message(message, 0);
     exit(101);
 }

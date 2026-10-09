@@ -29,6 +29,7 @@ compile_wasi_source "$repository_directory/src/pal/wasi/pal_wasi.c" pal_wasi.o
 compile_wasi_source "$repository_directory/src/runtime/std/input/input.c" runtime_input.o
 compile_wasi_source "$repository_directory/src/runtime/std/output/output.c" runtime_output.o
 compile_wasi_source "$repository_directory/src/runtime/std/error/error.c" runtime_error.o
+compile_wasi_source "$repository_directory/src/runtime/memory/safety/safety_minimal.c" runtime_safety.o
 compile_wasi_source "$repository_directory/src/runtime/core/time.c" runtime_time.o
 
-printf 'WASI PAL, standard-stream, and monotonic-time modules compiled successfully.\n'
+printf 'WASI PAL, standard-stream, safety, and monotonic-time modules compiled successfully.\n'

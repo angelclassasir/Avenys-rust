@@ -1201,8 +1201,8 @@ pub(crate) fn minimal_runtime_c_files(used_runtime: &HashSet<String>) -> Vec<Str
             "std/output/output.c" => &["memory/allocator/managed.c"],
             "std/error/error.c" => &[],
             "pal_bridge/thread.c" => &[],
-            "memory/safety/safety.c" => &[],
-            "memory/allocator/managed.c" => &[],
+            "memory/safety/safety.c" => &["std/error/error.c"],
+            "memory/allocator/managed.c" => &["std/error/error.c"],
             _ => &[],
         }
     }
@@ -1356,5 +1356,15 @@ mod runtime_source_tests {
         assert!(minimal_runtime_c_files(&used.runtime)
             .iter()
             .any(|file| file == "std/input/input.c"));
+    }
+
+    #[test]
+    fn minimal_panic_support_selects_the_pal_diagnostic_provider() {
+        let used = HashSet::from(["rt_panic_loc".to_string()]);
+        let files = minimal_runtime_c_files(&used);
+
+        assert!(files.iter().any(|file| file == "memory/safety/safety.c"));
+        assert!(files.iter().any(|file| file == "std/error/error.c"));
+        assert!(runtime_c_file_needs_pal(Path::new("runtime/std/error/error.c")));
     }
 }

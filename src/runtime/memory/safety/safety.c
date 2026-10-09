@@ -1,17 +1,9 @@
 #include "runtime.h"
-#include <inttypes.h>
 #include <stdint.h>
-#include <stdio.h>
 #include <stdlib.h>
 
 void rt_panic_loc(const char *msg, int64_t line, int64_t col, const char *file) {
-    if (file && file[0]) {
-        fprintf(stderr, "%s:%" PRId64 ":%" PRId64 ": %s\n", file, line, col, msg);
-    } else if (line > 0 || col > 0) {
-        fprintf(stderr, "%" PRId64 ":%" PRId64 ": %s\n", line, col, msg);
-    } else {
-        fprintf(stderr, "%s\n", msg);
-    }
+    rt_runtime_write_panic_location(msg, line, col, file);
     exit(1);
 }
 

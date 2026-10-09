@@ -1,20 +1,12 @@
 #include "runtime.h"
 
-#include <inttypes.h>
 #include <stdint.h>
-#include <stdio.h>
 #include <stdlib.h>
 
-/* Minimal safety support uses libc diagnostics and process termination. */
+/* Minimal safety support uses PAL diagnostics and process termination. */
 
 void rt_panic_loc(const char *msg, int64_t line, int64_t col, const char *file) {
-    if (file && file[0]) {
-        fprintf(stderr, "%s:%" PRId64 ":%" PRId64 ": %s\n", file, line, col, msg);
-    } else if (line > 0 || col > 0) {
-        fprintf(stderr, "%" PRId64 ":%" PRId64 ": %s\n", line, col, msg);
-    } else {
-        fprintf(stderr, "%s\n", msg);
-    }
+    rt_runtime_write_panic_location(msg, line, col, file);
     exit(1);
 }
 
@@ -38,6 +30,6 @@ void *rt_closure_env_alloc(int64_t size) { return malloc((size_t)size); }
 void rt_closure_env_free(void *env) { free(env); }
 
 void rt_panic(const char *message) {
-    fprintf(stderr, "runtime error: %s\n", message ? message : "unknown");
+    rt_runtime_write_panic_message(message, 1);
     exit(1);
 }

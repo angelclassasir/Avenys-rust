@@ -1,0 +1,6 @@
+extern fn rt_panic_loc: (message :str, line :i64, column :i64, file :str) lib "c"
+
+pub fn main: () :i32 {
+    rt_panic_loc("diagnostic smoke", 7, 9, "panic.mire")
+    return 0 :i32
+}
