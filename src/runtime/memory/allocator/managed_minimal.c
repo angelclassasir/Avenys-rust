@@ -1,4 +1,5 @@
 #include "runtime.h"
+#include "pal.h"
 
 #include <stdbool.h>
 #include <stdio.h>
@@ -10,14 +11,14 @@
  *
  * A runtime-created string is one libc allocation containing only its bytes
  * and trailing NUL. The compiler owns the returned value and emits exactly
- * one rt_managed_free call when that owner goes out of scope. Borrowed Mire
+ * one rt_managed_free call when that owner goes out of scope. PAL allocation
+ * calls keep the host allocator behind the platform boundary. Borrowed Mire
  * literals are never passed to rt_managed_free; functions that acquire an
  * owned value copy borrowed input through rt_managed_from_slice.
  *
- * There is deliberately no arena, header, reference counter, registry, or
- * replacement allocator in this tier. This mirrors Rust's ownership model:
- * ownership is enforced by the compiler, while allocation and deallocation
- * are direct libc calls.
+ * There is deliberately no arena, header, or reference counter in this tier.
+ * This mirrors Rust's ownership model: ownership is enforced by the compiler,
+ * while allocation and deallocation go through the PAL.
  *
  * To protect against freeing static literals (which can happen when the
  * compiler's ownership analysis is conservative), we maintain a simple
@@ -29,16 +30,20 @@ static void **g_managed_allocations = NULL;
 static size_t g_managed_alloc_count = 0;
 static size_t g_managed_alloc_cap = 0;
 
-static void minimal_registry_add(void *ptr) {
-    if (!ptr) return;
+static bool minimal_registry_add(void *ptr) {
+    if (!ptr) return false;
     if (g_managed_alloc_count >= g_managed_alloc_cap) {
+        if (g_managed_alloc_cap > SIZE_MAX / 2) return false;
         size_t new_cap = g_managed_alloc_cap ? g_managed_alloc_cap * 2 : MINIMAL_REGISTRY_INITIAL_CAP;
-        void **new_arr = (void **)realloc(g_managed_allocations, new_cap * sizeof(void *));
-        if (!new_arr) return;
+        if (new_cap > (size_t)INT64_MAX / sizeof(void *)) return false;
+        void **new_arr = (void **)pal_realloc(
+            g_managed_allocations, (int64_t)(new_cap * sizeof(void *)));
+        if (!new_arr) return false;
         g_managed_allocations = new_arr;
         g_managed_alloc_cap = new_cap;
     }
     g_managed_allocations[g_managed_alloc_count++] = ptr;
+    return true;
 }
 
 static bool minimal_registry_remove(void *ptr) {
@@ -67,14 +72,16 @@ size_t rt_string_growth_cap(size_t min_cap) {
 char *rt_strdup_raw(const char *src) {
     if (!src) src = "";
     size_t len = strlen(src);
-    char *out = (char *)malloc(len + 1);
+    if (len >= (size_t)INT64_MAX) return NULL;
+    char *out = (char *)pal_alloc((int64_t)(len + 1));
     if (!out) return NULL;
     memcpy(out, src, len + 1);
     return out;
 }
 
 char *rt_strdup_raw_n(const char *src, size_t len) {
-    char *out = (char *)malloc(len + 1);
+    if (len >= (size_t)INT64_MAX) return NULL;
+    char *out = (char *)pal_alloc((int64_t)(len + 1));
     if (!out) return NULL;
     if (len) memcpy(out, src, len);
     out[len] = '\0';
@@ -84,17 +91,21 @@ char *rt_strdup_raw_n(const char *src, size_t len) {
 char *rt_alloc_printf_raw_i64(const char *fmt, long long value) {
     int needed = snprintf(NULL, 0, fmt, value);
     if (needed < 0) return rt_strdup_raw("");
-    char *out = (char *)malloc((size_t)needed + 1);
+    char *out = (char *)pal_alloc((int64_t)needed + 1);
     if (!out) return rt_strdup_raw("");
     snprintf(out, (size_t)needed + 1, fmt, value);
     return out;
 }
 
 char *rt_managed_alloc(size_t len) {
-    char *out = (char *)malloc(len + 1);
+    if (len >= (size_t)INT64_MAX) return NULL;
+    char *out = (char *)pal_alloc((int64_t)(len + 1));
     if (!out) return NULL;
     out[len] = '\0';
-    minimal_registry_add(out);
+    if (!minimal_registry_add(out)) {
+        pal_free(out);
+        return NULL;
+    }
     return out;
 }
 
@@ -142,7 +153,7 @@ void rt_managed_free(char *value) {
         return;
     }
     minimal_registry_remove(value);
-    free(value);
+    pal_free(value);
 }
 
 void rt_managed_cleanup_all(void) {}

@@ -195,6 +195,18 @@ Relevant commits on the active branches:
   as do the Rust release suite (241 library + 14 CLI + doc-tests), runtime I/O
   smoke, WASI compilation, and 12/12 benchmark equivalence. No installer
   dependency changed.
+- Minimal managed-string B2 slice (pending commit): raw string copies,
+  formatting buffers, owned-string buffers, registry growth, and managed frees
+  now use PAL allocation/reallocation/release calls. Registry-growth failure
+  is reported to `rt_managed_alloc`, which releases the unregistered buffer
+  rather than silently losing ownership. Signed-size and registry-capacity
+  overflow checks were added. Existing behavior is protected: values are still
+  tracked in the minimal registry and static/non-owned strings are not freed.
+  A C smoke checks managed copy/free, registry allocation counts, oversized
+  request rejection, and preservation of a non-owned literal. The full release
+  tests (241 library + 14 CLI + doc-tests), runtime I/O smoke, WASI compile, and
+  12/12 benchmark equivalence pass. WASI compile now covers both full and
+  minimal allocators. No installer dependency changed.
 - Owl: `ac41531` (schema dependency documentation), `0ce4193` and `9747cd4`
   (cross-decode CI and LLVM toolchain path).
 

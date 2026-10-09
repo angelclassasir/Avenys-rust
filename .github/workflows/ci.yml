@@ -57,6 +57,9 @@ jobs:
       - name: Test Maybe and Result allocation through PAL
         run: ./scripts/test-runtime-mire-types-pal.sh
 
+      - name: Test minimal managed strings through PAL allocation
+        run: ./scripts/test-runtime-managed-minimal-pal.sh
+
       - name: Checkout kioto (active PR #3 branch = v2.5.0 namespaced net API)
         uses: actions/checkout@v4
         with:

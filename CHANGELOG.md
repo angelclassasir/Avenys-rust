@@ -78,6 +78,13 @@ All notable changes to Avenys will be documented in this file.
   are unchanged. Native smoke coverage verifies Some/Ok/Err values and balanced
   allocation/release calls; the WASI compile check includes this module. No
   installer dependency changed.
+- The minimal managed-string allocator now uses PAL allocation functions for
+  raw copies, formatted buffers, owned strings, registry growth, and release.
+  Failed registry growth now frees the unregistered allocation and reports
+  failure; size and capacity arithmetic is checked. Ownership tracking and the
+  rule that non-owned/static values are not freed remain unchanged. A focused C
+  smoke checks allocation counts, oversized requests, and literal preservation.
+  No installer dependency changed.
 
 ## 4.3.12 - 2026-10-09
 
