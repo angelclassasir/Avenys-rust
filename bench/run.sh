@@ -31,7 +31,10 @@ set -u
 BENCH_DIR="${0:A:h}"
 KERNELS="$BENCH_DIR/kernels"
 WORK="${MIRE_BENCH_WORK:-/tmp/mire-bench}"
-MIRE="${MIRE_BIN:-$HOME/.local/bin/mire}"
+DEFAULT_MIRE="$BENCH_DIR/../target/release/mire"
+[[ -x "$DEFAULT_MIRE" ]] || DEFAULT_MIRE="$HOME/.local/bin/mire"
+MIRE="${MIRE_BIN:-$DEFAULT_MIRE}"
+MIRE_LIB_DIR="${MIRE_LIB_DIR:-$HOME/.owl/libs}"
 MSSEC=5
 # Array, no string: zsh no parte palabras de una expansion sin comillas, y
 # `rustc $RUST_OPT` pasaria "-C opt-level=3" como un solo argumento.
@@ -91,7 +94,7 @@ open(dst, 'w').write(text)
 PY
 
   ( cd "$d" && timeout 900 "$MIRE" build code/main.mire --config cfg.toml --release \
-      -O "$opt" --lib-dir "$HOME/.owl/libs" ) > "$WORK/logs/mire_$k.log" 2>&1
+      -O "$opt" --lib-dir "$MIRE_LIB_DIR" ) > "$WORK/logs/mire_$k.log" 2>&1
   if [[ ! -x "$d/code/bin/release/main" ]]; then
     print -r -- "  $k: mire fallo -> $(grep -oE '╰─ .*|llc: error: .*' "$WORK/logs/mire_$k.log" | head -1 | cut -c1-60)"
     return 1
@@ -177,7 +180,7 @@ cmd_curve() {
       r=$(time_ms "$WORK/bin/rust_${k}_$O")
       rm -rf "$d/code/bin"
       ( cd "$d" && timeout 900 "$MIRE" build code/main.mire --config cfg.toml --release \
-          -O "$O" --lib-dir "$HOME/.owl/libs" ) >/dev/null 2>&1
+          -O "$O" --lib-dir "$MIRE_LIB_DIR" ) >/dev/null 2>&1
       m="FALLO"
       if [[ -x "$d/code/bin/release/main" ]]; then
         m="$(time_ms "$d/code/bin/release/main") ms"

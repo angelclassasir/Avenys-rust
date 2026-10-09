@@ -46,7 +46,7 @@ Variables de entorno: `MIRE_BENCH_WORK` (directorio de trabajo, por defecto
 | Kernel | Dificultad | Rust | Mire | Mire/Rust |
 |---|---|---|---|---|
 | C1_recursion | difícil | 35 ms | 29 ms | 0.83x |
-| C2_allocacion | difícil | 26 ms | 81 ms | **3.12x** |
+| C2_allocacion | difficult | 26 ms | 1314 ms | **50.54x** |
 | C3_mixed_ops | media | 38 ms | 38 ms | 1.00x |
 | L1_while | trivial | 47 ms | 47 ms | 1.00x |
 | L2_for_lista | fácil | 14 ms | 22 ms | 1.57x |
@@ -58,22 +58,24 @@ Variables de entorno: `MIRE_BENCH_WORK` (directorio de trabajo, por defecto
 | V1_muchas_locales | media | 44 ms | 44 ms | 1.00x |
 | V2_intercambio | fácil | 34 ms | 34 ms | 1.00x |
 
-La lectura: **en control de flujo, variables y POO Mire está en la paridad de
-Rust**, dentro del ruido, y gana algo en recursión y en `break`/`continue`. El
-El coste restante está en la biblioteca de colecciones —`C2_allocacion`, ~10 ns
-por `vec` frente a ~3 ns— y en las listas de lectura indexada.
+The reading is unchanged for control flow, variables, and object-oriented
+features: Mire is close to Rust within measurement noise. The current gap is
+the collection allocator, not LLVM optimization.
 
 ## Curva de optimización (C2_allocacion)
 
 | | -O0 | -O1 | -O2 | -O3 | -Os | -Oz |
 |---|---|---|---|---|---|---|
 | Rust | 825 ms | 114 ms | 26 ms | 26 ms | 126 ms | 128 ms |
-| Mire, después de A1 | 80 ms | 78 ms | 78 ms | 81 ms | 83 ms | 81 ms |
+| Mire, stabilized ownership baseline | pending | pending | pending | 1314 ms | pending | pending |
 
-Antes de A1, Mire quedaba cerca de 1.5 s en todos los niveles porque cada vec
-se liberaba por la ruta de strings y no se reutilizaba. Tras A1, C2 queda en
-~81 ms y la curva confirma que la fuga era el problema dominante; el coste
-restante es una diferencia de asignador, no la fuga original.
+Before A1, Mire was near 1.5 s because vectors were sent through the string
+free path and were never reused. The preliminary 81 ms result is invalidated:
+it exposed a second ownership bug where `vec.push` returned storage that the
+assignment cleanup immediately freed. After stabilizing that transfer and
+cleaning repeated loop declarations, the honest current baseline is about
+1314 ms, or 50.54x Rust. This is the allocator baseline for B6; it is no
+longer hidden by undefined behavior.
 
 ### Resultado de A1
 
@@ -81,8 +83,9 @@ Con `verify` pasando los 12 kernels bit a bit y el mismo arnés:
 
 | Estado | Rust -O3 | Mire -O3 | Mire/Rust |
 |---|---:|---:|---:|
-| Antes de A1 | 26 ms | 1481 ms | 56.96x |
-| Después de A1 | 26 ms | 81 ms | 3.12x |
+| Before A1 | 26 ms | 1481 ms | 56.96x |
+| Preliminary A1 result, invalidated by the push ownership bug | 26 ms | 81 ms | 3.12x |
+| Stabilized ownership baseline | 26 ms | 1314 ms | 50.54x |
 
 ## Por qué los kernels son como son
 
