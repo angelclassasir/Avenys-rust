@@ -1,0 +1,64 @@
+// BOOTSTRAP PROOF — Mire-hosted runtime code.
+//
+// This exists to prove that runtime code can be written in Mire and verified
+// by the compiler's own borrowck. It is deliberately narrow: no ownership, no
+// FFI, no syscall. If it regresses, move it back to C without ceremony.
+//
+// Every function here takes its vector by reference and returns nothing that
+// aliases it, so no caller can observe ownership being moved. That is the point
+// of the proof: read-only collection logic is exactly the kind that should be
+// checkable rather than trusted.
+//
+// The C runtime remains the implementation of record for mutating operations.
+// These helpers do not replace `rt_lists_*`; they show that a Mire-side helper
+// over an existing vector passes the compiler's ownership checks.
+module slice
+
+// Length of `values`, obtained through the read-only vector length accessor.
+pub fn size: (values :&vec[i64]) :i64 {
+    return vec::len(values)
+}
+
+// True when `values` has no elements.
+pub fn is_empty: (values :&vec[i64]) :bool {
+    return vec::len(values) == 0
+}
+
+// Element at `index`, or `fallback` when the index is out of range.
+//
+// Callers that need to distinguish "absent" from "present and equal to the
+// fallback" must bounds-check themselves; this helper is for the common case
+// where a default is acceptable.
+pub fn get_or: (values :&vec[i64], index :i64, fallback :i64) :i64 {
+    if index < 0 { return fallback }
+    if index >= vec::len(values) { return fallback }
+    return vec::get::i64(values index)
+}
+
+// Sum of every element. Returns 0 for an empty vector.
+pub fn sum: (values :&vec[i64]) :i64 {
+    set total = 0 :i64 mut
+    set index = 0 :i64 mut
+    set count = vec::len(values)
+    while index < count {
+        set total = total + vec::get::i64(values index)
+        set index += 1
+    }
+    return total
+}
+
+// True when any element satisfies `is_target`.
+//
+// `is_target` is a value parameter rather than a callback on purpose: passing
+// a function value as an argument is not expressible in Mire today, and
+// documenting that here would be a stub rather than a limitation to state
+// plainly. The caller compares the returned element instead.
+pub fn has_zero: (values :&vec[i64]) :bool {
+    set index = 0 :i64 mut
+    set count = vec::len(values)
+    while index < count {
+        if vec::get::i64(values index) == 0 { return true }
+        set index += 1
+    }
+    return false
+}

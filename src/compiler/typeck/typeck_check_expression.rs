@@ -226,6 +226,8 @@ impl TypeChecker {
                 name_column,
                 data_type,
             } if crate::bitcast_target(name).is_some() => {
+                // `bitcast_target` only answers `Some` for a suffix that names a
+                // real type, so no unknown-target case can reach here.
                 let target = crate::bitcast_target(name).unwrap_or(DataType::Unknown);
                 if args.len() != 1 {
                     return Err(type_error_at_span(
@@ -234,12 +236,6 @@ impl TypeChecker {
                             "`bits::<T>(value)` takes exactly 1 argument, got {}",
                             args.len()
                         ),
-                    ));
-                }
-                if target == DataType::Unknown {
-                    return Err(type_error_at_span(
-                        self.current_span,
-                        format!("unknown bitcast target type in `bits::<{name}>(value)`"),
                     ));
                 }
                 let source = self.check_expression(&mut args[0])?;

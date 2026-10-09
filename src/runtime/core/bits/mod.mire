@@ -1,0 +1,63 @@
+// BOOTSTRAP PROOF — Mire-hosted runtime code.
+//
+// This exists to prove that runtime code can be written in Mire and verified
+// by the compiler's own borrowck. It is deliberately narrow: no ownership, no
+// FFI, no syscall. If it regresses, move it back to C without ceremony.
+//
+// The C runtime remains the implementation of record for everything that owns
+// memory or talks to the host. This module exists to be checked by the
+// compiler, not to be fast.
+module bits
+
+// Number of set bits in `value`, treating it as an unsigned 64-bit pattern.
+pub fn popcount: (value :i64) :i64 {
+    set remaining = value :i64 mut
+    set count = 0 :i64 mut
+    while remaining != 0 {
+        // Clears the lowest set bit. This is the standard formulation; note
+        // that `remaining & (0 - 1)` would be a no-op, since AND with an all
+        // ones mask returns the operand unchanged.
+        set remaining = remaining & (remaining - 1)
+        set count += 1
+    }
+    return count
+}
+
+// True when `value` is a positive power of two.
+pub fn is_power_of_two: (value :i64) :bool {
+    if value <= 0 { return false }
+    return (value & (value - 1)) == 0
+}
+
+// Index of the highest set bit, or -1 when `value` is zero.
+//
+// Returns -1 rather than raising, because the caller usually has a zero case
+// to handle and a runtime helper has no way to report one.
+pub fn highest_bit: (value :i64) :i64 {
+    set remaining = value :i64 mut
+    if remaining <= 0 { return 0 - 1 }
+    set index = 0 :i64 mut
+    while remaining > 1 {
+        set remaining = remaining >> 1
+        set index += 1
+    }
+    return index
+}
+
+// Smallest power of two greater than or equal to `value`, for `value >= 1`.
+pub fn next_power_of_two: (value :i64) :i64 {
+    if value <= 1 { return 1 }
+    set result = 1 :i64 mut
+    while result < value {
+        // Shifting past the sign bit would repeat forever, so the loop stops
+        // at the last representable power of two instead.
+        if result > (0 - 1) >> 1 { return result << 1 }
+        set result = result << 1
+    }
+    return result
+}
+
+// True when every bit set in `mask` is also set in `value`.
+pub fn contains_bits: (value :i64, mask :i64) :bool {
+    return (value & mask) == mask
+}

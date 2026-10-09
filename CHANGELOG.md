@@ -4,6 +4,27 @@ All notable changes to Avenys will be documented in this file.
 
 ## 4.3.13 - 2026-10-09
 
+### Fixed
+- **`bits` is no longer reserved against the program that defines it.** The
+  bitcast intrinsic's `bitcast_target` claimed every `bits::<identifier>` call,
+  so any package exporting a `bits` module failed to build with
+  `unknown bitcast target type in `bits::<bits.double>(value)`` — a bitcast
+  diagnostic for a call unrelated to bitcasts, with the function name doubled.
+  The intrinsic now claims a suffix only when it names a real type, and other
+  calls reach ordinary resolution; a genuine typo now gets the accurate
+  "unknown function" diagnostic. Four unit tests cover this, and the regression
+  test was confirmed to fail with the fix reverted.
+
+### Added
+- **Mire-hosted runtime bootstrap modules** (Phase B5): `core/bits/mod.mire`,
+  `core/format/mod.mire`, and `collections/slice/mod.mire`, each carrying a
+  `BOOTSTRAP PROOF` header. They hold bit counting, decimal conversion and
+  padding, and read-only vector helpers. They resolve no package — the runtime
+  cannot require Kioto, and depending on `mire::str` would make the runtime's
+  text helpers depend on the package they help implement — so `format.mr`
+  declares `rt_strings_substr` directly and otherwise uses only the `len`
+  builtin. The C runtime remains the implementation of record.
+
 ### Changed
 - **`full` runtime tier removed.** The tier compiled every runtime and PAL source
   regardless of use. Measured against `minimal` on the C2 allocation kernel and

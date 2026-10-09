@@ -1,0 +1,99 @@
+// BOOTSTRAP PROOF — Mire-hosted runtime code.
+//
+// This exists to prove that runtime code can be written in Mire and verified
+// by the compiler's own borrowck. It is deliberately narrow: no ownership, no
+// FFI, no syscall, and no dependency on the standard library or on Kioto. If
+// it regresses, move it back to C without ceremony.
+//
+// Zero package dependencies is the constraint that shapes this module. A
+// runtime helper cannot require Kioto, and requiring `mire::str` would make the
+// runtime's own text helpers depend on the package they help implement. What is
+// left is the language builtin `len` plus the runtime's own `rt_strings_*`
+// entry points, declared here directly. Those are the same C functions the
+// runtime already links; the module gains no new capability.
+//
+// The C runtime remains the implementation of record. This module exists to be
+// checked by the compiler, not to replace `rt_managed_printf_i64`.
+module format
+
+// Character codes for the decimal digits, so a digit can be produced with
+// arithmetic instead of a substring helper. The C runtime uses the same
+// offset from '0'.
+cons DIGIT_ZERO = 48 :i64
+
+// The digit characters, indexed by digit value.
+cons DIGITS = "0123456789" :str
+
+// The runtime's own substring entry point. Declared rather than imported, so
+// that this module resolves no package at all.
+extern fn rt_strings_substr: (input :&str, start :i64, length :i64) :str lib "c"
+
+// Decimal digits of `value`, most significant first. Negative values render
+// with a leading '-'.
+pub fn i64_to_digits: (value :i64) :str {
+    if value == 0 { return "0" }
+
+    set negative = false :bool mut
+    set remaining = value :i64 mut
+    if remaining < 0 {
+        set negative = true
+        set remaining = 0 - remaining
+    }
+
+    set digits = "" :str mut
+    set started = false :bool mut
+    while remaining > 0 {
+        set remainder = remaining % 10
+        set digits = digit_char(remainder) + digits
+        set remaining = remaining / 10
+        set started = true
+    }
+    if negative { return "-" + digits }
+    if started { return digits }
+    return "0"
+}
+
+// The single character for a decimal digit in `0..10`.
+//
+// Returns "?" for a value outside that range rather than failing: the caller
+// is a formatter that has already reduced its input modulo ten, so an
+// out-of-range value would be a bug in the caller, and a visible placeholder
+// beats an undefined character.
+pub fn digit_char: (digit :i64) :str {
+    if digit < 0 { return "?" }
+    if digit > 9 { return "?" }
+    return rt_strings_substr(DIGITS digit 1)
+}
+
+// Pads `text` on the left with `filler` until it is at least `width` wide.
+// A width that is already met returns the text unchanged.
+pub fn pad_left: (text :str, width :i64, filler :str) :str {
+    if len(text) >= width { return text }
+    if len(filler) == 0 { return text }
+    set padding = "" :str mut
+    set missing = width - len(text) :i64 mut
+    while missing > 0 {
+        set padding = padding + first_char(filler)
+        set missing -= 1
+    }
+    return padding + text
+}
+
+// Pads `text` on the right with `filler` until it is at least `width` wide.
+pub fn pad_right: (text :str, width :i64, filler :str) :str {
+    if len(text) >= width { return text }
+    if len(filler) == 0 { return text }
+    set padding = "" :str mut
+    set missing = width - len(text) :i64 mut
+    while missing > 0 {
+        set padding = padding + first_char(filler)
+        set missing -= 1
+    }
+    return text + padding
+}
+
+// The leading character of `text`, or an empty string when `text` is empty.
+pub fn first_char: (text :str) :str {
+    if len(text) == 0 { return "" }
+    return rt_strings_substr(text 0 1)
+}

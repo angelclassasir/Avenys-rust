@@ -381,6 +381,51 @@ tier. Documentation updated across `README.md`, `docs/cli`, `docs/compiler`,
 Verification: 242 library + 14 CLI tests, 11 runtime smokes, WASI compile gate,
 12/12 benchmark output equivalence.
 
+## B5 — Mire bootstrap: milestone met, and a compiler bug found
+
+Three Mire-hosted runtime modules now exist alongside the C runtime:
+`core/bits/mod.mire` (popcount, power-of-two, highest bit), `core/format/mod.mire`
+(decimal conversion and padding) and `collections/slice/mod.mire` (read-only
+vector helpers). All carry the `BOOTSTRAP PROOF` header and are verified to
+compile, run, and produce correct results:
+
+    bits::popcount(255)          = 8
+    format::i64_to_digits(-1234) = "-1234"
+    slice::sum([3 1 4 1 5])      = 14
+
+Ownership was checked rather than assumed: a vector passed to the read-only
+helpers remains usable for mutation afterwards, so `&vec` does not move it.
+
+**Compiler bug found and fixed.** The first attempt could not build at all.
+`bits` is also the bitcast intrinsic's namespace, and `bitcast_target` claimed
+every `bits::<identifier>` call, so any package exporting a `bits` module was
+unbuildable — `bits::double(21)` reported `unknown bitcast target type in
+`bits::<bits.double>(value)`, a bitcast diagnostic for an unrelated call, with
+the function name doubled. `bitcast_target` now claims a suffix only when it
+names a real type; anything else falls through to ordinary call resolution, so a
+genuine typo gets the accurate "unknown function" diagnostic. Four unit tests
+cover it, and the regression test was confirmed to fail with the fix reverted.
+
+Three constraints shaped the modules:
+
+- **Zero package dependencies.** The runtime cannot require Kioto, and
+  `mire::str` would make the runtime's text helpers depend on the package they
+  help implement. `format.mr` declares `rt_strings_substr` directly and otherwise
+  uses only the `len` builtin.
+- **An earlier draft of `first_char` returned a placeholder character.** A stub
+  with a plausible signature is worse than an absent function; it was replaced
+  with a real call once `rt_strings_substr` was found to be directly
+  declarable.
+- **Mire has no `let`** (an immutable local is `set name = value`), and `cons`
+  takes its type as a suffix (`cons DIGITS = "0123456789" :str`).
+
+Recorded limitation, not fixed: a `bits` module declared in the same file as
+the intrinsic's callers still cannot shadow the built-in namespace, because the
+builtin table wins during resolution. Cross-package use — what the runtime needs
+— works.
+
+Verification: 246 library + 14 CLI tests, 12/12 benchmark output equivalence.
+
 ## Remaining work
 
 - Complete PAL C0 on all supported backends; Windows is not implemented yet.
@@ -388,9 +433,9 @@ Verification: 242 library + 14 CLI tests, 11 runtime smokes, WASI compile gate,
   PAL: there is no FIFO-creation operation. Before using FIFOs, add a scoped,
   tested FIFO capability; otherwise finish C0 and use Unix sockets.
 - Runtime B1 (move-only source reorganization), B2 (host boundary), B3
-  (managed release contract), and B4 (`full` tier removal) are closed and
-  verified. B5-B6 remain open: prove the three narrow Mire bootstrap modules,
-  then measure the slab allocator against the honest C2 baseline.
+  (managed release contract), B4 (`full` tier removal), and B5 (Mire bootstrap
+  milestone) are closed and verified. B6 remains open: measure the slab
+  allocator against the honest C2 baseline.
 - PAL C1-C6, including actual WASI/Wasmtime coverage, Windows/Wine coverage,
   removal of weak stubs, capability reporting, and the incomplete WASM package,
   remain open.

@@ -55,15 +55,65 @@ pub const BITCAST_NS: &str = "bits";
 
 /// Resolve `bits::<T>(x)` / `bits.<T>(x)` to the target type `T`.
 ///
-/// Returns `None` when `name` is not a bitcast at all. `Some(DataType::Unknown)`
-/// means it *is* a bitcast but the suffix is not a known type, so the caller
-/// should report a diagnostic rather than fall through to normal call
-/// resolution.
+/// Returns `Some(target)` only when `T` names a real type, and `None` when
+/// `name` is not a bitcast at all.
+///
+/// A suffix that does not parse as a type is deliberately *not* reported as a
+/// malformed bitcast. `bits` is a namespace a program may define for itself,
+/// and a call such as `bits::popcount(255)` has to reach ordinary call
+/// resolution. Treating every `bits::<identifier>` as an intrinsic made any
+/// package exporting a `bits` module unusable, with a diagnostic about bitcast
+/// target types for a call that had nothing to do with bitcasts. When such a
+/// suffix is genuinely a typo, the ordinary "unknown function" diagnostic names
+/// the function that does not exist, which is the accurate complaint.
 pub fn bitcast_target(name: &str) -> Option<crate::parser::ast::DataType> {
     let sep = if name.contains("::") { "::" } else { "." };
     let (ns, rest) = name.split_once(sep)?;
     if ns != BITCAST_NS || rest.is_empty() || rest.contains('.') || rest.contains(':') {
         return None;
     }
-    Some(crate::parser::ast::DataType::parse_type(rest))
+    match crate::parser::ast::DataType::parse_type(rest) {
+        // `parse_type` reports an unrecognized name as `Unknown`. That is the
+        // signal that this was never a type annotation.
+        crate::parser::ast::DataType::Unknown => None,
+        target => Some(target),
+    }
+}
+
+#[cfg(test)]
+mod bitcast_tests {
+    use super::*;
+    use crate::parser::ast::DataType;
+
+    #[test]
+    fn a_real_type_suffix_is_a_bitcast() {
+        assert!(matches!(bitcast_target("bits::i64"), Some(DataType::I64)));
+        assert!(matches!(bitcast_target("bits.f64"), Some(DataType::F64)));
+        assert!(matches!(bitcast_target("bits::bool"), Some(DataType::Bool)));
+    }
+
+    #[test]
+    fn a_non_type_suffix_is_not_a_bitcast() {
+        // The regression: `bits` is a namespace a program may define for
+        // itself. Claiming every `bits::<identifier>` as an intrinsic made any
+        // package exporting a `bits` module unbuildable, reporting a bitcast
+        // error for a call that had nothing to do with bitcasts.
+        assert!(bitcast_target("bits::double").is_none());
+        assert!(bitcast_target("bits::popcount").is_none());
+        assert!(bitcast_target("bits::helper").is_none());
+        assert!(bitcast_target("bits.double").is_none());
+    }
+
+    #[test]
+    fn other_namespaces_are_never_bitcasts() {
+        assert!(bitcast_target("vec::push").is_none());
+        assert!(bitcast_target("str::concat").is_none());
+        assert!(bitcast_target("dasu").is_none());
+    }
+
+    #[test]
+    fn malformed_intrinsic_names_are_rejected() {
+        assert!(bitcast_target("bits::").is_none());
+        assert!(bitcast_target("bits::i64::extra").is_none());
+    }
 }
