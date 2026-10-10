@@ -2,12 +2,14 @@
 
 `owl_avenys.proto` is the repository-owned schema for the versioned Owl to
 Avenys build contract. It defines the synchronous `CompileReq` and
-`CompileResp` messages. The workspace-level `Arch/protocol/owl_avenys.proto`
-is a mirror used for cross-repository design work; update both copies in the
-same change.
+`CompileResp` messages.
 
-Validate syntax and verify that the workspace mirror compiles to the same
-descriptor:
+This file is the single source of truth for the wire format. Field numbers are
+permanent: never renumber, never reuse, and never remove one. A change that is
+not backward compatible requires a new `protocol_version`, which both sides
+must reject if they do not recognise it.
+
+Validate syntax and verify that the schema compiles to a descriptor:
 
 ```sh
 ./scripts/validate-protocol-schema.sh /tmp/owl_avenys_schema.pb
