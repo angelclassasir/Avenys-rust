@@ -317,6 +317,12 @@ void *rt_lists_unique(void *list) {
 
 // ── Vecs module aliases (rt_vecs_*) ──────────────────────────────────
 int64_t rt_vecs_len(void *vec) { return rt_list_len(vec); }
+
+void *rt_vecs_with_capacity_i64(int64_t capacity) {
+    if (capacity < 0) capacity = 0;
+    if (capacity < 4) capacity = 4;
+    return rt_list_create(capacity, 8);
+}
 int64_t rt_vecs_get_i64(void *vec, int64_t index) { return rt_list_get_i64(vec, index); }
 void   *rt_vecs_get_ptr(void *vec, int64_t index) { return rt_list_get_ptr(vec, index); }
 void   *rt_vecs_push_i64(void *vec, int64_t value) { return rt_list_push_i64(vec, value); }

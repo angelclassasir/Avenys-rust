@@ -181,6 +181,7 @@ char *rt_lists_join_list(void *list, const char *sep);
 
 // Vecs module aliases (rt_vecs_*)
 int64_t rt_vecs_len(void *vec);
+void *rt_vecs_with_capacity_i64(int64_t capacity);
 int64_t rt_vecs_get_i64(void *vec, int64_t index);
 void   *rt_vecs_get_ptr(void *vec, int64_t index);
 void   *rt_vecs_push_i64(void *vec, int64_t value);
