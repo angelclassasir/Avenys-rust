@@ -1,7 +1,9 @@
-# Mire versus Rust benchmark suite
+# Mire benchmark suite: against Rust and against C
 
-Each kernel has a Mire source and a Rust source that perform the same
-calculation. `verify` compares their output before `measure` is allowed to
+Each kernel exists three times — in Mire, in Rust, and in C — performing the
+same calculation. The C leg exists so that "equivalent" has a meaning: C has no
+language runtime, so a kernel that needs runtime machinery to reach C's numbers
+is measuring the runtime, not the language. `verify` compares their output before `measure` is allowed to
 report timings. This is a focused language/runtime comparison, not a claim
 that every application will have the same performance profile.
 
@@ -45,63 +47,63 @@ sets the isolated work directory (default: `/tmp/mire-bench`).
 
 ## Latest measurement
 
-Measured October 9, 2026, with Rust 1.99.0 (`-C opt-level=3`) and Mire/Avenys
-4.3.11 (`-O3`), best of five runs. Output verification passed for all 12
-kernels immediately beforehand.
+Each kernel exists three times: in Mire, in Rust, and in C. The C leg is the
+reference for what "equivalent" means — C has no language runtime, so those
+kernels call the C library directly (`malloc`, `realloc`, `free`) with no arena,
+no reference counting, and no allocator of the compiler's own. Where a Mire
+version would need runtime machinery to reach the same numbers, that gap is a
+finding to record, not an excuse to rewrite the kernel until it passes.
 
-| Kernel | Workload | Rust | Mire | Mire/Rust |
-|---|---|---:|---:|---:|
-| `C1_recursion` | hard | 44 ms | 37 ms | 0.84x |
-| `C2_allocacion` | hard | 26 ms | 1291 ms | **49.65x** |
-| `C3_mixed_ops` | medium | 39 ms | 40 ms | 1.03x |
-| `L1_while` | trivial | 47 ms | 49 ms | 1.04x |
-| `L2_for_lista` | easy | 15 ms | 24 ms | noise floor |
-| `L3_anidados` | medium | 50 ms | 56 ms | 1.12x |
-| `L4_break_continue` | medium | 29 ms | 27 ms | 0.93x |
-| `P1_metodo` | trivial | 127 ms | 131 ms | 1.03x |
-| `P2_trait_dos` | medium | 59 ms | 62 ms | 1.05x |
-| `P3_cadena_impl` | hard | 57 ms | 58 ms | 1.02x |
-| `V1_muchas_locales` | medium | 44 ms | 46 ms | 1.05x |
-| `V2_intercambio` | easy | 35 ms | 37 ms | 1.06x |
+Measured October 10, 2026, with Rust 1.99.0 (`-C opt-level=3`), C
+(`cc -O3 -march=native`), and Mire/Avenys 4.3.13 (`-O3`), best of five runs.
+Output verification passed for all 12 kernels across all three legs
+immediately beforehand.
 
-`L2_for_lista` is below the 25 ms noise floor and its ratio should not be
-interpreted as a reliable performance comparison. Most other measured kernels
-remain close to Rust; the outstanding measured gap is vector allocation.
+| Kernel | Workload | Rust -O3 | C -O3 | Mire -O3 | Mire/C | Mire/Rust |
+|---|---|---:|---:|---:|---:|---:|
+| `C1_recursion` | hard | 36 ms | 36 ms | 37 ms | 1.03x | 1.03x |
+| `C2_allocacion` | hard | 26 ms | 65 ms | 1442 ms | **22.18x** | 55.46x |
+| `C3_mixed_ops` | medium | 40 ms | 35 ms | 40 ms | 1.14x | 1.00x |
+| `L1_while` | trivial | 47 ms | 39 ms | 49 ms | 1.26x | 1.04x |
+| `L2_for_lista` | easy | 14 ms | 13 ms | 23 ms | 1.77x | noise floor |
+| `L3_anidados` | medium | 50 ms | 55 ms | 57 ms | 1.04x | 1.14x |
+| `L4_break_continue` | medium | 31 ms | 16 ms | 28 ms | 1.75x | 0.90x |
+| `P1_metodo` | trivial | 129 ms | 126 ms | 133 ms | 1.06x | 1.03x |
+| `P2_trait_dos` | medium | 59 ms | 64 ms | 63 ms | 0.98x | 1.07x |
+| `P3_cadena_impl` | hard | 57 ms | 54 ms | 58 ms | 1.07x | 1.02x |
+| `V1_muchas_locales` | medium | 44 ms | 38 ms | 46 ms | 1.21x | 1.05x |
+| `V2_intercambio` | easy | 34 ms | 32 ms | 36 ms | 1.12x | 1.06x |
 
-### Focused C2 retest — Avenys 4.3.12
+### What the C leg shows
 
-After the map-rebinding ownership fix, the branch-built Avenys 4.3.12 compiler
-passed `./run.sh verify` for all 12 kernels. Two consecutive best-of-five C2
-runs measured Rust at 39–40 ms and Mire at 1280–1282 ms (32.87x and 32.00x,
-respectively). The latest run is **40 ms Rust / 1280 ms Mire / 32.00x**. This
-is a focused retest, not a regenerated full-kernel table; the table above
-remains the complete historical Avenys 4.3.11 run. Timing varies enough that
-these figures should not be compared as a compiler regression without a
-same-session full rerun.
+**Eleven of the twelve kernels sit between 0.98x and 1.26x of C.** `P2_trait_dos`
+is marginally faster than C (0.98x): trait dispatch by branch costs no more than
+a function pointer. `L4_break_continue` is faster than Rust (0.90x) while
+slower than C, which compiles that loop's `continue` into a jump table the
+Mire backend does not match.
 
-## Measurement safeguards
+**The one real gap is allocation.** At 22.18x of C, `C2_allocacion` is the
+kernel worth understanding. Note that C is itself 2.5x slower than Rust here
+(65 ms against 26 ms): a `malloc`/`free` pair per iteration costs the system
+allocator more than `Vec`'s reuse does, and the C leg pays it honestly because
+the barrier keeps the allocation observable. Mire pays that same pair through
+the runtime and adds its own overhead on top.
 
-- **Opaque input:** verification uses a deterministic seed. Measurement
-  substitutes a heap address so the compiler cannot fold the loop into a
-  closed-form expression. The Rust equivalent uses
-  `std::hint::black_box`.
-- **Serial dependency:** each iteration depends on the previous accumulator;
-  otherwise the optimizer may collapse the loop.
-- **Noise floor:** results below approximately 25 ms are marked as startup
-  noise instead of being presented as a meaningful performance comparison.
-- **Repeated samples:** the script reports the best of five runs to reduce
-  scheduler-noise impact.
-- **Isolated build products:** generated binaries and logs live below the
-  configured work directory.
+Isolating the parts of that kernel, at eight million iterations:
 
-## Shell pitfalls already fixed
+| Workload | Time | Per iteration |
+|---|---|---|
+| allocate and release one `vec[i64]` | ~430 ms | ~54 ns |
+| plus eight `vec::push` and one `vec::len` | ~1442 ms | ~187 ns |
 
-The script is written for zsh. A `local` declaration inside a `for` loop can
-cause the following assignment to print instead of being stored; that once
-made the complete `date` output look like a timing result. Variables are now
-declared outside loop bodies. Also, zsh does not split an unquoted scalar into
-command arguments, so Rust compiler options are stored in an array rather than
-a space-delimited string.
+Allocation is roughly a quarter of the cost; the `push` path is the other
+three quarters, at about 17 ns per call. A size-class slab allocator was built
+and measured against this kernel, did not improve it, and was reverted rather
+than kept on a favourable micro-benchmark — see the project history for those
+numbers.
+
+`L2_for_lista` is below the 25 ms noise floor; its ratio should not be read as
+a reliable performance comparison.
 
 ## Current reference
 

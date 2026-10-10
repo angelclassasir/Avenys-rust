@@ -35,6 +35,11 @@ MSSEC=5
 # Store options in an array: zsh does not split an unquoted scalar into words,
 # so a string would pass `-C opt-level=3` as one argument.
 RUST_OPT=(-C opt-level=3)
+# The C leg is the reference: same computation, C library only, no language
+# runtime. A separate compiler binary is used so a regression in one toolchain
+# cannot silently move all three legs together.
+C_COMPILER=${C_COMPILER:-cc}
+CFLAGS=(-O3 -march=native -std=c11)
 
 # Noise floor: results below this value are not meaningful comparisons.
 NOISE_FLOOR_MS=25
@@ -67,6 +72,20 @@ build_one() {
   rustc $RUST_OPT -o "$WORK/bin/rust_$k" "$WORK/logs/rs_$k.rs" 2> "$WORK/logs/rust_$k.log" || {
     print -r -- "  $k: rustc failed"; head -5 "$WORK/logs/rust_$k.log"; return 1
   }
+
+  # The C leg. Verify mode uses the deterministic seed so all three legs can be
+  # compared; measure mode uses the opaque one, derived in the preamble from a
+  # fresh allocation's address.
+  if [[ -f "$KERNELS/$k.c" ]]; then
+    cp "$KERNELS/_common.h" "$KERNELS/$k.c" "$WORK/logs/"
+    # Verify needs a fixed seed on every leg; measure needs an opaque one.
+    local seed_flag=()
+    [[ "$mode" == "verify" ]] && seed_flag=(-DMIRE_BENCH_VERIFY)
+    $C_COMPILER "${CFLAGS[@]}" "${seed_flag[@]}" -I"$WORK/logs" -o "$WORK/bin/c_$k" "$WORK/logs/$k.c" \
+        2> "$WORK/logs/c_$k.log" || {
+      print -r -- "  $k: cc failed"; head -5 "$WORK/logs/c_$k.log"; return 1
+    }
+  fi
 
   local d="$WORK/$k.$mode.$opt"
   mkdir -p "$d/code"
@@ -125,10 +144,12 @@ cmd_verify() {
     d="$WORK/$k.verify.3"
     mo=$("$d/code/bin/release/main" 2>&1 | tail -1)
     ro=$("$WORK/bin/rust_$k" 2>&1 | tail -1)
-    if [[ "$mo" == "$ro" ]]; then
+    co=""
+    [[ -x "$WORK/bin/c_$k" ]] && co=$("$WORK/bin/c_$k" 2>&1 | tail -1)
+    if [[ "$mo" == "$ro" && ( -z "$co" || "$mo" == "$co" ) ]]; then
       printf "  %-19s %-9s %s\n" "$k" "match" "$mo"
     else
-      printf "  %-19s %-9s rust=%s mire=%s\n" "$k" "DIFFERS" "$ro" "$mo"
+      printf "  %-19s %-9s rust=%s mire=%s c=%s\n" "$k" "DIFFERS" "$ro" "$mo" "$co"
       fail=1
     fi
   done
@@ -141,11 +162,11 @@ cmd_verify() {
 
 cmd_measure() {
   local only="${1:-}"
-  print -r -- "Measuring (best of $MSSEC, Rust ${RUST_OPT[*]}, Mire -O3)"
+  print -r -- "Measuring (best of $MSSEC, Rust ${RUST_OPT[*]}, C $C_COMPILER -O3, Mire -O3)"
   print -r -- ""
-  printf "  %-19s %-9s %11s %11s %10s\n" KERNEL WORKLOAD "Rust -O3" "Mire -O3" "Mire/Rust"
-  printf "  %-19s %-9s %11s %11s %10s\n" "-------------------" "---------" "---------" "---------" "---------"
-  local k d r m ratio flag
+  printf "  %-19s %-9s %10s %10s %10s %10s %10s\n" KERNEL WORKLOAD "Rust -O3" "C -O3" "Mire -O3" "Mire/C" "Mire/Rust"
+  printf "  %-19s %-9s %10s %10s %10s %10s %10s\n" "-------------------" "---------" "----------" "----------" "----------" "--------" "---------"
+  local k d r m c mr mc ratio_c ratio_r flag
   for k in $(kernels); do
     [[ "$k" == "noop" ]] && continue
     [[ -n "$only" && "$k" != "$only" ]] && continue
@@ -153,10 +174,17 @@ cmd_measure() {
     d="$WORK/$k.measure.3"
     r=$(time_ms "$WORK/bin/rust_$k")
     m=$(time_ms "$d/code/bin/release/main")
-    ratio=$(awk -v m="$m" -v r="$r" 'BEGIN{if(r>0)printf "%.2fx", m/r; else print "-"}')
+    c="-"
+    [[ -x "$WORK/bin/c_$k" ]] && c=$(time_ms "$WORK/bin/c_$k")
+    if [[ "$c" == "-" ]]; then
+      ratio_c="-"
+    else
+      ratio_c=$(awk -v m="$m" -v c="$c" 'BEGIN{if(c>0)printf "%.2fx", m/c; else print "-"}')
+    fi
+    ratio_r=$(awk -v m="$m" -v r="$r" 'BEGIN{if(r>0)printf "%.2fx", m/r; else print "-"}')
     flag=""
     (( r < NOISE_FLOOR_MS || m < NOISE_FLOOR_MS )) && flag=" <-- noise"
-    printf "  %-19s %-9s %8s ms %8s ms %9s%s\n" "$k" "$(difficulty "$k")" "$r" "$m" "$ratio" "$flag"
+    printf "  %-19s %-9s %8s ms %8s ms %8s ms %9s %8s%s\n" "$k" "$(difficulty "$k")" "$r" "$c" "$m" "$ratio_c" "$ratio_r" "$flag"
   done
   print -r -- ""
   print -r -- "  (noise = below ${NOISE_FLOOR_MS} ms; startup dominates)"
