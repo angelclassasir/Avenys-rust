@@ -6,6 +6,7 @@ use super::types::{
     llvm_elem_type_str, llvm_type_byte_size,
 };
 use crate::compiler::location::expression_location;
+use crate::avens::config::RuntimeTier;
 use crate::compiler::mir::*;
 use crate::parser::ast::{DataType, Expression, Literal};
 
@@ -298,25 +299,29 @@ impl MirLower {
                     self.func.blocks[pre_check].terminator =
                         MirTerminator::BrCond(MirValue::temp(is_zero), panic_block, ok_block);
 
-                    // Panic block: call rt_panic_loc then unreachable
+                    // Panic block: for runtime none, just unreachable; otherwise call rt_panic_loc
                     self.current_block = panic_block;
-                    self.func.blocks[panic_block].push(
-                        None,
-                        MirOp::Call(
-                            MirValue::Global("rt_panic_loc".to_string()),
-                            vec![
-                                MirValue::Const(MirConst::Str(panic_msg.to_string())),
-                                MirValue::Const(MirConst::Int(loc.0 as i64)),
-                                MirValue::Const(MirConst::Int(loc.1 as i64)),
-                                MirValue::Const(MirConst::Str(self.filename.clone())),
-                            ],
-                            MirType {
-                                data_type: DataType::None,
-                            },
-                        ),
-                        loc,
-                    );
-                    self.func.blocks[panic_block].terminator = MirTerminator::Unreachable;
+                    if matches!(self.runtime_tier, RuntimeTier::None) {
+                        self.func.blocks[panic_block].terminator = MirTerminator::Unreachable;
+                    } else {
+                        self.func.blocks[panic_block].push(
+                            None,
+                            MirOp::Call(
+                                MirValue::Global("rt_panic_loc".to_string()),
+                                vec![
+                                    MirValue::Const(MirConst::Str(panic_msg.to_string())),
+                                    MirValue::Const(MirConst::Int(loc.0 as i64)),
+                                    MirValue::Const(MirConst::Int(loc.1 as i64)),
+                                    MirValue::Const(MirConst::Str(self.filename.clone())),
+                                ],
+                                MirType {
+                                    data_type: DataType::None,
+                                },
+                            ),
+                            loc,
+                        );
+                        self.func.blocks[panic_block].terminator = MirTerminator::Unreachable;
+                    }
 
                     // OK block: native sdiv/srem
                     self.current_block = ok_block;
@@ -1058,25 +1063,29 @@ impl MirLower {
                     self.func.blocks[check_upper_block].terminator =
                         MirTerminator::BrCond(MirValue::temp(is_oob), panic_block, ok_block);
 
-                    // Panic block: call rt_panic_loc then unreachable
+                    // Panic block: for runtime none, just unreachable; otherwise call rt_panic_loc
                     self.current_block = panic_block;
-                    self.func.blocks[panic_block].push(
-                        None,
-                        MirOp::Call(
-                            MirValue::Global("rt_panic_loc".to_string()),
-                            vec![
-                                MirValue::Const(MirConst::Str("index out of bounds".to_string())),
-                                MirValue::Const(MirConst::Int(loc.0 as i64)),
-                                MirValue::Const(MirConst::Int(loc.1 as i64)),
-                                MirValue::Const(MirConst::Str(self.filename.clone())),
-                            ],
-                            MirType {
-                                data_type: DataType::None,
-                            },
-                        ),
-                        loc,
-                    );
-                    self.func.blocks[panic_block].terminator = MirTerminator::Unreachable;
+                    if matches!(self.runtime_tier, RuntimeTier::None) {
+                        self.func.blocks[panic_block].terminator = MirTerminator::Unreachable;
+                    } else {
+                        self.func.blocks[panic_block].push(
+                            None,
+                            MirOp::Call(
+                                MirValue::Global("rt_panic_loc".to_string()),
+                                vec![
+                                    MirValue::Const(MirConst::Str("index out of bounds".to_string())),
+                                    MirValue::Const(MirConst::Int(loc.0 as i64)),
+                                    MirValue::Const(MirConst::Int(loc.1 as i64)),
+                                    MirValue::Const(MirConst::Str(self.filename.clone())),
+                                ],
+                                MirType {
+                                    data_type: DataType::None,
+                                },
+                            ),
+                            loc,
+                        );
+                        self.func.blocks[panic_block].terminator = MirTerminator::Unreachable;
+                    }
 
                     // OK block: GEP + Load (the actual memory access)
                     self.current_block = ok_block;

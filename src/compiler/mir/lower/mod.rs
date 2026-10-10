@@ -1,4 +1,5 @@
 use super::*;
+use crate::avens::config::RuntimeTier;
 use crate::canonical_fn_name;
 use crate::parser::ast::{AssignmentTarget, DataType, Expression, Literal, Program, Statement};
 use std::collections::HashMap;
@@ -18,6 +19,8 @@ struct MirLower {
     next_temp: usize,
     vars: HashMap<String, usize>,
     var_types: HashMap<String, DataType>,
+    /// Runtime tier: None means no runtime support (no rt_panic_loc etc.)
+    runtime_tier: RuntimeTier,
     /// Module-level `set`/`let` bindings, lowered as true globals so they are
     /// visible from every function (not just `main`). The legacy backend kept
     /// these in a single cross-function `self.vars` map; the MIR path must
@@ -275,10 +278,10 @@ fn infer_literal_type(expr: &Expression) -> Option<DataType> {
 }
 
 pub fn lower_program(program: &Program) -> MirProgram {
-    lower_program_with_filename(program, "")
+    lower_program_with_filename(program, "", RuntimeTier::Minimal)
 }
 
-pub fn lower_program_with_filename(program: &Program, filename: &str) -> MirProgram {
+pub fn lower_program_with_filename(program: &Program, filename: &str, runtime_tier: RuntimeTier) -> MirProgram {
     let mut functions = Vec::new();
     let mut entry_point = None;
     let mut extern_functions = Vec::new();
@@ -475,6 +478,7 @@ pub fn lower_program_with_filename(program: &Program, filename: &str) -> MirProg
                     next_temp: 0,
                     vars: HashMap::new(),
                     var_types: HashMap::new(),
+                    runtime_tier: runtime_tier.clone(),
                     globals: globals.clone(),
                     struct_types: struct_types.clone(),
                     enum_types: enum_types.clone(),
@@ -550,6 +554,7 @@ pub fn lower_program_with_filename(program: &Program, filename: &str) -> MirProg
                             next_temp: 0,
                             vars: HashMap::new(),
                             var_types: HashMap::new(),
+                            runtime_tier: runtime_tier.clone(),
                             globals: globals.clone(),
                             struct_types: struct_types.clone(),
                             enum_types: enum_types.clone(),

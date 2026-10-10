@@ -450,7 +450,7 @@ fn compile_file_inner(
     }
 
     let (mut ir, extern_libs) = {
-        let mut mir = lower_program_with_filename(&program, source_filename);
+        let mut mir = lower_program_with_filename(&program, source_filename, options.c_defs.runtime);
 
         // Pre-codegen validation: surface calls to symbols the backend cannot
         // resolve (stale bare builtins, removed PAL functions, or unloaded
