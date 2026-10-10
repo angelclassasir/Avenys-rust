@@ -525,6 +525,15 @@ pub fn is_comparable_pair(left: &DataType, right: &DataType) -> bool {
     if left == right {
         return true;
     }
+    // A pointer against an integer is the null check, which is how every
+    // allocator return is tested. Without this the comparison is rejected, and
+    // the only way to test for failure becomes comparing against a pointer
+    // literal that the language does not have.
+    if (matches!(left, DataType::Pointer(_)) && is_numeric(right))
+        || (matches!(right, DataType::Pointer(_)) && is_numeric(left))
+    {
+        return true;
+    }
     // Borrow-vs-value: compare the pointees. Only identical underlying types
     // become comparable, so this widens `&str`/`&i64` against their own value
     // type without making unrelated types comparable.

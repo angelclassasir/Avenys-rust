@@ -116,6 +116,11 @@ impl Parser {
                 "u128" => Ok(DataType::U128),
                 "f32" => Ok(DataType::F32),
                 "f64" => Ok(DataType::F64),
+                // A raw pointer. It had no entry here, so every `:ptr`
+                // annotation silently became Unknown: indexing it yielded
+                // Unknown, and a freestanding program had no way to name the
+                // type that glibc hands back.
+                "ptr" => Ok(DataType::Pointer(Box::new(DataType::Unknown))),
                 "str" => Ok(DataType::Str),
                 "bool" => Ok(DataType::Bool),
                 "char" => Ok(DataType::Char),

@@ -173,8 +173,12 @@ fn compile_file_inner(
                     files.push(path.to_string_lossy().into_owned());
                 }
             }
-        }
-            // Also collect C sources from the compiler's runtime directory (standard library)
+
+            // Also collect C sources from the compiler's runtime directory
+            // (standard library). This belongs inside the same guard: it used to
+            // sit outside it, so a `none` build still compiled twenty runtime
+            // sources that call `pal_alloc`, and the freestanding tier could not
+            // link because no PAL is present to satisfy them.
             let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
             let compiler_runtime = manifest_dir.join("src/runtime");
             if compiler_runtime.exists() {
@@ -205,6 +209,7 @@ fn compile_file_inner(
                     }
                 }
             }
+        }
         for proj_src in &options.c_defs.sources {
             let root = crate::avens::manifest::find_project_root(source_path)
                 .unwrap_or_else(|| std::path::PathBuf::from("."));
@@ -526,7 +531,12 @@ fn compile_file_inner(
     // The generated native entry point initializes the sandbox before calling
     // user code. Keep its runtime source in the selective minimal-runtime set
     // even though the call is injected below this scan.
-    used.runtime.insert("rt_sbx_init".to_string());
+    // Not for a freestanding build: there the entry point is emitted without
+    // the handshake, so claiming the symbol made every `none` build report a
+    // runtime dependency it does not have.
+    if !matches!(options.c_defs.runtime, RuntimeTier::None) {
+        used.runtime.insert("rt_sbx_init".to_string());
+    }
     // Enforce runtime tier contract: runtime="none" means no rt_* calls are allowed.
     if matches!(options.c_defs.runtime, RuntimeTier::None) && !used.runtime.is_empty() {
         let mut symbols: Vec<&str> = used.runtime.iter().map(|s| s.as_str()).collect();
@@ -686,14 +696,24 @@ fn compile_file_inner(
                 .find(|line| line.contains("define") && line.contains("@fn_main("))
                 .map(|line| line.split_whitespace().nth(1) == Some("void"))
                 .unwrap_or(false);
-            ir.push_str("\ndeclare void @rt_sbx_init()\n");
+            // The sandbox handshake and the argc/argv globals belong to the
+            // runtime. Emitting them for every tier made `none` unusable: each
+            // program referenced rt_sbx_init, and a tier that links no runtime
+            // sources could never resolve it. A freestanding build gets a bare
+            // entry point that calls user code and nothing else.
+            let freestanding = matches!(options.c_defs.runtime, RuntimeTier::None);
+            if !freestanding {
+                ir.push_str("\ndeclare void @rt_sbx_init()\n");
+            }
             ir.push_str("\n\ndefine i32 @main(i32 %argc, ptr %argv) {\n");
-            // Capture the sandbox root before user code can perform any host
-            // filesystem operation. The runtime bridge preserves the PAL's
-            // fail-closed NULL semantics while binding the process to cwd.
-            ir.push_str("  call void @rt_sbx_init()\n");
-            ir.push_str("  store i32 %argc, ptr @.argc\n");
-            ir.push_str("  store ptr %argv, ptr @.argv\n");
+            if !freestanding {
+                // Capture the sandbox root before user code can perform any host
+                // filesystem operation. The runtime bridge preserves the PAL's
+                // fail-closed NULL semantics while binding the process to cwd.
+                ir.push_str("  call void @rt_sbx_init()\n");
+                ir.push_str("  store i32 %argc, ptr @.argc\n");
+                ir.push_str("  store ptr %argv, ptr @.argv\n");
+            }
             if main_returns_void {
                 ir.push_str("  call void @fn_main(ptr null)\n");
                 ir.push_str("  ret i32 0\n");
