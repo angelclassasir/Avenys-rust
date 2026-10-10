@@ -5,6 +5,19 @@ All notable changes to Avenys will be documented in this file.
 ## 4.3.13 - 2026-10-09
 
 ### Fixed
+- **Owned values are released when they go out of scope.** They were released
+  in exactly one place — the rebind in `set x = ...` — so a `return`, the end of
+  a loop body, and falling off the end of a function all released nothing. A
+  function that built a vector and returned a number leaked the vector on every
+  call. Measured with `pal_mem_process`, 2,000,000 iterations building one
+  `vec[i64]` each grew the process from 6.3 MB to 198 MB; it now holds at
+  6.4 MB. Releasing at scope exit skips locals that escape — a returned vector
+  is left to the caller — never releases `Ownership::Borrowed`, and stops at
+  `break`, `continue`, and `return`, where the remaining statements are not on
+  that path. **This does not speed up the C2 allocation kernel** (53.35x,
+  1387 ms, against a previous 55.70x): the leak was a correctness defect, while
+  C2's cost is malloc/free churn eight million times over, which is what the
+  slab allocator is for.
 - **`bits` is no longer reserved against the program that defines it.** The
   bitcast intrinsic's `bitcast_target` claimed every `bits::<identifier>` call,
   so any package exporting a `bits` module failed to build with

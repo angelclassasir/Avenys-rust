@@ -9,6 +9,7 @@ mod decl;
 mod expr;
 mod expr_collections;
 mod expr_values;
+mod scope;
 mod stmt;
 mod types;
 
@@ -35,6 +36,37 @@ struct MirLower {
     closure_functions: Vec<MirFunction>,
     closure_counter: usize,
     filename: String,
+    /// Function locals holding an owned pointer, in declaration order, so scope
+    /// exit can release them.
+    ///
+    /// Without this, an owned value that goes out of scope without being
+    /// rebound or explicitly dropped is never released: `Return` did not clean
+    /// up, and neither did the end of a loop body. A function that built a
+    /// vector and returned a number leaked the vector on every call, which is
+    /// what made the C2 allocation kernel grow without bound.
+    ///
+    /// The set is declaration-ordered, not a map, so emission order is
+    /// deterministic.
+    /// Stack of open scopes, innermost last. Each entry is the set of owned
+    /// locals declared directly in that scope.
+    ///
+    /// A stack rather than a single set because scopes nest. A loop body inside
+    /// a loop body inside a function is three scopes; releasing the innermost
+    /// one must not discard what the enclosing scopes still own. A single set
+    /// with a `clear` on entry loses the outer scopes' locals, and the release
+    /// then runs at the inner scope's exit — freeing a list that the next
+    /// outer iteration is about to push into.
+    scope_stack: Vec<ScopeFrame>,
+}
+
+/// One lexical scope's owned locals plus the escape/block state for that scope.
+#[derive(Default)]
+pub(crate) struct ScopeFrame {
+    owned_locals: Vec<(String, usize, DataType)>,
+    escaped_locals: HashSet<String>,
+    /// Set when a `break`, `continue`, or `return` makes a straight-line walk
+    /// over the remaining statements unsound.
+    blocked: bool,
 }
 
 // Family metric counter (u32: passed, u32: failed, u32: filtered,
@@ -454,6 +486,7 @@ pub fn lower_program_with_filename(program: &Program, filename: &str) -> MirProg
                     closure_functions: Vec::new(),
                     closure_counter: next_closure_id,
                     filename: filename.to_string(),
+                    scope_stack: Vec::new(),
                 };
 
                 let body_with_top_level = if name == "main" && !top_level_binding_stmts.is_empty() {
@@ -526,7 +559,8 @@ pub fn lower_program_with_filename(program: &Program, filename: &str) -> MirProg
                             current_block: 0,
                             loop_stack: Vec::new(),
                             closure_functions: Vec::new(),
-                            closure_counter: next_closure_id,
+                            scope_stack: Vec::new(),
+                    closure_counter: next_closure_id,
                             filename: filename.to_string(),
                         };
 

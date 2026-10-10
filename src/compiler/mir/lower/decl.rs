@@ -42,8 +42,20 @@ impl MirLower {
             self.vars.insert(pname.clone(), *ptr);
         }
 
+        self.begin_scope();
         for stmt in body {
             self.lower_statement(stmt);
+        }
+        // Fall off the end of the body: release whatever is still owned. A body
+        // that ends in `return` has already terminated and already released,
+        // and its `Ret` terminator is preserved because the release only
+        // appends.
+        let ends_with_terminator = matches!(
+            self.func.blocks[self.current_block].terminator,
+            MirTerminator::Ret(_) | MirTerminator::Unreachable
+        );
+        if !ends_with_terminator {
+            self.end_scope_and_release();
         }
     }
 
@@ -83,8 +95,9 @@ impl MirLower {
             // zero made a nested closure collide with the one enclosing it --
             // both were emitted as `closure_0`, and llc rejected the module
             // with "invalid redefinition of function".
-            closure_counter: self.closure_counter,
+                    closure_counter: self.closure_counter,
             filename: self.filename.clone(),
+            scope_stack: Vec::new(),
         };
         lower.func.noinline = true;
         let entry_id = lower.entry_block_id();

@@ -177,6 +177,10 @@ impl MirLower {
                 }
                 self.vars.insert(name.clone(), ptr);
                 self.var_types.insert(name.clone(), data_type.clone());
+                // Track this slot so scope exit can release it. The rebind path
+                // below replaces the entry, since the previous value is released
+                // by the rebind itself.
+                self.track_owned_local(name, ptr, data_type.clone());
 
                 if let Some(val) = value {
                     if let DataType::Array { element_type, .. } = data_type
@@ -307,6 +311,23 @@ impl MirLower {
                                 MirOp::Store(MirValue::temp(ptr), v),
                                 loc,
                             );
+                            // The rebind above released the previous value, so
+                            // this slot now owns the new one and scope exit must
+                            // release it.
+                            //
+                            // Track the slot unconditionally, including for a
+                            // collection mutator (`vec::push(v, x)`,
+                            // `map::set(m, k, v)`). Such a call returns the SAME
+                            // storage with the element added, so the rebind
+                            // deliberately did not release the old value — but
+                            // the slot still owns that allocation, and scope exit
+                            // is the only place left that will release it.
+                            //
+                            // Not tracking it here was the leak: the binding
+                            // tracked, the first `push` released nothing and
+                            // cleared the entry, and every later iteration then
+                            // had no tracked local at all.
+                            self.track_owned_local(name, ptr, target_ty.clone());
                         }
                     }
                     AssignmentTarget::Index { target, index } => {
@@ -545,8 +566,23 @@ impl MirLower {
                         lowered
                     }
                 });
-                let last = self.current_block;
                 let v = v.map(|x| self.materialize_array_value(x, &ret_ty, loc));
+
+                // Anything the return expression reaches has escaped to the
+                // caller and must not be released here.
+                if let Some(expr) = val.as_ref() {
+                    self.mark_escaped_in_expression(expr);
+                }
+
+                // Release locals that are still owned here. Without this a
+                // function that built a vector and returned a number leaked the
+                // vector on every call. A local that *is* the returned value, or
+                // that the return expression reaches through, was recorded as
+                // escaped above and is skipped — releasing it would free what
+                // the caller now owns.
+                self.end_scope_and_release();
+
+                let last = self.current_block;
                 self.func.blocks[last].terminator = MirTerminator::Ret(v);
             }
             Statement::If {
@@ -611,10 +647,18 @@ impl MirLower {
                 self.loop_stack.push((cond_block, end_block));
                 self.current_block = body_block;
 
+                // The body is its own scope. A value declared inside it is
+                // released when the iteration ends, which is the only place
+                // that can happen for a loop building one value per iteration.
+                self.begin_scope();
                 for stmt in body {
                     self.lower_statement(stmt);
                 }
                 self.loop_stack.pop();
+                // Release this iteration's locals before branching back to the
+                // condition, then pop the frame so the next iteration starts
+                // from a clean scope while enclosing scopes keep theirs.
+                self.end_scope_and_release();
                 if matches!(
                     self.func.blocks[self.current_block].terminator,
                     MirTerminator::Unreachable
@@ -989,6 +1033,9 @@ impl MirLower {
                 self.current_block = end_idx;
             }
             Statement::Break => {
+                // Everything after this is unreachable on the break path, so the
+                // enclosing scope must not release what follows.
+                self.block_scope_exit();
                 if let Some(&(_, break_target)) = self.loop_stack.last() {
                     let last = self.current_block;
                     self.func.blocks[last].terminator = MirTerminator::Br(break_target);
@@ -998,6 +1045,7 @@ impl MirLower {
                 }
             }
             Statement::Continue => {
+                self.block_scope_exit();
                 if let Some(&(continue_target, _)) = self.loop_stack.last() {
                     let last = self.current_block;
                     self.func.blocks[last].terminator = MirTerminator::Br(continue_target);

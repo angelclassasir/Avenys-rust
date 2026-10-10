@@ -426,6 +426,49 @@ builtin table wins during resolution. Cross-package use — what the runtime nee
 
 Verification: 246 library + 14 CLI tests, 12/12 benchmark output equivalence.
 
+## B6 preparation — scope-exit release
+
+Owned values were released in exactly one place: the rebind in `set x = ...`.
+There was no release on `return`, none at the end of a loop body, and none when
+a function fell off its end. Measuring the C2 baseline showed the memory never
+came back:
+
+| Program | Before | After |
+|---|---|---|
+| 2,000,000 iterations, one `vec[i64]` each | 6.3 MB -> 198 MB | 6.3 MB -> 6.4 MB |
+| 2,000,000 iterations via a helper function | 6.3 MB -> 198 MB | flat |
+| 200,000 iterations returning the vector | - | 6.4 MB, correct total, no crash |
+
+Three defects surfaced during the implementation, each found by a crash or a
+wrong measurement rather than by reading the code:
+
+- **Scopes nest**, so the tracker is a stack. With a single set, entering an
+  inner loop scope discarded the enclosing scopes' locals and the release ran at
+  the inner exit, freeing the list the next outer iteration was about to push
+  into. SIGSEGV at three iterations.
+- **A name is owned by its declaring scope**, not its rebinding scope. `set v =
+  []` in a loop body and `set v = vec::push(v, x)` in a loop inside it are one
+  slot in two frames, released twice. Tracking now searches innermost outward
+  and updates the declaring frame.
+- **A collection mutator returns the same storage.** `vec::push(v, x)` and
+  `map::set(m, k, v)` deliberately skip the rebind release because the result
+  IS the old allocation. The slot still owns it, so it must still be tracked.
+
+Scope-exit release can free what the caller owns if escape is mishandled, so
+three guards apply: locals that escape are skipped, `Ownership::Borrowed` is
+never released, and the walk stops at `break`/`continue`/`return` where the
+remaining statements are not on that path. The escape walk over-marks where a
+shape is unclear, because a missed release is a leak (what existed before)
+while a wrong release is a use-after-free.
+
+**C2's wall clock barely moved**: 53.35x (1387 ms) against a previous 55.70x
+(1504 ms). The leak was a correctness defect; C2's cost is malloc/free churn
+eight million times over, which is what the slab allocator is for. This is a
+prerequisite for B6, not a substitute.
+
+Verification: 246 library + 14 CLI tests, 12/12 benchmark output equivalence,
+plus direct RSS measurements above.
+
 ## Remaining work
 
 - Complete PAL C0 on all supported backends; Windows is not implemented yet.
@@ -434,8 +477,9 @@ Verification: 246 library + 14 CLI tests, 12/12 benchmark output equivalence.
   tested FIFO capability; otherwise finish C0 and use Unix sockets.
 - Runtime B1 (move-only source reorganization), B2 (host boundary), B3
   (managed release contract), B4 (`full` tier removal), and B5 (Mire bootstrap
-  milestone) are closed and verified. B6 remains open: measure the slab
-  allocator against the honest C2 baseline.
+  milestone), and the B6 preparation (scope-exit release) are closed and
+  verified. B6 itself remains open: the slab allocator, against the honest C2
+  baseline of ~1400 ms.
 - PAL C1-C6, including actual WASI/Wasmtime coverage, Windows/Wine coverage,
   removal of weak stubs, capability reporting, and the incomplete WASM package,
   remain open.
