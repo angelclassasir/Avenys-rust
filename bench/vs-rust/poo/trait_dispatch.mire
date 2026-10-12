@@ -1,0 +1,56 @@
+pub skill Drawable {
+    fn area: (self) :i64
+    fn perimeter: (self) :i64
+}
+
+struct Rect { w :i64, h :i64 }
+struct Circle { r :i64 }
+struct Triangle { a :i64, b :i64, c :i64 }
+
+impl Drawable for Rect {
+    fn area: (self) :i64 { return self.w * self.h }
+    fn perimeter: (self) :i64 { return 2 * (self.w + self.h) }
+}
+impl Drawable for Circle {
+    fn area: (self) :i64 { return 3 * self.r * self.r }
+    fn perimeter: (self) :i64 { return 6 * self.r }
+}
+impl Drawable for Triangle {
+    fn area: (self) :i64 {
+        set s = (self.a + self.b + self.c) / 2
+        return (s * (s - self.a) * (s - self.b) * (s - self.c)) :i64
+    }
+    fn perimeter: (self) :i64 { return self.a + self.b + self.c }
+}
+
+fn total_area: (shapes :vec[&Drawable]) :i64 {
+    set acc = 0 :i64 mut
+    set i = 0 :i64 mut
+    while i < vec::len(shapes) {
+        set d = vec::get(shapes, i)
+        set acc += d.area()
+        set i += 1
+    }
+    return acc
+}
+
+pub fn main: () :i32 {
+    set shapes = [] :vec[&Drawable] mut
+    set i = 0 :i64 mut
+    while i < 10000 {
+        if i % 3 == 0 {
+            set r = Rect(i % 100 + 1, i % 100 + 2)
+            set shapes = vec::push(shapes, r)
+        } else if i % 3 == 1 {
+            set c = Circle(i % 100 + 1)
+            set shapes = vec::push(shapes, c)
+        } else {
+            set t = Triangle(i % 100 + 3, i % 100 + 4, i % 100 + 5)
+            set shapes = vec::push(shapes, t)
+        }
+        set i += 1
+    }
+    set total = total_area(shapes)
+    dasu(str(total))
+    return 0 :i32
+}

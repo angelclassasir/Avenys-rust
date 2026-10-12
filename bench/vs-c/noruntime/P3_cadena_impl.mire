@@ -1,0 +1,12 @@
+/*
+ * VS-C No-Runtime: String Implementation
+ * Direct glibc strlen, no Mire runtime
+ */
+extern fn strlen: (s :ptr) :i64 lib "c"
+
+pub fn main: () :i64 {
+    set s = "Hello, World!" :ptr mut
+    set len = strlen(s) :i64
+    set len2 = strlen(s) :i64
+    return len + len2
+}

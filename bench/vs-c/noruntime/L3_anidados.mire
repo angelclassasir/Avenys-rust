@@ -1,0 +1,17 @@
+/*
+ * VS-C No-Runtime: Nested Loops
+ * Direct glibc, no Mire runtime
+ */
+pub fn main: () :i64 {
+    set acc = 0 :i64 mut
+    set i = 0 :i64 mut
+    while i < 500 {
+        set j = 0 :i64 mut
+        while j < 500 {
+            set acc = acc + i * j
+            set j += 1
+        }
+        set i += 1
+    }
+    return acc
+}

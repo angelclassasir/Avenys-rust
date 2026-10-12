@@ -1,0 +1,16 @@
+/*
+ * VS-C No-Runtime: Swap/Exchange
+ * Direct glibc, no Mire runtime
+ */
+pub fn main: () :i64 {
+    set a = 12345 :i64 mut
+    set b = 67890 :i64 mut
+    set i = 0 :i64 mut
+    while i < 2000000 {
+        set tmp = a
+        set a = b
+        set b = tmp
+        set i += 1
+    }
+    return a - b
+}

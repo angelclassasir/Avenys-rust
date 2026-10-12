@@ -1,0 +1,17 @@
+/*
+ * VS-C No-Runtime: Recursion
+ * Direct glibc calls, no Mire runtime
+ * Equivalent to C reference implementation
+ */
+extern fn malloc: (n :i64) :ptr lib "c"
+extern fn free: (p :ptr,) lib "c"
+
+fn ack: (m :i64, n :i64) :i64 {
+    if m == 0 { return n + 1 }
+    if n == 0 { return ack(m - 1, 1) }
+    return ack(m - 1, ack(m, n - 1))
+}
+
+pub fn main: () :i64 {
+    return ack(3, 10)
+}

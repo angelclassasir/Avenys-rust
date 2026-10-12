@@ -1,0 +1,43 @@
+/*
+ * VS-C No-Runtime: Trait Dispatch (Function Pointers)
+ * Direct glibc, function pointers for dynamic dispatch
+ */
+extern fn malloc: (n :i64) :ptr lib "c"
+extern fn free: (p :ptr,) lib "c"
+extern fn memcpy: (d :ptr, s :ptr, n :i64) :ptr lib "c"
+
+type FnPtr = fn(i64) :i64
+
+fn square: (x :i64) :i64 { return x * x }
+fn cube: (x :i64) :i64 { return x * x * x }
+fn identity: (x :i64) :i64 { return x }
+fn neg: (x :i64) :i64 { return -x }
+
+fn dispatch: (f :FnPtr, x :i64) :i64 { return f(x) }
+
+pub fn main: () :i64 {
+    set funcs = malloc(4 * 8) :ptr mut
+    if funcs == (0 :ptr) { return 1 :i64 }
+    set tmp = square as FnPtr
+    set _ = memcpy(funcs, (&tmp) :ptr, 8)
+    set tmp = cube as FnPtr
+    set _ = memcpy((funcs :i64) + 8, (&tmp) :ptr, 8)
+    set tmp = identity as FnPtr
+    set _ = memcpy((funcs :i64) + 16, (&tmp) :ptr, 8)
+    set tmp = neg as FnPtr
+    set _ = memcpy((funcs :i64) + 24, (&tmp) :ptr, 8)
+
+    set acc = 0 :i64 mut
+    set i = 0 :i64 mut
+    while i < 250000 {
+        set idx = i % 4
+        set f_ptr = funcs :i64 + idx * 8 :i64
+        set f_ptr_ptr = f_ptr :ptr
+        set f_val = 0 :FnPtr mut
+        set _ = memcpy((&f_val) :ptr, f_ptr_ptr, 8)
+        set acc = acc + dispatch(f_val, i)
+        set i += 1
+    }
+    free(funcs)
+    return acc
+}

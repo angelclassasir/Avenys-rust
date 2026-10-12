@@ -1,0 +1,8 @@
+load mire::str
+
+pub fn main: () :i32 {
+    set s = "Hello, World!"
+    set len = str::len(s)
+    dasu(str(len))
+    return 0 :i32
+}

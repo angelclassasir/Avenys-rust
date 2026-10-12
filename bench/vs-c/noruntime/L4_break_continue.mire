@@ -1,0 +1,15 @@
+/*
+ * VS-C No-Runtime: Break/Continue
+ * Direct glibc, no Mire runtime
+ */
+pub fn main: () :i64 {
+    set acc = 0 :i64 mut
+    set i = 0 :i64 mut
+    while i < 1000000 {
+        set i += 1
+        if i % 2 == 0 { continue }
+        if i > 999999 { break }
+        set acc += i
+    }
+    return acc
+}

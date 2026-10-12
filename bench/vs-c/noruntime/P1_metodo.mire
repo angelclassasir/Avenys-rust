@@ -1,0 +1,17 @@
+/*
+ * VS-C No-Runtime: Method Calls
+ * Direct glibc, no Mire runtime
+ */
+fn square: (x :i64) :i64 { return x * x }
+fn cube: (x :i64) :i64 { return x * x * x }
+
+pub fn main: () :i64 {
+    set acc = 0 :i64 mut
+    set i = 0 :i64 mut
+    while i < 1000000 {
+        set acc += square(i)
+        set acc += cube(i)
+        set i += 1
+    }
+    return acc
+}

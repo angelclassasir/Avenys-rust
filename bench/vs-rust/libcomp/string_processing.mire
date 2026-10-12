@@ -1,0 +1,39 @@
+load mire::vec
+load mire::str
+
+fn parse_csv: (line :str) :vec[i64] {
+    set result = [] :vec[i64] mut
+    set start = 0 :i64 mut
+    set i = 0 :i64 mut
+    while i < str::len(line) {
+        set c = str::substr(line, i, 1)
+        if c == "," {
+            set part = str::substr(line, start, i - start)
+            set val = str::to::i64(part)
+            set result = vec::push::i64(result, val)
+            set start = i + 1
+        }
+        set i += 1
+    }
+    set part = str::substr(line, start, str::len(line) - start)
+    set val = str::to::i64(part)
+    set result = vec::push::i64(result, val)
+    return result
+}
+
+pub fn main: () :i32 {
+    set acc = 0 :i64 mut
+    set iter = 0 :i64 mut
+    while iter < 10000 {
+        set line = "1,2,3,4,5,6,7,8,9,10"
+        set parsed = parse_csv(line)
+        set i = 0 :i64 mut
+        while i < vec::len(parsed) {
+            set acc = (acc + vec::get::i64(parsed, i)) % 1000003
+            set i += 1
+        }
+        set iter += 1
+    }
+    dasu(str(acc))
+    return 0 :i32
+}

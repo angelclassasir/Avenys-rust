@@ -1,0 +1,27 @@
+pub fn main: () :i32 {
+    set acc = 0 :i64 mut
+    set a = 1 :i64 mut
+    set b = 2 :i64 mut
+    set c = 3 :i64 mut
+    set d = 4 :i64 mut
+    set e = 5 :i64 mut
+    set f = 6 :i64 mut
+    set g = 7 :i64 mut
+    set h = 8 :i64 mut
+    set i = 0 :i64 mut
+    while i < 6000000 {
+        set t = a + acc % 3
+        set a = b
+        set b = c
+        set c = d
+        set d = e
+        set e = f
+        set f = g
+        set g = h
+        set h = t
+        set acc = (acc + a - h) % 1000003
+        set i += 1
+    }
+    dasu(str(acc))
+    return 0 :i32
+}

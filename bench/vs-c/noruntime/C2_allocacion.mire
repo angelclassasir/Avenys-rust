@@ -1,0 +1,27 @@
+/*
+ * VS-C No-Runtime: Allocation Pressure
+ * Direct glibc malloc/free, no Mire runtime
+ * Pre-allocated capacity to match C reference
+ */
+extern fn malloc: (n :i64) :ptr lib "c"
+extern fn free: (p :ptr,) lib "c"
+extern fn memcpy: (d :ptr, s :ptr, n :i64) :ptr lib "c"
+
+pub fn main: () :i64 {
+    set n = 8000000 :i64
+    set i = 0 :i64 mut
+    set acc = 0 :i64 mut
+    while i < n {
+        set p = malloc(8) :ptr mut
+        if p == (0 :ptr) { return 1 :i64 }
+        set val = i * i * 3 + 1 :i64
+        set tmp = val :i64 mut
+        set _ = memcpy(p, (&tmp) :ptr, 8)
+        set tmp2 = 0 :i64 mut
+        set _ = memcpy((&tmp2) :ptr, p, 8)
+        set acc += tmp2
+        free(p)
+        set i += 1
+    }
+    return acc
+}

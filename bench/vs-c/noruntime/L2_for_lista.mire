@@ -1,0 +1,34 @@
+/*
+ * VS-C No-Runtime: For Loop Over List
+ * Direct glibc malloc/free, manual pointer arithmetic
+ */
+extern fn malloc: (n :i64) :ptr lib "c"
+extern fn free: (p :ptr,) lib "c"
+extern fn memcpy: (d :ptr, s :ptr, n :i64) :ptr lib "c"
+
+pub fn main: () :i64 {
+    set n = 2000 :i64
+    set p = malloc(n * 8) :ptr mut
+    if p == (0 :ptr) { return 1 :i64 }
+    set i = 0 :i64 mut
+    while i < n {
+        set p_i = (p :i64) + i * 8 :i64
+        set p_i_ptr = p_i :ptr
+        set val = i * 3 :i64
+        set tmp = val :i64 mut
+        set _ = memcpy(p_i_ptr, (&tmp) :ptr, 8)
+        set i += 1
+    }
+    set i = 0 :i64 mut
+    set acc = 0 :i64 mut
+    while i < n {
+        set p_i = (p :i64) + i * 8 :i64
+        set p_i_ptr = p_i :ptr
+        set tmp = 0 :i64 mut
+        set _ = memcpy((&tmp) :ptr, p_i_ptr, 8)
+        set acc += tmp
+        set i += 1
+    }
+    free(p)
+    return acc
+}
