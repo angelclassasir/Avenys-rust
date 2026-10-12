@@ -1,0 +1,15 @@
+// C5: string operations -- various string manipulations. Difficulty: medium.
+load mire::str
+
+pub fn main: () :i32 {
+    set s = "Hello, World!" mut
+    set i = 0 :i64 mut
+    set acc = 0 :i64 mut
+    while i < 100000 {
+        set s = str::concat(s "!")
+        set i += 1
+    }
+    set len = str::len(s)
+    dasu(str(len))
+    return 0 :i32
+}

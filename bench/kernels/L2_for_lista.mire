@@ -1,4 +1,4 @@
-// L2: indexed reads over a dynamic list. Dificultad: facil.
+// L2: indexed reads over a dynamic list. Difficulty: easy.
 // 2000 elementos x 4M pasadas. El acumulador entra de vuelta, asi que la
 // pasada no se puede transformar en una reduccion de fuerza.
 load mire::vec

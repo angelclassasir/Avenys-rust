@@ -1,27 +1,19 @@
-/*
- * VS-C No-Runtime: Allocation Pressure
- * Direct glibc malloc/free, no Mire runtime
- * Pre-allocated capacity to match C reference
- */
-extern fn malloc: (n :i64) :ptr lib "c"
-extern fn free: (p :ptr,) lib "c"
-extern fn memcpy: (d :ptr, s :ptr, n :i64) :ptr lib "c"
+// C2: allocation pressure -- a fresh vector per iteration. Difficulty: hard.
+load mire::vec
 
-pub fn main: () :i64 {
-    set n = 8000000 :i64
+pub fn main: () :i32 {
+    set acc = SEED_OPACA mut
     set i = 0 :i64 mut
-    set acc = 0 :i64 mut
-    while i < n {
-        set p = malloc(8) :ptr mut
-        if p == (0 :ptr) { return 1 :i64 }
-        set val = i * i * 3 + 1 :i64
-        set tmp = val :i64 mut
-        set _ = memcpy(p, (&tmp) :ptr, 8)
-        set tmp2 = 0 :i64 mut
-        set _ = memcpy((&tmp2) :ptr, p, 8)
-        set acc += tmp2
-        free(p)
+    while i < 8000000 {
+        set v = vec::with::capacity::i64(8) mut
+        set j = 0 :i64 mut
+        while j < 8 {
+            set v = vec::push::i64(v j + i)
+            set j += 1
+        }
+        set acc = (acc + vec::len(v) + vec::get::i64(v, 0)) % 1000003
         set i += 1
     }
-    return acc
+    dasu(str(acc))
+    return 0 :i32
 }

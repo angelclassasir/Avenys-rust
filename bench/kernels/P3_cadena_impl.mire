@@ -1,4 +1,4 @@
-// P3: a method delegating through a skill to another type. Dificultad: dificil.
+// P3: a method delegating through a skill to another type. Difficulty: hard.
 pub skill Area { fn area: (self) :i64 }
 
 struct Rect { a :i64, b :i64 }

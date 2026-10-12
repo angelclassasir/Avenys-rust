@@ -1,4 +1,4 @@
-// C3: integer and float work interleaved. Dificultad: media.
+// C3: integer and float work interleaved. Difficulty: medium.
 // El float depende del acumulador, asi que no se pliega.
 pub fn main: () :i32 {
     set acc = SEED_OPACA mut

@@ -1,4 +1,4 @@
-// V2: 8-way rotation driven by the accumulator. Dificultad: facil.
+// V2: 8-way rotation driven by the accumulator. Difficulty: easy.
 pub fn main: () :i32 {
     set acc = SEED_OPACA mut
     set a = 1 :i64 mut

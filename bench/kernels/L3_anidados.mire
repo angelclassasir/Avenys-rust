@@ -1,4 +1,4 @@
-// L3: bucles anidados 2 niveles. Dificultad: media.
+// L3: bucles anidados 2 niveles. Difficulty: medium.
 pub fn main: () :i32 {
     set acc = SEED_OPACA mut
     set i = 0 :i64 mut

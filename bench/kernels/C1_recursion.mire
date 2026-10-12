@@ -1,4 +1,4 @@
-// C1: recursion -- ackermann(2, n). Dificultad: dificil.
+// C1: recursion -- ackermann(2, n). Difficulty: hard.
 // Argumentos con coma explicita: sin ella `ack(m (n - 1))` se parsea como
 // llamada a `m` porque la coma entre argumentos es opcional.
 fn ack: (m :i64, n :i64) :i64 {

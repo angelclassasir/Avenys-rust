@@ -1,0 +1,26 @@
+// VS-Rust: Memory - Hash Map Stress Test
+load mire::map
+
+pub fn main: () :i32 {
+    set m = {} :map[i64, i64] mut
+    set acc = 0 :i64 mut
+    set i = 0 :i64 mut
+    while i < 100000 {
+        set key = (i * 12345) % 100003
+        set val = i * 2
+        set m = map::set::i64(m, key, i * 2)
+        set i += 1
+    }
+    set i = 0 :i64 mut
+    set acc = 0 :i64 mut
+    while i < 100000 {
+        set key = (i * 12345) % 100003
+        if map::has(m, key) {
+            set v = map::get::i64(m, key)
+            set acc = (acc + v) % 1000003
+        }
+        set i += 1
+    }
+    dasu(str(acc))
+    return 0 :i32
+}

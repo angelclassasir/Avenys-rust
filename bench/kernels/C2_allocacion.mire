@@ -1,11 +1,11 @@
-// C2: allocation pressure -- a fresh vector per iteration. Dificultad: dificil.
+// C2: allocation pressure -- a fresh vector per iteration. Difficulty: hard.
 load mire::vec
 
 pub fn main: () :i32 {
     set acc = SEED_OPACA mut
     set i = 0 :i64 mut
     while i < 8000000 {
-        set v = [] :vec[i64] mut
+        set v = vec::with::capacity::i64(8) mut
         set j = 0 :i64 mut
         while j < 8 {
             set v = vec::push::i64(v j + i)

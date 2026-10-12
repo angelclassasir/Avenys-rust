@@ -1,4 +1,4 @@
-// L4: break y continue dentro del bucle. Dificultad: media.
+// L4: break y continue dentro del bucle. Difficulty: medium.
 pub fn main: () :i32 {
     set acc = SEED_OPACA mut
     set i = 0 :i64 mut

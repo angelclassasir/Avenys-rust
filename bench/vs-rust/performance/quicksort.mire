@@ -1,0 +1,47 @@
+// VS-Rust: Sorting Performance - Quicksort
+load mire::vec
+
+fn quicksort: (arr :&mut vec[i64], low :i64, high :i64) {
+    if low < high {
+        set pivot = vec::get::i64(arr, high)
+        set i = low - 1 :i64 mut
+        set j = low :i64 mut
+        while j < high {
+            if vec::get::i64(arr, j) <= pivot {
+                set i += 1
+                set tmp = vec::get::i64(arr, i)
+                vec::set::i64(arr, i, vec::get::i64(arr, j))
+                vec::set::i64(arr, j, tmp)
+            }
+            set j += 1
+        }
+        set tmp = vec::get::i64(arr, i + 1)
+        vec::set::i64(arr, i + 1, vec::get::i64(arr, high))
+        vec::set::i64(arr, high, tmp)
+        set pi = i + 1
+        quicksort(arr, low, pi - 1)
+        quicksort(arr, pi + 1, high)
+    }
+}
+
+pub fn main: () :i32 {
+    set acc = 0 :i64 mut
+    set iter = 0 :i64 mut
+    while iter < 100 {
+        set v = [] :vec[i64] mut
+        set i = 0 :i64 mut
+        while i < 10000 {
+            set v = vec::push::i64(v, (i * 12345) % 1000003)
+            set i += 1
+        }
+        quicksort(v, 0, vec::len(v) - 1)
+        set i = 0 :i64 mut
+        while i < vec::len(v) {
+            set acc = (acc + vec::get::i64(v, i)) % 1000003
+            set i += 1
+        }
+        set iter += 1
+    }
+    dasu(str(acc))
+    return 0 :i32
+}

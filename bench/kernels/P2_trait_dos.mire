@@ -1,4 +1,4 @@
-// P2: one skill, two impls, dispatch on a runtime branch. Dificultad: media.
+// P2: one skill, two impls, dispatch on a runtime branch. Difficulty: medium.
 pub skill Medible { fn valor: (self) :i64 }
 
 struct Cuadro { lado :i64 }

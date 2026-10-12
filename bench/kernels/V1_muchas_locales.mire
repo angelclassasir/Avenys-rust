@@ -1,4 +1,4 @@
-// V1: 24 locals plus register pressure. Dificultad: media.
+// V1: 24 locals plus register pressure. Difficulty: medium.
 // The accumulator feeds back in. Without it every local is invariant and the
 // whole loop folds to `acc + K * n`.
 pub fn main: () :i32 {
