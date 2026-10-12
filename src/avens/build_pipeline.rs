@@ -509,7 +509,7 @@ fn compile_file_inner(
                     }
                 }
             }
-            let (ir, extern_libs) = mir_to_llvm_with_filename(&mir, source_filename);
+            let (ir, extern_libs) = mir_to_llvm_with_filename(&mir, source_filename, options.c_defs.runtime);
             phase_mir_time = build_start.elapsed().as_millis() as u64;
             progress_phase(
                 "mir",

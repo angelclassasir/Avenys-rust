@@ -832,6 +832,12 @@ impl TypeChecker {
                     DataType::Vector { element_type, .. } => *element_type,
                     DataType::List | DataType::Tuple | DataType::Dict => DataType::Anything,
                     DataType::Map { value_type, .. } => *value_type,
+                    // A raw pointer has no element type of its own, so a slot
+                    // is one machine word. This is what makes `p[i]` usable in
+                    // a freestanding build, where no collection type exists to
+                    // carry an element type, and it matches the 8-byte default
+                    // the rest of the backend already assumes for `ptr`.
+                    DataType::Pointer(_) => DataType::I64,
                     DataType::Unknown => DataType::Unknown,
                     other => {
                         return Err(type_error_at_span(

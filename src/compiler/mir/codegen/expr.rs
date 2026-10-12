@@ -2,6 +2,7 @@ use super::builtins::{builtin_to_pal, compile_pal_builtin};
 use super::resolve::{coerce_to, coerce_to_bool, resolve_named_call, resolve_typed};
 use super::types::{llvm_type_str, render_struct_llvm_type};
 use super::{LlvmCtx, sanitize_fn_name, tmp_extra, tmp_result};
+use crate::avens::config::RuntimeTier;
 use crate::compiler::mir::{DataType, MirCmp, MirConst, MirInst, MirOp, MirValue, Ownership};
 
 /// Resolves the common floating-point result type for a binary operation.
@@ -297,15 +298,20 @@ pub(crate) fn compile_inst(inst: &MirInst, ctx: &mut LlvmCtx) -> Vec<String> {
                     _ => "eq",
                 };
                 if lt == "ptr" && rt == "ptr" {
-                    // Both sides are pointers: this is string equality, so compare
-                    // contents with strcmp. (Note this is content equality, not
-                    // address equality: "a" == "a" is true for distinct buffers.)
-                    let scmp = tmp_extra(ctx, "i32");
-                    extra.push(format!(
-                        "{} = call i32 @strcmp(ptr {}, ptr {})",
-                        scmp, l_str, r_str
-                    ));
-                    format!("%t{} = icmp {} i32 {}, 0", result, cond, scmp)
+                    // Both sides are pointers: for --runtime none, use address equality.
+                    // For other tiers, use string equality (strcmp) for string pointers.
+                    if matches!(ctx.runtime_tier, RuntimeTier::None) {
+                        // Address equality for freestanding builds
+                        format!("%t{} = icmp {} ptr {}, {}", result, cond, l_str, r_str)
+                    } else {
+                        // String equality for managed builds
+                        let scmp = tmp_extra(ctx, "i32");
+                        extra.push(format!(
+                            "{} = call i32 @strcmp(ptr {}, ptr {})",
+                            scmp, l_str, r_str
+                        ));
+                        format!("%t{} = icmp {} i32 {}, 0", result, cond, scmp)
+                    }
                 } else {
                     // Pointer against an integer: an address comparison. This is
                     // the null check, `if ptr == 0`, and it used to be lowered to

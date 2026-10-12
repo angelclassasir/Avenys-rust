@@ -108,6 +108,20 @@ impl MirLower {
                     data_type: target_type.clone(),
                 },
             ),
+            // Integer -> Pointer (null check, pointer arithmetic)
+            (s, DataType::Pointer(_)) if is_int_or_char(s) => MirOp::IntToPtr(
+                src_val,
+                MirType {
+                    data_type: target_type.clone(),
+                },
+            ),
+            // Pointer -> Integer (address arithmetic)
+            (DataType::Pointer(_), t) if is_int_or_char(t) => MirOp::PtrToInt(
+                src_val,
+                MirType {
+                    data_type: target_type.clone(),
+                },
+            ),
             // Integer -> Integer of different width / sign
             (s, t) if is_int_or_char(s) && is_int_or_char(t) => {
                 let s_w = int_width(s);

@@ -358,6 +358,9 @@ impl TypeChecker {
                         *value_type
                     }
                     DataType::List | DataType::Tuple | DataType::Dict => DataType::Anything,
+                    // A raw pointer stores into the slot it addresses, which
+                    // is what makes it writable memory in a freestanding build.
+                    DataType::Pointer(_) => DataType::I64,
                     DataType::Unknown => DataType::Unknown,
                     other => {
                         return Err(type_error(
