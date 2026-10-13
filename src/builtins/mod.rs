@@ -83,7 +83,8 @@ pub fn default_builtin_returns() -> HashMap<String, DataType> {
     }
 
     // Vector with capacity
-    for name in ["vec.with.capacity.i64"] {
+    {
+        let name = "vec.with.capacity.i64";
         builtins.insert(
             name.to_string(),
             DataType::Vector {
