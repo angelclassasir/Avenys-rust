@@ -3,8 +3,8 @@ use std::fs;
 use std::path::Path;
 
 use mire::protocol::{
-    CArtifact, CompileRequest, CompileResponse, CompileStatus, LoadPolicy, SecurityPolicy,
-    SourceEntry, SourceFlags, PROTOCOL_VERSION,
+    CArtifact, CompileRequest, CompileResponse, CompileStatus, LoadPolicy, PROTOCOL_VERSION,
+    SecurityPolicy, SourceEntry, SourceFlags,
 };
 
 fn request_fixture() -> CompileRequest {
@@ -83,7 +83,10 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         "verify" => {
             let owl_request = fs::read(exchange_path(directory, "owl-compile-req.bin"))?;
             let owl_response = fs::read(exchange_path(directory, "owl-compile-resp.bin"))?;
-            assert_eq!(CompileRequest::decode_payload(&owl_request)?, request_fixture());
+            assert_eq!(
+                CompileRequest::decode_payload(&owl_request)?,
+                request_fixture()
+            );
             assert_eq!(
                 CompileResponse::decode_payload(&owl_response)?,
                 response_fixture()

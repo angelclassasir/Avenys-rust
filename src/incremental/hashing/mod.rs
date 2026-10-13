@@ -1067,11 +1067,9 @@ mod tests {
                         let source_path = root.join(format!("mod{i}.mire"));
                         // All threads hit the cold cache at once.
                         barrier.wait();
-                        let mut cache = IncrementalCache::load_with_settings(
-                            &source_path,
-                            test_settings(),
-                        )
-                        .unwrap_or_else(|e| panic!("thread {i} cold load failed: {e:?}"));
+                        let mut cache =
+                            IncrementalCache::load_with_settings(&source_path, test_settings())
+                                .unwrap_or_else(|e| panic!("thread {i} cold load failed: {e:?}"));
                         cache
                             .store_file(
                                 &source_path,
@@ -1107,9 +1105,8 @@ mod tests {
             let mut found = 0usize;
             for i in 0..THREADS {
                 let source_path = root.join(format!("mod{i}.mire"));
-                let mut cache =
-                    IncrementalCache::load_with_settings(&source_path, test_settings())
-                        .expect("reload after cold race");
+                let mut cache = IncrementalCache::load_with_settings(&source_path, test_settings())
+                    .expect("reload after cold race");
                 if cache.cached_analysis(&source_path, i as u64, 0).is_some() {
                     found += 1;
                 }

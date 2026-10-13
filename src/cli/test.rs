@@ -863,10 +863,8 @@ fn write_test_logs(
         global_memory_mb,
     );
 
-    let mut families: std::collections::BTreeMap<
-        String,
-        FamilyMetrics,
-    > = std::collections::BTreeMap::new();
+    let mut families: std::collections::BTreeMap<String, FamilyMetrics> =
+        std::collections::BTreeMap::new();
     for (family, display, status) in results {
         let key = if family.is_empty() {
             "global".to_string()
@@ -979,9 +977,10 @@ fn run_binary_with_metrics(path: &Path) -> std::io::Result<(std::process::Output
                 line.strip_prefix("VmRSS:")
                     .and_then(|value| value.split_whitespace().next())
                     .and_then(|value| value.parse::<u64>().ok())
-            }) {
-                peak_rss_kb = peak_rss_kb.max(rss);
-            }
+            })
+        {
+            peak_rss_kb = peak_rss_kb.max(rss);
+        }
         peak_cpu_runtime_ns = peak_cpu_runtime_ns.max(proc_cpu_runtime_ns(child_pid));
         if child.try_wait()?.is_some() {
             break;
@@ -1057,7 +1056,6 @@ fn should_skip_run(
 fn failed_test_count(cwd: &Path, display: &str) -> u32 {
     declared_test_count(cwd, display).max(1)
 }
-
 
 fn family_log_name(name: &str) -> String {
     if name.eq_ignore_ascii_case("POO") {
@@ -1178,9 +1176,10 @@ pub(crate) fn read_test_roots(cwd: &Path) -> Vec<PathBuf> {
                 found.push(val);
             }
         } else if in_section == "paths"
-            && let Some(v) = kv_string(line, "tests") {
-                found.push(v);
-            }
+            && let Some(v) = kv_string(line, "tests")
+        {
+            found.push(v);
+        }
     }
     if found.is_empty() {
         found.push("tests".to_string());
@@ -1238,10 +1237,7 @@ mod tests {
 
     #[test]
     fn a_failing_unit_without_test_declarations_still_counts_as_one() {
-        let dir = std::env::temp_dir().join(format!(
-            "mire_failed_count_{}",
-            std::process::id()
-        ));
+        let dir = std::env::temp_dir().join(format!("mire_failed_count_{}", std::process::id()));
         fs::create_dir_all(&dir).unwrap();
         // The shape owl's suite uses: a plain main asserting through a helper,
         // with no @[test] declarations anywhere.
@@ -1333,11 +1329,19 @@ mod tests {
         // A helper that exits non-zero without printing `[FAIL]` must not be
         // reported as a pass. The exit status is the last line of defence: it
         // holds even if the wording of a failure message changes.
-        let failed = Command::new("/bin/sh").arg("-c").arg("exit 3").status().unwrap();
+        let failed = Command::new("/bin/sh")
+            .arg("-c")
+            .arg("exit 3")
+            .status()
+            .unwrap();
         assert!(!failed.success());
         assert_eq!(describe_status(&failed), "exited with code 3");
 
-        let ok = Command::new("/bin/sh").arg("-c").arg("exit 0").status().unwrap();
+        let ok = Command::new("/bin/sh")
+            .arg("-c")
+            .arg("exit 0")
+            .status()
+            .unwrap();
         assert!(ok.success());
     }
 }

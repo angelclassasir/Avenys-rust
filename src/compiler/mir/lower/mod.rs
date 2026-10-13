@@ -281,7 +281,11 @@ pub fn lower_program(program: &Program) -> MirProgram {
     lower_program_with_filename(program, "", RuntimeTier::Minimal)
 }
 
-pub fn lower_program_with_filename(program: &Program, filename: &str, runtime_tier: RuntimeTier) -> MirProgram {
+pub fn lower_program_with_filename(
+    program: &Program,
+    filename: &str,
+    runtime_tier: RuntimeTier,
+) -> MirProgram {
     let mut functions = Vec::new();
     let mut entry_point = None;
     let mut extern_functions = Vec::new();
@@ -478,7 +482,7 @@ pub fn lower_program_with_filename(program: &Program, filename: &str, runtime_ti
                     next_temp: 0,
                     vars: HashMap::new(),
                     var_types: HashMap::new(),
-                    runtime_tier: runtime_tier,
+                    runtime_tier,
                     globals: globals.clone(),
                     struct_types: struct_types.clone(),
                     enum_types: enum_types.clone(),
@@ -554,7 +558,7 @@ pub fn lower_program_with_filename(program: &Program, filename: &str, runtime_ti
                             next_temp: 0,
                             vars: HashMap::new(),
                             var_types: HashMap::new(),
-                            runtime_tier: runtime_tier,
+                            runtime_tier,
                             globals: globals.clone(),
                             struct_types: struct_types.clone(),
                             enum_types: enum_types.clone(),
@@ -565,7 +569,7 @@ pub fn lower_program_with_filename(program: &Program, filename: &str, runtime_ti
                             loop_stack: Vec::new(),
                             closure_functions: Vec::new(),
                             scope_stack: Vec::new(),
-                    closure_counter: next_closure_id,
+                            closure_counter: next_closure_id,
                             filename: filename.to_string(),
                         };
 

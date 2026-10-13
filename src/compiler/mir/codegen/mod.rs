@@ -7,8 +7,8 @@ use self::resolve::resolve_typed;
 use self::types::llvm_type_str;
 use self::wrapper::{collect_used_extern_wrappers, generate_extern_wrapper};
 
-use crate::avens::{collect_used_symbols, filter_pal_decls};
 use crate::avens::config::RuntimeTier;
+use crate::avens::{collect_used_symbols, filter_pal_decls};
 
 pub(crate) mod builtins;
 pub(crate) mod expr;

@@ -5,8 +5,8 @@
 //! preserve caller order.
 
 use super::{
-    decode_varint, read_length_delimited, write_bytes_field, write_string_field,
-    write_varint_field, ProtocolError,
+    ProtocolError, decode_varint, read_length_delimited, write_bytes_field, write_string_field,
+    write_varint_field,
 };
 
 pub const PROTOCOL_VERSION: u32 = 1;

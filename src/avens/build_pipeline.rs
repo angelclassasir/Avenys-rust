@@ -153,14 +153,12 @@ fn compile_file_inner(
             // Collect the runtime sources; PAL is added on demand after IR
             // generation, when a PAL symbol is actually referenced.
             let dir = runtime_base.join("runtime");
-            for path in collect_c_sources(&dir)
-                .map_err(|err| {
-                    MireError::new(ErrorKind::Runtime {
-                        span: crate::error::Span::unknown(),
-                        message: format!("Could not read C sources from runtime: {err}"),
-                    })
-                })?
-            {
+            for path in collect_c_sources(&dir).map_err(|err| {
+                MireError::new(ErrorKind::Runtime {
+                    span: crate::error::Span::unknown(),
+                    message: format!("Could not read C sources from runtime: {err}"),
+                })
+            })? {
                 let fname = path.file_name().unwrap().to_string_lossy();
                 // A `_minimal.c` variant supersedes its full counterpart when
                 // both are present; otherwise include the file unless its
@@ -182,16 +180,12 @@ fn compile_file_inner(
             let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
             let compiler_runtime = manifest_dir.join("src/runtime");
             if compiler_runtime.exists() {
-                for path in collect_c_sources(&compiler_runtime)
-                    .map_err(|err| {
-                        MireError::new(ErrorKind::Runtime {
-                            span: crate::error::Span::unknown(),
-                            message: format!(
-                                "Could not read C sources from compiler runtime: {err}"
-                            ),
-                        })
-                    })?
-                {
+                for path in collect_c_sources(&compiler_runtime).map_err(|err| {
+                    MireError::new(ErrorKind::Runtime {
+                        span: crate::error::Span::unknown(),
+                        message: format!("Could not read C sources from compiler runtime: {err}"),
+                    })
+                })? {
                     let fname = path.file_name().unwrap().to_string_lossy();
                     // A `_minimal.c` variant supersedes its full counterpart
                     // when both are present; otherwise include the file unless
@@ -450,7 +444,8 @@ fn compile_file_inner(
     }
 
     let (mut ir, extern_libs) = {
-        let mut mir = lower_program_with_filename(&program, source_filename, options.c_defs.runtime);
+        let mut mir =
+            lower_program_with_filename(&program, source_filename, options.c_defs.runtime);
 
         // Pre-codegen validation: surface calls to symbols the backend cannot
         // resolve (stale bare builtins, removed PAL functions, or unloaded
@@ -509,7 +504,8 @@ fn compile_file_inner(
                     }
                 }
             }
-            let (ir, extern_libs) = mir_to_llvm_with_filename(&mir, source_filename, options.c_defs.runtime);
+            let (ir, extern_libs) =
+                mir_to_llvm_with_filename(&mir, source_filename, options.c_defs.runtime);
             phase_mir_time = build_start.elapsed().as_millis() as u64;
             progress_phase(
                 "mir",
@@ -784,8 +780,8 @@ fn compile_file_inner(
                     let cache_dir = &cache_dir;
                     let runtime_base = &runtime_base;
                     let opt_level = options.opt_level;
-                    s.spawn(
-                        move || match precompile_c_object(src, cache_dir, runtime_base, opt_level) {
+                    s.spawn(move || {
+                        match precompile_c_object(src, cache_dir, runtime_base, opt_level) {
                             Ok(obj) => {
                                 results.lock().unwrap()[i] = obj;
                             }
@@ -793,8 +789,8 @@ fn compile_file_inner(
                                 let mut results = results.lock().unwrap();
                                 results[i] = format!("<{}: {}>", src, e);
                             }
-                        },
-                    );
+                        }
+                    });
                 }
             });
             let results = results.into_inner().unwrap();
@@ -917,8 +913,9 @@ mod tests {
     fn a_test_build_is_artifact_independent() {
         // The library case that made `owl test` report every file as ok having
         // run nothing: kioto, mire, sdl, sqlite and blu all declare this.
-        let shared = normalize_test_build_options(&opts(LibType::Shared, RuntimeTier::Minimal, true))
-            .expect("shared artifact must be normalized for a test");
+        let shared =
+            normalize_test_build_options(&opts(LibType::Shared, RuntimeTier::Minimal, true))
+                .expect("shared artifact must be normalized for a test");
         assert!(matches!(shared.c_defs.artifact, LibType::Bin));
 
         let statik =
@@ -927,8 +924,9 @@ mod tests {
         assert!(matches!(statik.c_defs.artifact, LibType::Bin));
 
         // Already an executable: nothing to do, so nothing is cloned.
-        assert!(normalize_test_build_options(&opts(LibType::Bin, RuntimeTier::Minimal, true))
-            .is_none());
+        assert!(
+            normalize_test_build_options(&opts(LibType::Bin, RuntimeTier::Minimal, true)).is_none()
+        );
     }
 
     #[test]
@@ -942,14 +940,17 @@ mod tests {
 
         // A minimal-tier project keeps its tier. Paired with a shared artifact
         // so there is a normalization to observe: only the artifact moves.
-        let minimal = normalize_test_build_options(&opts(LibType::Shared, RuntimeTier::Minimal, true))
-            .expect("shared artifact must be normalized alongside a minimal tier");
+        let minimal =
+            normalize_test_build_options(&opts(LibType::Shared, RuntimeTier::Minimal, true))
+                .expect("shared artifact must be normalized alongside a minimal tier");
         assert!(matches!(minimal.c_defs.runtime, RuntimeTier::Minimal));
         assert!(matches!(minimal.c_defs.artifact, LibType::Bin));
 
         // Bin + minimal needs no normalization at all, and must not clone to
         // say so.
-        assert!(normalize_test_build_options(&opts(LibType::Bin, RuntimeTier::Minimal, true)).is_none());
+        assert!(
+            normalize_test_build_options(&opts(LibType::Bin, RuntimeTier::Minimal, true)).is_none()
+        );
     }
 
     #[test]
@@ -972,9 +973,13 @@ mod tests {
         // The whole point is that this applies to tests only. A library build
         // must keep the artifact it was configured with, or packages would
         // stop being able to publish.
-        assert!(normalize_test_build_options(&opts(LibType::Shared, RuntimeTier::None, false))
-            .is_none());
-        assert!(normalize_test_build_options(&opts(LibType::Static, RuntimeTier::Minimal, false))
-            .is_none());
+        assert!(
+            normalize_test_build_options(&opts(LibType::Shared, RuntimeTier::None, false))
+                .is_none()
+        );
+        assert!(
+            normalize_test_build_options(&opts(LibType::Static, RuntimeTier::Minimal, false))
+                .is_none()
+        );
     }
 }

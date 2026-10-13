@@ -96,7 +96,7 @@ impl MirLower {
             // zero made a nested closure collide with the one enclosing it --
             // both were emitted as `closure_0`, and llc rejected the module
             // with "invalid redefinition of function".
-                    closure_counter: self.closure_counter,
+            closure_counter: self.closure_counter,
             filename: self.filename.clone(),
             scope_stack: Vec::new(),
         };

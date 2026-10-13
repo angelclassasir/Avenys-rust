@@ -5,8 +5,8 @@ use super::types::{
     data_type_to_kind, extract_data_type, is_map_or_dict_type, is_trivial_deref,
     llvm_elem_type_str, llvm_type_byte_size,
 };
-use crate::compiler::location::expression_location;
 use crate::avens::config::RuntimeTier;
+use crate::compiler::location::expression_location;
 use crate::compiler::mir::*;
 use crate::parser::ast::{DataType, Expression, Literal};
 
@@ -49,16 +49,17 @@ fn collect_concat_operands(
         right,
         ..
     } = expr
-        && operator == "+" {
-            let left_ty = extract_data_type(left);
-            let right_ty = extract_data_type(right);
-            if left_ty == DataType::Str && right_ty == DataType::Str {
-                // Recursively collect operands from left and right
-                collect_concat_operands(lower, left, operands, to_free);
-                collect_concat_operands(lower, right, operands, to_free);
-                return;
-            }
+        && operator == "+"
+    {
+        let left_ty = extract_data_type(left);
+        let right_ty = extract_data_type(right);
+        if left_ty == DataType::Str && right_ty == DataType::Str {
+            // Recursively collect operands from left and right
+            collect_concat_operands(lower, left, operands, to_free);
+            collect_concat_operands(lower, right, operands, to_free);
+            return;
         }
+    }
     // Not a string concat, add the expression as a single operand
     let value = lower.lower_expression(expr);
     if concat_operand_is_owned(expr) && matches!(value, MirValue::Temp(_)) {
@@ -157,7 +158,8 @@ impl MirLower {
             Expression::Literal { lit, .. } => {
                 let expr_ty = extract_data_type(expr);
                 // Special handling for None literal when target is Maybe[T]
-                if matches!(lit, Literal::None) && matches!(&expr_ty, DataType::Maybe { inner: _ }) {
+                if matches!(lit, Literal::None) && matches!(&expr_ty, DataType::Maybe { inner: _ })
+                {
                     // Unboxed Maybe: { i1 tag, T value } with tag = 0
                     // Allocate struct (zero-initialized = {i1 0, T zero}), then load
                     let _inner_ty = match &expr_ty {
@@ -444,16 +446,10 @@ impl MirLower {
             Expression::Call { name, args, .. } if crate::bitcast_target(name).is_some() => {
                 let target = crate::bitcast_target(name).unwrap_or(DataType::Unknown);
                 let source = self.lower_expression(&args[0]);
-                let dst_type = MirType {
-                    data_type: target,
-                };
+                let dst_type = MirType { data_type: target };
                 let result = self.new_temp();
                 let block = self.current_block;
-                self.func.blocks[block].push(
-                    Some(result),
-                    MirOp::BitCast(source, dst_type),
-                    loc,
-                );
+                self.func.blocks[block].push(Some(result), MirOp::BitCast(source, dst_type), loc);
                 MirValue::temp(result)
             }
             Expression::Call { name, args, .. } if name == "range" => {
@@ -487,16 +483,17 @@ impl MirLower {
                     && matches!(
                         arg_type,
                         DataType::Str | DataType::Ref { .. } | DataType::RefMut { .. }
-                    ) {
-                        let len = s.len() as i64;
-                        let result = self.new_temp();
-                        self.func.blocks[self.current_block].push(
-                            Some(result),
-                            MirOp::Copy(MirValue::Const(MirConst::Int(len))),
-                            loc,
-                        );
-                        return MirValue::temp(result);
-                    }
+                    )
+                {
+                    let len = s.len() as i64;
+                    let result = self.new_temp();
+                    self.func.blocks[self.current_block].push(
+                        Some(result),
+                        MirOp::Copy(MirValue::Const(MirConst::Int(len))),
+                        loc,
+                    );
+                    return MirValue::temp(result);
+                }
                 let rt_name = match arg_type {
                     DataType::Str | DataType::Ref { .. } | DataType::RefMut { .. } => {
                         "rt_strings_len"
@@ -909,7 +906,10 @@ impl MirLower {
                             ),
                             loc,
                         );
-                        if matches!(actual_field_type, DataType::Array { .. } | DataType::StructNamed(_)) {
+                        if matches!(
+                            actual_field_type,
+                            DataType::Array { .. } | DataType::StructNamed(_)
+                        ) {
                             return MirValue::temp(gep_result);
                         }
                         let load_result = self.new_temp();
@@ -981,7 +981,10 @@ impl MirLower {
                     );
                     MirValue::temp(result)
                 }
-                _ => { debug_assert!(false, "unhandled Expression variant in lowering"); MirValue::Const(MirConst::None) },
+                _ => {
+                    debug_assert!(false, "unhandled Expression variant in lowering");
+                    MirValue::Const(MirConst::None)
+                }
             },
 
             Expression::Index {
@@ -1073,7 +1076,9 @@ impl MirLower {
                             MirOp::Call(
                                 MirValue::Global("rt_panic_loc".to_string()),
                                 vec![
-                                    MirValue::Const(MirConst::Str("index out of bounds".to_string())),
+                                    MirValue::Const(MirConst::Str(
+                                        "index out of bounds".to_string(),
+                                    )),
                                     MirValue::Const(MirConst::Int(loc.0 as i64)),
                                     MirValue::Const(MirConst::Int(loc.1 as i64)),
                                     MirValue::Const(MirConst::Str(self.filename.clone())),
@@ -1366,7 +1371,10 @@ impl MirLower {
                     );
                     MirValue::temp(final_list)
                 }
-                _ => { debug_assert!(false, "unhandled Expression variant in lowering"); MirValue::Const(MirConst::None) },
+                _ => {
+                    debug_assert!(false, "unhandled Expression variant in lowering");
+                    MirValue::Const(MirConst::None)
+                }
             },
             Expression::EnumVariantPath {
                 enum_name,
@@ -1784,7 +1792,12 @@ impl MirLower {
                     MirValue::temp(value)
                 }
             }
-            Expression::Pipeline { input, stage, data_type, .. } => {
+            Expression::Pipeline {
+                input,
+                stage,
+                data_type,
+                ..
+            } => {
                 let input_val = self.lower_expression(input);
                 // Function/identifier stage: call with input as first argument
                 let stage_val = self.lower_expression(stage);
@@ -1802,7 +1815,10 @@ impl MirLower {
                 );
                 MirValue::temp(result)
             }
-            _ => { debug_assert!(false, "unhandled Expression variant in lowering"); MirValue::Const(MirConst::None) },
+            _ => {
+                debug_assert!(false, "unhandled Expression variant in lowering");
+                MirValue::Const(MirConst::None)
+            }
         }
     }
 
@@ -1986,7 +2002,10 @@ impl MirLower {
                 );
                 MirValue::temp(result)
             }
-            _ => { debug_assert!(false, "unhandled Expression variant in lowering"); MirValue::Const(MirConst::None) },
+            _ => {
+                debug_assert!(false, "unhandled Expression variant in lowering");
+                MirValue::Const(MirConst::None)
+            }
         }
     }
 }

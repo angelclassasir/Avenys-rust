@@ -467,10 +467,10 @@ impl Parser {
         }
     }
 
-      fn check_keyword_ident(&self) -> bool {
-          matches!(
-              self.peek().ttype,
-              TokenType::NewKw
+    fn check_keyword_ident(&self) -> bool {
+        matches!(
+            self.peek().ttype,
+            TokenType::NewKw
                   | TokenType::DropKw
                   | TokenType::MoveKw
                   | TokenType::OwnKw
@@ -482,24 +482,24 @@ impl Parser {
                   // — the operator after a complete left operand, the clause via
                   // expect(TokenType::In) — so neither can be mistaken for a name.
                   | TokenType::In
-          )
-      }
+        )
+    }
 
-      fn parse_keyword_identifier(&mut self) -> Expression {
-          let token = self.peek();
-          let name = match token.ttype {
-              TokenType::NewKw => "new",
-              TokenType::DropKw => "drop",
-              TokenType::MoveKw => "move",
-              TokenType::OwnKw => "own",
-              TokenType::Set => "set",
-              TokenType::To => "to",
-              TokenType::In => "in",
-              _ => unreachable!(),
-          };
-          self.advance();
-          identifier_expr_with_pos(name, token.line, token.column)
-      }
+    fn parse_keyword_identifier(&mut self) -> Expression {
+        let token = self.peek();
+        let name = match token.ttype {
+            TokenType::NewKw => "new",
+            TokenType::DropKw => "drop",
+            TokenType::MoveKw => "move",
+            TokenType::OwnKw => "own",
+            TokenType::Set => "set",
+            TokenType::To => "to",
+            TokenType::In => "in",
+            _ => unreachable!(),
+        };
+        self.advance();
+        identifier_expr_with_pos(name, token.line, token.column)
+    }
 
     fn check_lifecycle_expression_prefix(&self) -> bool {
         matches!(

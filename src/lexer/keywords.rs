@@ -1,8 +1,6 @@
 use super::{Token, TokenType};
 
 pub(super) fn token_for(ident: String, start_line: usize, start_col: usize) -> Token {
-    
-
     match ident.as_str() {
         "set" => Token::new(TokenType::Set, start_line, start_col).with_value("set".to_string()),
         "load" => Token::new(TokenType::Load, start_line, start_col),

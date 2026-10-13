@@ -14,10 +14,9 @@ pub mod types;
 
 pub use avens::{
     BuildMode, BuildOptions, BuildResult, CDefs, EntryContainment, ImportMode, LibType,
-    MireCacheConfig, MireManifest, MirePaths, MireProject, OptLevel, RuntimeTier,
-    SecurityConfig, SecurityMode, TrustTier,
-    check_entry_containment, compile_file_with_avenys, default_output_dir, find_project_root,
-    load_config_file, load_exports, load_project_manifest,
+    MireCacheConfig, MireManifest, MirePaths, MireProject, OptLevel, RuntimeTier, SecurityConfig,
+    SecurityMode, TrustTier, check_entry_containment, compile_file_with_avenys, default_output_dir,
+    find_project_root, load_config_file, load_exports, load_project_manifest,
 };
 pub use compiler::{
     AnalysisReport, WarningConfig, analyze_program, analyze_program_with_warnings,

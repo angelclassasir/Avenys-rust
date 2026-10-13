@@ -336,17 +336,15 @@ pub(crate) fn parse_common_with_file(
                 let value = args
                     .get(i)
                     .ok_or_else(|| cli_msg("Missing mode after --security-mode"))?;
-                security_mode = Some(
-                    match value.as_str() {
-                        "open" => mire::SecurityMode::Open,
-                        "strict" => mire::SecurityMode::Strict,
-                        other => {
-                            return Err(cli_msg(&format!(
-                                "Security mode must be open or strict, got '{other}'"
-                            )));
-                        }
-                    },
-                );
+                security_mode = Some(match value.as_str() {
+                    "open" => mire::SecurityMode::Open,
+                    "strict" => mire::SecurityMode::Strict,
+                    other => {
+                        return Err(cli_msg(&format!(
+                            "Security mode must be open or strict, got '{other}'"
+                        )));
+                    }
+                });
             }
             "--extern" => {
                 i += 1;
@@ -492,8 +490,7 @@ pub(crate) fn apply_cli_c_defs(defs: &mut mire::CDefs, options: &CommonOptions) 
     defs.sources.extend(options.c_sources.iter().cloned());
     defs.libs.extend(options.c_libs.iter().cloned());
     defs.cflags.extend(options.cflags.iter().cloned());
-    defs
-        .include
+    defs.include
         .extend(options.c_includes.iter().map(PathBuf::from));
     // CDefs has no dedicated defines list; a define is a -D flag, so that is
     // what it becomes. `--define FOO` and `--define FOO=1` both work.

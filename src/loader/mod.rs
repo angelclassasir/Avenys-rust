@@ -218,9 +218,13 @@ impl<'a> ImportResolver<'a> {
                 } => {
                     let current_dir = canonical.parent().unwrap_or_else(|| Path::new("."));
                     let span = Span::new(*line, *column);
-                    if let Ok((target, _depth)) =
-                        lload::resolve_load_local_target(self, rel_path, *absolute, current_dir, span)
-                    {
+                    if let Ok((target, _depth)) = lload::resolve_load_local_target(
+                        self,
+                        rel_path,
+                        *absolute,
+                        current_dir,
+                        span,
+                    ) {
                         self.scan_dependency_candidates(&target);
                     }
                 }
@@ -235,7 +239,12 @@ impl<'a> ImportResolver<'a> {
     /// time, which covers the parent-module fallback in `expand_load`: when
     /// `load pkg::module::group` names no `group` export, the expansion loads
     /// `pkg::module` and filters it, so the scan has to visit that parent too.
-    fn scan_load_targets(&mut self, segments: &[String], line: usize, column: usize) -> Vec<PathBuf> {
+    fn scan_load_targets(
+        &mut self,
+        segments: &[String],
+        line: usize,
+        column: usize,
+    ) -> Vec<PathBuf> {
         let mut targets = Vec::new();
         let mut last_error = None;
         for take in (1..=segments.len()).rev() {
@@ -322,9 +331,7 @@ impl<'a> ImportResolver<'a> {
         // Only the success path needs restoring: `loader_error` reads the
         // marker when it builds the error, so a propagating `?` has already
         // captured the right filename.
-        let previous_file = self
-            .current_file
-            .replace(canonical.display().to_string());
+        let previous_file = self.current_file.replace(canonical.display().to_string());
         let imported_symbol_candidates = collect_program_dependency_candidates(&parsed.program);
         let mut expanded = Vec::new();
         let mut direct_dependencies = Vec::new();

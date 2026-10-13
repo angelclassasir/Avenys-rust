@@ -105,12 +105,13 @@ impl TypeChecker {
         }
 
         if let AssignmentTarget::Variable(name) = target
-            && self.is_constant(name) {
-                return Err(type_error_at_span(
-                    self.current_span,
-                    format!("Cannot reassign constant '{}'", name),
-                ));
-            }
+            && self.is_constant(name)
+        {
+            return Err(type_error_at_span(
+                self.current_span,
+                format!("Cannot reassign constant '{}'", name),
+            ));
+        }
 
         if !is_target_mutable {
             return Err(type_error_at_span(
@@ -697,9 +698,10 @@ impl TypeChecker {
                 && !fields.iter().any(|f| match f {
                     Statement::Let { name, .. } => name == pf_name,
                     _ => false,
-                }) {
-                    fields.push(parent_field.clone());
-                }
+                })
+            {
+                fields.push(parent_field.clone());
+            }
         }
         self.check_container_statements(fields)
     }

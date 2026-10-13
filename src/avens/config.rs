@@ -191,8 +191,7 @@ pub struct MireMacros {
 /// - `none`:  no Mire runtime at all; the program must provide its own panic handler
 ///   and any PAL symbols it needs.  PAL declarations are still emitted when
 ///   the program actually calls PAL functions (PAL is separate from the runtime).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[derive(Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum RuntimeTier {
     #[default]
     Minimal,
@@ -251,7 +250,6 @@ impl<'de> serde::Deserialize<'de> for LibType {
         })
     }
 }
-
 
 impl serde::Serialize for RuntimeTier {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
@@ -427,8 +425,14 @@ mod tests {
     fn size_levels_carry_their_preference_as_an_attribute() {
         // The size preference is not a pipeline; it is an attribute LLVM reads
         // off each function, which is why the flag alone was not enough.
-        assert_eq!(OptLevel::parse("s").unwrap().size_attribute(), Some("optsize"));
-        assert_eq!(OptLevel::parse("z").unwrap().size_attribute(), Some("minsize"));
+        assert_eq!(
+            OptLevel::parse("s").unwrap().size_attribute(),
+            Some("optsize")
+        );
+        assert_eq!(
+            OptLevel::parse("z").unwrap().size_attribute(),
+            Some("minsize")
+        );
         for input in ["0", "1", "2", "3"] {
             assert_eq!(OptLevel::parse(input).unwrap().size_attribute(), None);
         }

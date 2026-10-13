@@ -267,7 +267,9 @@ impl Parser {
             // Index operator: p[i] for pointer/array indexing
             // Only apply to non-literal expressions (variables, pointers, calls, etc.)
             // Literal lists/dicts like [1, 2] or {a: 1} should not be indexable
-            if self.check(TokenType::Lbracket) && !matches!(expr, Expression::List { .. } | Expression::Dict { .. }) {
+            if self.check(TokenType::Lbracket)
+                && !matches!(expr, Expression::List { .. } | Expression::Dict { .. })
+            {
                 self.advance();
                 self.skip_newlines();
                 let index = self.parse_additive()?;

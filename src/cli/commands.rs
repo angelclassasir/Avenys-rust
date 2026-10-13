@@ -1,8 +1,6 @@
 use crate::cli::*;
 use mire::error::diagnostic::WarningFilter;
-use mire::{
-    BuildOptions, ImportMode, compile_file_with_avenys,
-};
+use mire::{BuildOptions, ImportMode, compile_file_with_avenys};
 use std::fs;
 use std::path::Path;
 use std::process::Command;

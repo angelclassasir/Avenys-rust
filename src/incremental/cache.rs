@@ -280,7 +280,10 @@ fn cache_version_is_current(cache_dir: &Path) -> bool {
     };
     let mut lines = content.lines();
     let format = lines.next().map(str::trim);
-    let version = lines.last().map(str::trim).and_then(|v| v.parse::<u32>().ok());
+    let version = lines
+        .last()
+        .map(str::trim)
+        .and_then(|v| v.parse::<u32>().ok());
     format == Some(NEW_CACHE_FORMAT) && version == Some(NEW_FORMAT_VERSION)
 }
 

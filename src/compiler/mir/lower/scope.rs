@@ -54,7 +54,8 @@ fn owns_pointer_on_scope_exit(ty: &DataType) -> bool {
 impl MirLower {
     /// Enter a new lexical scope.
     pub(crate) fn begin_scope(&mut self) {
-        self.scope_stack.push(crate::compiler::mir::lower::ScopeFrame::default());
+        self.scope_stack
+            .push(crate::compiler::mir::lower::ScopeFrame::default());
     }
 
     /// Leave the innermost scope, releasing what it owned.
@@ -101,12 +102,17 @@ impl MirLower {
         }
         match found {
             Some(index) => {
-                self.scope_stack[index].owned_locals.retain(|(n, _, _)| n != name);
+                self.scope_stack[index]
+                    .owned_locals
+                    .retain(|(n, _, _)| n != name);
                 self.scope_stack[index]
                     .owned_locals
                     .push((name.to_string(), slot, ty));
             }
-            None => self.frame_mut().owned_locals.push((name.to_string(), slot, ty)),
+            None => self
+                .frame_mut()
+                .owned_locals
+                .push((name.to_string(), slot, ty)),
         }
     }
 
@@ -207,7 +213,13 @@ impl MirLower {
                 let names: Vec<String> = self
                     .scope_stack
                     .last()
-                    .map(|frame| frame.owned_locals.iter().map(|(n, _, _)| n.clone()).collect())
+                    .map(|frame| {
+                        frame
+                            .owned_locals
+                            .iter()
+                            .map(|(n, _, _)| n.clone())
+                            .collect()
+                    })
                     .unwrap_or_default();
                 for name in names {
                     self.mark_local_escaped(&name);
@@ -231,7 +243,13 @@ impl MirLower {
                 let names: Vec<String> = self
                     .scope_stack
                     .last()
-                    .map(|frame| frame.owned_locals.iter().map(|(n, _, _)| n.clone()).collect())
+                    .map(|frame| {
+                        frame
+                            .owned_locals
+                            .iter()
+                            .map(|(n, _, _)| n.clone())
+                            .collect()
+                    })
                     .unwrap_or_default();
                 for name in names {
                     self.mark_local_escaped(&name);

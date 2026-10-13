@@ -323,10 +323,9 @@ impl TypeChecker {
                 }
                 Statement::Function {
                     name, attributes, ..
+                } if attributes.iter().any(|a| a.name == "macro!") => {
+                    self.macro_names.insert(name.clone());
                 }
-                    if attributes.iter().any(|a| a.name == "macro!") => {
-                        self.macro_names.insert(name.clone());
-                    }
                 _ => {}
             }
         }

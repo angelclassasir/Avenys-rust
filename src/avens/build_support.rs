@@ -458,7 +458,12 @@ pub(super) fn dedup_llvm_declarations(ir: &str) -> String {
     out.join("\n")
 }
 
-pub(super) fn c_object_hash(content: &str, position_independent: bool, cflags: &[String], opt_level: OptLevel) -> u64 {
+pub(super) fn c_object_hash(
+    content: &str,
+    position_independent: bool,
+    cflags: &[String],
+    opt_level: OptLevel,
+) -> u64 {
     let mut hasher = crate::incremental::FxHasher::new();
     content.hash(&mut hasher);
     // The same C source must not share an object between executable and shared
@@ -509,7 +514,9 @@ pub(super) fn precompile_c_object(
         .wrapping_add(C_PRECOMPILE_SEQ.fetch_add(1, Ordering::Relaxed));
     let tmp_path = cache_dir.join(format!("{:x}.{:016x}.o", hash, unique));
     let mut cmd = std::process::Command::new("clang");
-    cmd.args(["-c", opt_level.as_opt_flag(), "-o"]).arg(&tmp_path).arg(c_path);
+    cmd.args(["-c", opt_level.as_opt_flag(), "-o"])
+        .arg(&tmp_path)
+        .arg(c_path);
     if is_shared {
         cmd.arg("-fPIC");
     }
@@ -870,12 +877,11 @@ pub(super) fn inject_macros(
                         name: fname,
                         attributes,
                         ..
+                    } if attributes.iter().any(|a| a.name == "macro!")
+                        && existing_fns.insert(fname.clone()) =>
+                    {
+                        program.statements.push(stmt);
                     }
-                        if attributes.iter().any(|a| a.name == "macro!")
-                            && existing_fns.insert(fname.clone())
-                        => {
-                            program.statements.push(stmt);
-                        }
                     _ => {}
                 }
             }
@@ -1078,7 +1084,8 @@ fn runtime_symbol_to_c_file(sym: &str) -> Option<&'static str> {
         Some("memory/allocator/managed.c")
     } else if sym.starts_with("rt_check_bounds") {
         Some("memory/safety/safety.c")
-    } else if sym == "ireru" || sym.starts_with("rt_io_read")
+    } else if sym == "ireru"
+        || sym.starts_with("rt_io_read")
         || sym == "rt_io_available"
         || sym == "rt_io_is_tty"
     {
@@ -1234,9 +1241,21 @@ pub(crate) fn runtime_c_file_needs_pal(source_path: &std::path::Path) -> bool {
     matches!(
         source_path.file_name().and_then(|name| name.to_str()),
         Some(
-            "error.c" | "helpers.c" | "input.c" | "managed.c" | "managed_minimal.c"
-                | "maps.c" | "maps_internal.c" | "math.c" | "mire_types.c" | "output.c" | "vecs.c"
-                | "strings.c" | "strings_minimal.c" | "thread.c" | "pal_bridge.c"
+            "error.c"
+                | "helpers.c"
+                | "input.c"
+                | "managed.c"
+                | "managed_minimal.c"
+                | "maps.c"
+                | "maps_internal.c"
+                | "math.c"
+                | "mire_types.c"
+                | "output.c"
+                | "vecs.c"
+                | "strings.c"
+                | "strings_minimal.c"
+                | "thread.c"
+                | "pal_bridge.c"
                 | "time.c",
         )
     )
@@ -1259,30 +1278,48 @@ mod runtime_source_tests {
             runtime_symbol_to_c_file("rt_pal_unix_connect"),
             Some("pal_bridge/pal_bridge.c")
         );
-        assert!(runtime_files
-            .iter()
-            .any(|file| file == "pal_bridge/pal_bridge.c"));
-        assert!(runtime_c_file_needs_pal(Path::new("runtime/pal_bridge/pal_bridge.c")));
-        assert!(runtime_c_file_needs_pal(Path::new("runtime/std/input/input.c")));
-        assert!(runtime_c_file_needs_pal(Path::new("runtime/std/output/output.c")));
-        assert!(runtime_c_file_needs_pal(Path::new("runtime/std/error/error.c")));
-        assert!(runtime_c_file_needs_pal(Path::new("runtime/collections/vec/vecs.c")));
-        assert!(runtime_c_file_needs_pal(Path::new("runtime/collections/map/maps.c")));
+        assert!(
+            runtime_files
+                .iter()
+                .any(|file| file == "pal_bridge/pal_bridge.c")
+        );
+        assert!(runtime_c_file_needs_pal(Path::new(
+            "runtime/pal_bridge/pal_bridge.c"
+        )));
+        assert!(runtime_c_file_needs_pal(Path::new(
+            "runtime/std/input/input.c"
+        )));
+        assert!(runtime_c_file_needs_pal(Path::new(
+            "runtime/std/output/output.c"
+        )));
+        assert!(runtime_c_file_needs_pal(Path::new(
+            "runtime/std/error/error.c"
+        )));
+        assert!(runtime_c_file_needs_pal(Path::new(
+            "runtime/collections/vec/vecs.c"
+        )));
+        assert!(runtime_c_file_needs_pal(Path::new(
+            "runtime/collections/map/maps.c"
+        )));
         assert!(runtime_c_file_needs_pal(Path::new(
             "runtime/collections/map/maps_internal.c"
         )));
-        assert!(runtime_c_file_needs_pal(Path::new("runtime/core/strings.c")));
+        assert!(runtime_c_file_needs_pal(Path::new(
+            "runtime/core/strings.c"
+        )));
         assert!(runtime_c_file_needs_pal(Path::new(
             "runtime/core/strings_minimal.c"
         )));
         assert!(runtime_c_file_needs_pal(Path::new("runtime/core/math.c")));
-        assert!(runtime_c_file_needs_pal(Path::new("runtime/core/mire_types.c")));
-        assert!(runtime_c_file_needs_pal(
-            Path::new("runtime/memory/allocator/managed.c")
-        ));
-        assert!(runtime_c_file_needs_pal(
-            Path::new("runtime/memory/allocator/managed_minimal.c")
-        ));
+        assert!(runtime_c_file_needs_pal(Path::new(
+            "runtime/core/mire_types.c"
+        )));
+        assert!(runtime_c_file_needs_pal(Path::new(
+            "runtime/memory/allocator/managed.c"
+        )));
+        assert!(runtime_c_file_needs_pal(Path::new(
+            "runtime/memory/allocator/managed_minimal.c"
+        )));
     }
 
     #[test]
@@ -1308,10 +1345,7 @@ mod runtime_source_tests {
             runtime_symbol_to_c_file("rt_io_read_line"),
             Some("std/input/input.c")
         );
-        assert_eq!(
-            runtime_symbol_to_c_file("ireru"),
-            Some("std/input/input.c")
-        );
+        assert_eq!(runtime_symbol_to_c_file("ireru"), Some("std/input/input.c"));
         assert_eq!(
             runtime_symbol_to_c_file("rt_io_write_line"),
             Some("std/output/output.c")
@@ -1324,18 +1358,21 @@ mod runtime_source_tests {
         let symbols = HashSet::from(["rt_dict_free".to_string()]);
         let files = minimal_runtime_c_files(&symbols);
         assert!(files.iter().any(|file| file == "collections/map/maps.c"));
-        assert!(files
-            .iter()
-            .any(|file| file == "collections/map/maps_internal.c"));
-        assert!(files
-            .iter()
-            .any(|file| file == "memory/allocator/managed.c"));
+        assert!(
+            files
+                .iter()
+                .any(|file| file == "collections/map/maps_internal.c")
+        );
+        assert!(
+            files
+                .iter()
+                .any(|file| file == "memory/allocator/managed.c")
+        );
     }
 
     #[test]
     fn runtime_source_collection_descends_into_module_directories() {
-        let runtime_directory =
-            Path::new(env!("CARGO_MANIFEST_DIR")).join("src/runtime");
+        let runtime_directory = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/runtime");
         let sources = collect_c_sources(&runtime_directory).expect("runtime sources are readable");
         let relative_sources: HashSet<String> = sources
             .iter()
@@ -1367,12 +1404,16 @@ mod runtime_source_tests {
     fn input_builtin_call_is_retained_and_selects_the_input_runtime_module() {
         let used = collect_used_symbols("%input = call ptr @ireru(ptr null)");
         assert!(used.runtime.contains("ireru"));
-        assert!(generate_runtime_declarations("%input = call ptr @ireru(ptr null)")
-            .contains("declare ptr @ireru(ptr)"));
+        assert!(
+            generate_runtime_declarations("%input = call ptr @ireru(ptr null)")
+                .contains("declare ptr @ireru(ptr)")
+        );
         assert_eq!(runtime_symbol_to_c_file("ireru"), Some("std/input/input.c"));
-        assert!(minimal_runtime_c_files(&used.runtime)
-            .iter()
-            .any(|file| file == "std/input/input.c"));
+        assert!(
+            minimal_runtime_c_files(&used.runtime)
+                .iter()
+                .any(|file| file == "std/input/input.c")
+        );
     }
 
     #[test]
@@ -1382,6 +1423,8 @@ mod runtime_source_tests {
 
         assert!(files.iter().any(|file| file == "memory/safety/safety.c"));
         assert!(files.iter().any(|file| file == "std/error/error.c"));
-        assert!(runtime_c_file_needs_pal(Path::new("runtime/std/error/error.c")));
+        assert!(runtime_c_file_needs_pal(Path::new(
+            "runtime/std/error/error.c"
+        )));
     }
 }

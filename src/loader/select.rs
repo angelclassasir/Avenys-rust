@@ -236,7 +236,9 @@ fn resolve_statement_deps(
                 let tail_match = |name: Option<&str>| {
                     name.is_some_and(|name| {
                         normalized_export.is_none()
-                            && name.rsplit_once('.').is_some_and(|(_, tail)| tail == candidate_name)
+                            && name
+                                .rsplit_once('.')
+                                .is_some_and(|(_, tail)| tail == candidate_name)
                     })
                 };
                 // A namespace-parent export (e.g. `vec.push`) satisfies a

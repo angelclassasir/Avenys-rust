@@ -496,7 +496,10 @@ pub(crate) fn compile_inst(inst: &MirInst, ctx: &mut LlvmCtx) -> Vec<String> {
                 // Same ordering fix as dasu: write the prompt first, then flush,
                 // otherwise the prompt is still sitting in the buffer when the
                 // flush runs and the reader sees nothing.
-                extra.push(format!("%t{} = call ptr @ireru(ptr {})", result, prompt_ptr));
+                extra.push(format!(
+                    "%t{} = call ptr @ireru(ptr {})",
+                    result, prompt_ptr
+                ));
                 extra.push("call i32 @fflush(ptr null)".to_string());
                 String::new()
             } else if name_opt == Some("env_args") {
