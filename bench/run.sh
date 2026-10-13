@@ -30,7 +30,7 @@ WORK="${MIRE_BENCH_WORK:-/tmp/mire-bench}"
 DEFAULT_MIRE="$BENCH_DIR/../target/release/mire"
 [[ -x "$DEFAULT_MIRE" ]] || DEFAULT_MIRE="$HOME/.local/bin/mire"
 MIRE="${MIRE_BIN:-$DEFAULT_MIRE}"
-MIRE_LIB_DIR="${MIRE_LIB_DIR:-$HOME/.owl/libs}"
+MIRE_LIB_DIR="${MIRE_LIB_DIR:-$HOME/.owl/libs-beta}"
 MSSEC=5
 # Store options in an array: zsh does not split an unquoted scalar into words,
 # so a string would pass `-C opt-level=3` as one argument.

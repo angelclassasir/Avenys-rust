@@ -1,5 +1,5 @@
 use super::*;
-use crate::avens::config::CDefs;
+use crate::avens::config::{CDefs, OptLevel};
 use crate::parser::ast::DataType;
 use std::hash::{Hash, Hasher};
 use std::sync::OnceLock;
@@ -458,7 +458,7 @@ pub(super) fn dedup_llvm_declarations(ir: &str) -> String {
     out.join("\n")
 }
 
-pub(super) fn c_object_hash(content: &str, position_independent: bool, cflags: &[String]) -> u64 {
+pub(super) fn c_object_hash(content: &str, position_independent: bool, cflags: &[String], opt_level: OptLevel) -> u64 {
     let mut hasher = crate::incremental::FxHasher::new();
     content.hash(&mut hasher);
     // The same C source must not share an object between executable and shared
@@ -467,6 +467,7 @@ pub(super) fn c_object_hash(content: &str, position_independent: bool, cflags: &
     // incompatible cached object.
     position_independent.hash(&mut hasher);
     cflags.hash(&mut hasher);
+    opt_level.hash(&mut hasher);
     hasher.finish()
 }
 
@@ -474,6 +475,7 @@ pub(super) fn precompile_c_object(
     c_path: &str,
     cache_dir: &Path,
     runtime_base: &Path,
+    opt_level: OptLevel,
 ) -> Result<String> {
     let content = fs::read_to_string(c_path).map_err(|err| {
         MireError::new(ErrorKind::Runtime {
@@ -483,7 +485,7 @@ pub(super) fn precompile_c_object(
     })?;
     let extra = c_defs();
     let is_shared = matches!(extra.artifact, super::config::LibType::Shared);
-    let hash = c_object_hash(&content, is_shared, &extra.cflags);
+    let hash = c_object_hash(&content, is_shared, &extra.cflags, opt_level);
     fs::create_dir_all(cache_dir).map_err(|err| {
         MireError::new(ErrorKind::Runtime {
             span: crate::error::Span::unknown(),
@@ -507,7 +509,7 @@ pub(super) fn precompile_c_object(
         .wrapping_add(C_PRECOMPILE_SEQ.fetch_add(1, Ordering::Relaxed));
     let tmp_path = cache_dir.join(format!("{:x}.{:016x}.o", hash, unique));
     let mut cmd = std::process::Command::new("clang");
-    cmd.args(["-c", "-O0", "-o"]).arg(&tmp_path).arg(c_path);
+    cmd.args(["-c", opt_level.as_opt_flag(), "-o"]).arg(&tmp_path).arg(c_path);
     if is_shared {
         cmd.arg("-fPIC");
     }

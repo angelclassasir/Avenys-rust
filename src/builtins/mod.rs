@@ -87,7 +87,7 @@ pub fn default_builtin_returns() -> HashMap<String, DataType> {
         builtins.insert(
             name.to_string(),
             DataType::Vector {
-                element_type: Box::new(DataType::Anything),
+                element_type: Box::new(DataType::I64),
                 dynamic: true,
             },
         );

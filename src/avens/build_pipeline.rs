@@ -774,7 +774,7 @@ fn compile_file_inner(
         let c_objects: Vec<String> = if c_source_files.len() <= 1 {
             c_source_files
                 .iter()
-                .map(|src| precompile_c_object(src, &cache_dir, &runtime_base))
+                .map(|src| precompile_c_object(src, &cache_dir, &runtime_base, options.opt_level))
                 .collect::<Result<_>>()?
         } else {
             let results = std::sync::Mutex::new(vec![String::new(); c_source_files.len()]);
@@ -783,8 +783,9 @@ fn compile_file_inner(
                     let results = &results;
                     let cache_dir = &cache_dir;
                     let runtime_base = &runtime_base;
+                    let opt_level = options.opt_level;
                     s.spawn(
-                        move || match precompile_c_object(src, cache_dir, runtime_base) {
+                        move || match precompile_c_object(src, cache_dir, runtime_base, opt_level) {
                             Ok(obj) => {
                                 results.lock().unwrap()[i] = obj;
                             }
