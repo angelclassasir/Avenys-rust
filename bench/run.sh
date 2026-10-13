@@ -52,10 +52,10 @@ kernels() {
 
 difficulty() {
   case "$1" in
-    L1_while|P1_metodo) echo "trivial" ;;
-    L2_for_lista|V2_intercambio) echo "easy" ;;
-    L3_anidados|L4_break_continue|V1_muchas_locales|P2_trait_dos|C3_mixed_ops) echo "medium" ;;
-    P3_cadena_impl|C1_recursion|C2_allocacion) echo "hard" ;;
+    while_counter|method_dispatch) echo "trivial" ;;
+    list_indexed_read|swap_exchange) echo "easy" ;;
+    nested_loops|break_continue|many_locals|trait_dispatch|mixed_int_float) echo "medium" ;;
+    string_impl|recursion_ackermann|alloc_pressure) echo "hard" ;;
     *) echo "-" ;;
   esac
 }
@@ -191,7 +191,7 @@ cmd_measure() {
 }
 
 cmd_curve() {
-  local k="${1:-C2_allocacion}"
+  local k="${1:-alloc_pressure}"
   build_one "$k" measure || return 1
   local d="$WORK/$k.measure.3"
   print -r -- "Optimization-level curve for kernel $k"

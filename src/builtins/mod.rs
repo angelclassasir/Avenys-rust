@@ -82,6 +82,17 @@ pub fn default_builtin_returns() -> HashMap<String, DataType> {
         );
     }
 
+    // Vector with capacity
+    for name in ["vec.with.capacity.i64"] {
+        builtins.insert(
+            name.to_string(),
+            DataType::Vector {
+                element_type: Box::new(DataType::Anything),
+                dynamic: true,
+            },
+        );
+    }
+
     for name in ["lists.fold", "lists.map", "lists.filter"] {
         builtins.insert(name.to_string(), DataType::Unknown);
     }
@@ -279,7 +290,9 @@ const LOWERED_BUILTINS: &[&str] = &[
     "lists.filter",
     "lists.fold",
     "lists.map",
+    "lists.push",
     "mem.process",
+    "vec.with.capacity.i64",
     "range",
     "round",
     "str",
@@ -356,7 +369,6 @@ const UNIMPLEMENTED_BUILTINS: &[&str] = &[
     "lists.get",
     "lists.keys",
     "lists.len",
-    "lists.push",
     "lists.set",
     "lists.slice",
     "lists.values",
