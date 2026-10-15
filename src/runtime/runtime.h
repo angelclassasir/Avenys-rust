@@ -1,6 +1,18 @@
 #ifndef MIRE_RUNTIME_H
 #define MIRE_RUNTIME_H
 
+// Compatibilidad con Tiny C Compiler (tcc): tcc no soporta __int128.
+// Cuando se compila con tcc, usamos long long (64-bit) como sustituto.
+// Nota: esto limita el rango de i128/u128 a 64-bit en builds tcc, lo cual
+// es aceptable para runtime y PAL (no se usan valores >64-bit allí).
+#if defined(__TINYC__)
+typedef long long i128_t;
+typedef unsigned long long u128_t;
+#else
+typedef __int128 i128_t;
+typedef unsigned __int128 u128_t;
+#endif
+
 // ═══════════════════════════════════════════════════════════════════════
 //  Mire Runtime — public C API
 //
@@ -122,8 +134,8 @@ char *rt_i64_to_string(int64_t value);
 char *rt_bool_to_string(int64_t value);
 char *rt_f64_to_string(double value);
 char *rt_f32_to_string(float value);
-char *rt_i128_to_string(__int128 value);
-char *rt_u128_to_string(unsigned __int128 value);
+char *rt_i128_to_string(i128_t value);
+char *rt_u128_to_string(u128_t value);
 
 // Search, replace, trim, split, join
 int64_t rt_strings_contains(const char *input, const char *needle);

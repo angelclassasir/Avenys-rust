@@ -126,16 +126,16 @@ char *rt_f32_to_string(float value) {
     return rt_managed_printf_f64("%g", (double)value);
 }
 
-char *rt_i128_to_string(__int128 value) {
+char *rt_i128_to_string(i128_t value) {
     char buf[48];
     int n = 0;
-    unsigned __int128 u;
+    u128_t u;
     int neg = 0;
     if (value < 0) {
         neg = 1;
-        u = (unsigned __int128)(-(value + 1)) + 1;
+        u = (u128_t)(-(value + 1)) + 1;
     } else {
-        u = (unsigned __int128)value;
+        u = (u128_t)value;
     }
     if (u == 0) {
         buf[n++] = '0';
@@ -155,7 +155,7 @@ char *rt_i128_to_string(__int128 value) {
     return rt_managed_from_slice(buf, n);
 }
 
-char *rt_u128_to_string(unsigned __int128 value) {
+char *rt_u128_to_string(u128_t value) {
     char buf[48];
     int n = 0;
     if (value == 0) {

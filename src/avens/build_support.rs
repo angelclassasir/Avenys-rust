@@ -476,6 +476,33 @@ pub(super) fn c_object_hash(
     hasher.finish()
 }
 
+/// Localiza el compilador Tiny C (tcc / libtcc).
+/// Orden de preferencia:
+///   1. `tcc` en PATH
+///   2. variable de entorno $TCC_PATH (si apunta a un ejecutable existente)
+///   3. rutas habituales de instalación
+pub(super) fn find_tcc() -> Option<String> {
+    if let Ok(path_env) = std::env::var("PATH") {
+        for dir in path_env.split(':') {
+            let p = std::path::Path::new(dir).join("tcc");
+            if p.exists() {
+                return Some("tcc".to_string());
+            }
+        }
+    }
+    if let Ok(env) = std::env::var("TCC_PATH") {
+        if !env.is_empty() && std::path::Path::new(&env).exists() {
+            return Some(env);
+        }
+    }
+    for p in ["/usr/bin/tcc", "/usr/local/bin/tcc", "/opt/bin/tcc"] {
+        if std::path::Path::new(p).exists() {
+            return Some(p.to_string());
+        }
+    }
+    None
+}
+
 pub(super) fn precompile_c_object(
     c_path: &str,
     cache_dir: &Path,
@@ -513,7 +540,14 @@ pub(super) fn precompile_c_object(
         .wrapping_mul(0x9E3779B97F4A7C15)
         .wrapping_add(C_PRECOMPILE_SEQ.fetch_add(1, Ordering::Relaxed));
     let tmp_path = cache_dir.join(format!("{:x}.{:016x}.o", hash, unique));
-    let mut cmd = std::process::Command::new("clang");
+    let tcc_path = find_tcc().ok_or_else(|| {
+        MireError::new(ErrorKind::Runtime {
+            span: crate::error::Span::unknown(),
+            message: "libtcc (tcc) not found. Install tcc or set the TCC_PATH environment variable. C object compilation (runtime, PAL) requires libtcc."
+                .to_string(),
+        })
+    })?;
+    let mut cmd = std::process::Command::new(tcc_path);
     cmd.args(["-c", opt_level.as_opt_flag(), "-o"])
         .arg(&tmp_path)
         .arg(c_path);
@@ -531,14 +565,14 @@ pub(super) fn precompile_c_object(
     let status = cmd.status().map_err(|err| {
         MireError::new(ErrorKind::Runtime {
             span: crate::error::Span::unknown(),
-            message: format!("Failed to run clang for '{}': {}", c_path, err),
+            message: format!("Failed to run tcc for '{}': {}", c_path, err),
         })
     })?;
     if !status.success() {
         let _ = fs::remove_file(&tmp_path);
         return Err(MireError::new(ErrorKind::Runtime {
             span: crate::error::Span::unknown(),
-            message: format!("clang -c failed for '{}'", c_path),
+            message: format!("tcc -c failed for '{}'", c_path),
         }));
     }
     // Atomic publish. A sibling compiler may have landed an identical .o in

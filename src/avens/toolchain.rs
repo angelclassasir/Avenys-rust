@@ -202,7 +202,8 @@ pub(super) fn compile_binary_from_ir(
 
         let mut linker = Command::new("ld.lld");
         linker.arg("-shared").arg("-o").arg(binary_path);
-        add_clang_library_search_paths(&mut linker);
+        let tcc_path = build_support::find_tcc().unwrap_or_else(|| "tcc".to_string());
+        add_tcc_library_search_paths(&tcc_path, &mut linker);
         linker.arg(&ir_object);
         for object in c_object_files {
             linker.arg(object);
@@ -247,8 +248,8 @@ pub(super) fn compile_binary_from_ir(
         return Ok(());
     }
 
-    // Lower Mire IR independently of the native link driver. Clang remains
-    // responsible only for target-aware CRT/libc/native-library linking.
+    // Lower Mire IR independently of the native link driver. Tcc is
+    // responsible for target-aware CRT/libc/native-library linking.
     let ir_object = binary_path.with_extension("mire.ir.o");
     lower_ir_to_object(
         ir,
@@ -259,21 +260,28 @@ pub(super) fn compile_binary_from_ir(
         true,
     )?;
 
-    let mut clang = Command::new("clang");
+    let tcc_path = build_support::find_tcc().ok_or_else(|| {
+        MireError::new(ErrorKind::Runtime {
+            span: crate::error::Span::unknown(),
+            message: "libtcc (tcc) not found. Install tcc or set the TCC_PATH environment variable. Native linking requires libtcc."
+                .to_string(),
+        })
+    })?;
+    let mut linker = Command::new(tcc_path);
     let mut seen_objects = std::collections::HashSet::new();
 
     // Pass the LLVM object and native objects to the target-aware linker.
-    clang.arg(&ir_object);
+    linker.arg(&ir_object);
     seen_objects.insert(ir_object.to_string_lossy().into_owned());
     for obj in c_object_files {
         if seen_objects.insert(obj.clone()) {
-            clang.arg(obj);
+            linker.arg(obj);
         }
     }
-    clang.stdout(Stdio::piped()).stderr(Stdio::piped());
+    linker.stdout(Stdio::piped()).stderr(Stdio::piped());
 
-    clang.arg("-o").arg(binary_path);
-    clang.arg(opt_level.as_opt_flag());
+    linker.arg("-o").arg(binary_path);
+    linker.arg(opt_level.as_opt_flag());
 
     let is_none_tier = matches!(c_defs.runtime, super::config::RuntimeTier::None);
     let is_library = matches!(
@@ -282,10 +290,10 @@ pub(super) fn compile_binary_from_ir(
     );
     let is_shared = matches!(c_defs.artifact, super::config::LibType::Shared);
 
-    // For shared libraries, pass -shared and -fPIC to clang
+    // For shared libraries, pass -shared and -fPIC to tcc
     if is_shared {
-        clang.arg("-shared");
-        clang.arg("-fPIC");
+        linker.arg("-shared");
+        linker.arg("-fPIC");
     }
 
     // In freestanding mode (none tier), skip runtime libraries — the program
@@ -293,11 +301,11 @@ pub(super) fn compile_binary_from_ir(
     // standard runtime dependencies.  Crypto libs (libssl/libcrypto/libsodium)
     // are only linked when PAL files are actually compiled.
     if !is_none_tier {
-        clang.arg("-lm");
+        linker.arg("-lm");
         if link_crypto_libs {
-            clang.arg("-lssl");
-            clang.arg("-lcrypto");
-            clang.arg("-lsodium");
+            linker.arg("-lssl");
+            linker.arg("-lcrypto");
+            linker.arg("-lsodium");
         }
     }
 
@@ -312,7 +320,7 @@ pub(super) fn compile_binary_from_ir(
                 message: "`nostartfiles = true` requires `runtime = \"none\"` or library type (static/shared)".to_string(),
             }).with_filename(source_filename.to_string()));
         }
-        clang.arg("-nostartfiles");
+        linker.arg("-nostartfiles");
     }
 
     // True no-libc: skip standard library (libc, libgcc, etc.)
@@ -331,25 +339,25 @@ pub(super) fn compile_binary_from_ir(
             })
             .with_filename(source_filename.to_string()));
         }
-        clang.arg("-nostdlib");
+        linker.arg("-nostdlib");
     }
 
     // Pass user-defined cflags
     for flag in &c_defs.cflags {
-        clang.arg(flag);
+        linker.arg(flag);
     }
 
     // Add -ffreestanding for none tier or when nostartfiles is set
     if is_none_tier || c_defs.nostartfiles {
-        clang.arg("-ffreestanding");
+        linker.arg("-ffreestanding");
     }
 
-    clang.arg("-pthread");
+    linker.arg("-pthread");
 
     // `-x ir -` applies to subsequent inputs in clang. Reset the language
     // before passing native .so/.a files, otherwise clang parses archives as
     // LLVM text and reports a misleading IR syntax error.
-    clang.arg("-x").arg("none");
+    linker.arg("-x").arg("none");
     for (lib_name, lib_path) in extern_libs {
         let clean_name = if lib_name.contains('.') {
             lib_name.rsplit('.').next().unwrap_or(lib_name)
@@ -361,25 +369,25 @@ pub(super) fn compile_binary_from_ir(
         if explicit_native {
             let native_path = std::path::Path::new(&lib_path);
             if let Some(parent) = native_path.parent() {
-                clang.arg(format!("-L{}", parent.display()));
+                linker.arg(format!("-L{}", parent.display()));
                 if lib_path.ends_with(".so") || lib_path.ends_with(".dylib") {
                     // Keep explicit fixture/shared-library dependencies
                     // runnable without LD_LIBRARY_PATH. Relative rpaths are
                     // intentional for project-local test libraries.
-                    clang.arg(format!("-Wl,-rpath,{}", parent.display()));
+                    linker.arg(format!("-Wl,-rpath,{}", parent.display()));
                 }
             }
             if let Some(file_name) = native_path.file_name().and_then(|name| name.to_str()) {
                 // Exact filenames may intentionally omit the conventional
                 // `lib` prefix (for example `kioto.so` in test fixtures).
-                clang.arg(format!("-l:{file_name}"));
+                linker.arg(format!("-l:{file_name}"));
             }
         } else if lib_path.as_str() != clean_name && !lib_path.is_empty() {
-            clang.arg(format!("-l:{}", lib_path));
+            linker.arg(format!("-l:{}", lib_path));
         }
         if !explicit_native {
-            clang.arg("-l");
-            clang.arg(clean_name);
+            linker.arg("-l");
+            linker.arg(clean_name);
         }
     }
 
@@ -389,15 +397,15 @@ pub(super) fn compile_binary_from_ir(
         } else {
             lib
         };
-        clang.arg("-l");
-        clang.arg(clean_name);
+        linker.arg("-l");
+        linker.arg(clean_name);
     }
 
-    let child = clang.spawn().map_err(|err| {
+    let child = linker.spawn().map_err(|err| {
         let _ = std::fs::remove_file(&ir_object);
         MireError::new(ErrorKind::Runtime {
             span: crate::error::Span::new(1, 1),
-            message: format!("Failed to run clang: {}", err),
+            message: format!("Failed to run tcc: {}", err),
         })
         .with_filename(source_filename.to_string())
     })?;
@@ -405,7 +413,7 @@ pub(super) fn compile_binary_from_ir(
         let _ = std::fs::remove_file(&ir_object);
         MireError::new(ErrorKind::Runtime {
             span: crate::error::Span::new(1, 1),
-            message: format!("Failed to wait for clang: {}", err),
+            message: format!("Failed to wait for tcc: {}", err),
         })
         .with_filename(source_filename.to_string())
     })?;
@@ -414,7 +422,7 @@ pub(super) fn compile_binary_from_ir(
         return Err(MireError::new(ErrorKind::Runtime {
             span: crate::error::Span::new(1, 1),
             message: format!(
-                "clang failed building `{}` (source: {}) with status {}.\nstdout:\n{}\nstderr:\n{}",
+                "tcc failed building `{}` (source: {}) with status {}.\nstdout:\n{}\nstderr:\n{}",
                 binary_path.display(),
                 source_filename,
                 output.status,
@@ -478,23 +486,31 @@ fn lower_ir_to_object(
 }
 
 /// Adds the host toolchain's library directories when `ld.lld` is used
-/// directly. Clang normally supplies these implicitly; bypassing Clang means
+/// directly. Tcc normally supplies these implicitly; bypassing Tcc means
 /// that common libraries such as sqlite3 would otherwise be invisible to the
 /// linker even though they are installed and available to normal C builds.
-fn add_clang_library_search_paths(linker: &mut Command) {
-    let output = match Command::new("clang").arg("-print-search-dirs").output() {
+fn add_tcc_library_search_paths(tcc_path: &str, linker: &mut Command) {
+    let output = match Command::new(tcc_path).arg("-print-search-dirs").output() {
         Ok(output) if output.status.success() => output,
         _ => return,
     };
     let text = String::from_utf8_lossy(&output.stdout);
-    let Some(paths) = text
-        .lines()
-        .find_map(|line| line.strip_prefix("libraries: ="))
-    else {
-        return;
-    };
-    for path in paths.split(':').filter(|path| !path.is_empty()) {
-        linker.arg(format!("-L{path}"));
+    let mut in_libs = false;
+    for line in text.lines() {
+        if line.starts_with("libraries:") {
+            in_libs = true;
+            continue;
+        }
+        if in_libs {
+            let trimmed = line.trim();
+            if trimmed.is_empty() || trimmed.starts_with("libtcc1:") || trimmed.starts_with("crt:") {
+                in_libs = false;
+                continue;
+            }
+            if !trimmed.is_empty() {
+                linker.arg(format!("-L{trimmed}"));
+            }
+        }
     }
 }
 
