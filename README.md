@@ -1,4 +1,4 @@
-# Avenys v4.3.13
+# Avenys v4.4.3
 
 **A compiled, ownership-aware systems language with an LLVM backend.**
 
@@ -11,7 +11,7 @@ The compiler, Avenys, translates Mire source through a multi-stage pipeline into
 native binaries via LLVM. It ships with Kioto, a standard library covering
 strings, collections, math, filesystem, processes, and more.
 
-## Recent Changes (v4.3.13)
+## Recent Changes (v4.4.3)
 - Runtime elapsed-time formatting and standard input now cross the PAL instead
   of calling host clock and input APIs directly. Runtime standard output/error
   APIs use PAL writes as well. The WASI PAL can read and write standard
