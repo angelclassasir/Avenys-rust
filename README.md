@@ -273,13 +273,13 @@ Or install them manually:
 
 ```bash
 # Debian/Ubuntu
-sudo apt install curl tar git clang llvm-dev lld cargo pkg-config libssl-dev libsodium-dev zlib1g-dev libzstd-dev libarchive-dev
+sudo apt install curl tar git clang llvm-dev lld cargo pkg-config libssl-dev libsodium-dev zlib1g-dev libzstd-dev libarchive-dev tcc
 
 # Arch Linux
-sudo pacman -S curl tar git clang llvm lld rust openssl libsodium zlib zstd libarchive
+sudo pacman -S curl tar git clang llvm lld rust openssl libsodium zlib zstd libarchive tcc
 
 # Fedora/RHEL
-sudo dnf install curl tar git clang llvm-devel lld rust cargo pkgconf-pkg-config openssl-devel libsodium-devel zlib-devel zstd-devel libarchive-devel
+sudo dnf install curl tar git clang llvm-devel lld rust cargo pkgconf-pkg-config openssl-devel libsodium-devel zlib-devel zstd-devel libarchive-devel tcc
 ```
 
 ### Post-install

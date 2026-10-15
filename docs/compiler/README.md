@@ -135,7 +135,7 @@ LLVM IR Generation -> Dependency Collection
 opt (O0-O3) -> llc -> Object files
     |
     v
-C Runtime (tier-aware) -> clang -> Artifact
+C Runtime (tier-aware) -> tcc -> Artifact
 ```
 
 ### 1. Frontend

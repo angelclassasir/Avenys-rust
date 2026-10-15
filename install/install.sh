@@ -21,6 +21,7 @@ set -e
 #   • GNU glibc >= 2.39
 #   • LLVM/Clang 18-22 (any distribution-native version works: mire lowers
 #     plain-text LLVM IR, so distro `opt`/`llc`/`lld`/`clang` are used as-is)
+#   • Tiny C Compiler (tcc) for C object compilation (runtime, PAL objects)
 #   • openssl / libsodium / zlib / zstd / libarchive development libraries
 # `protobuf-compiler` (protoc) validates the checked-in schema in repository CI.
 # The pinned WASI SDK is used by CI and developers to compile WASI targets.
@@ -536,19 +537,19 @@ confirm_prompt() {
 deps_for_pm() {
     case "$1" in
         apt)
-            echo "curl tar git clang llvm lld pkg-config libssl-dev libsodium-dev zlib1g-dev libzstd-dev libarchive-dev"
+            echo "curl tar git clang llvm lld pkg-config libssl-dev libsodium-dev zlib1g-dev libzstd-dev libarchive-dev tcc"
             ;;
         pacman)
-            echo "curl tar git clang llvm lld pkg-config openssl libsodium zlib zstd libarchive"
+            echo "curl tar git clang llvm lld pkg-config openssl libsodium zlib zstd libarchive tcc"
             ;;
         dnf|yum)
-            echo "curl tar git clang llvm lld pkgconf-pkg-config openssl-devel zlib-devel libzstd-devel libarchive-devel"
+            echo "curl tar git clang llvm lld pkgconf-pkg-config openssl-devel libsodium-devel zlib-devel zstd-devel libarchive-devel tcc"
             ;;
         apk)
-            echo "curl tar git clang llvm lld openssl-dev libsodium-dev zlib-dev zstd-dev libarchive-dev"
+            echo "curl tar git clang llvm lld openssl-dev libsodium-dev zlib-dev zstd-dev libarchive-dev tcc"
             ;;
         zypper)
-            echo "curl tar git clang llvm lld pkg-config libopenssl-devel libsodium-devel zlib-devel libzstd-devel libarchive-devel"
+            echo "curl tar git clang llvm lld pkg-config libopenssl-devel libsodium-devel zlib-devel libzstd-devel libarchive-devel tcc"
             ;;
         *) echo "" ;;
     esac
