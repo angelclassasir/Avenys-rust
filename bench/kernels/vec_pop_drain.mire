@@ -1,0 +1,28 @@
+// L4: build then drain with pop. Difficulty: medium.
+// Llena un vector y lo vacia con pop. El pop sobre lista vacia tiene que
+// devolver 0 sin tocar la longitud, asi que el ultimo pop lo hace un vector
+// que ya no tiene elementos.
+load mire::vec
+
+pub fn main: () :i32 {
+    set seed = SEED_OPACA mut
+    set round = 0 :i64 mut
+    while round < 48000 {
+        set v = [] :vec[i64] mut
+        set k = 0 :i64 mut
+        while k < 200 {
+            set v = vec::push::i64(v k * 7 + round)
+            set k += 1
+        }
+        set seed = (seed + vec::len(v)) % 1000003
+        set j = 0 :i64 mut
+        while j < 200 {
+            set seed = (seed + vec::pop::i64(v) + j) % 1000003
+            set j += 1
+        }
+        set seed = (seed + vec::len(v)) % 1000003
+        set round += 1
+    }
+    dasu(str(seed))
+    return 0 :i32
+}

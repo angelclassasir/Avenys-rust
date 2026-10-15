@@ -1,0 +1,22 @@
+// L3: vector growth. Difficulty: hard.
+// Empieza de un literal vacio (capacidad inicial 4) y empuja 2000 elementos,
+// asi que cada vector reasigna unas 9 veces. Es la pata que alloc_pressure
+// evita por usar with_capacity: aqui el crecimiento es el trabajo.
+load mire::vec
+
+pub fn main: () :i32 {
+    set seed = SEED_OPACA mut
+    set round = 0 :i64 mut
+    while round < 44000 {
+        set v = [] :vec[i64] mut
+        set k = 0 :i64 mut
+        while k < 2000 {
+            set v = vec::push::i64(v k * 3 + round)
+            set k += 1
+        }
+        set seed = (seed + vec::len(v) + vec::get::i64(v, 1999)) % 1000003
+        set round += 1
+    }
+    dasu(str(seed))
+    return 0 :i32
+}

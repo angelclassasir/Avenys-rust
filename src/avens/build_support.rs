@@ -490,10 +490,11 @@ pub(super) fn find_tcc() -> Option<String> {
             }
         }
     }
-    if let Ok(env) = std::env::var("TCC_PATH") {
-        if !env.is_empty() && std::path::Path::new(&env).exists() {
-            return Some(env);
-        }
+    if let Ok(env) = std::env::var("TCC_PATH")
+        && !env.is_empty()
+        && std::path::Path::new(&env).exists()
+    {
+        return Some(env);
     }
     for p in ["/usr/bin/tcc", "/usr/local/bin/tcc", "/opt/bin/tcc"] {
         if std::path::Path::new(p).exists() {

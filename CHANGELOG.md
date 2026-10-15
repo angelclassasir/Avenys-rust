@@ -1,5 +1,13 @@
 # Changelog
 
+## 4.4.4 unreleased - unreleased
+### Added
+- **IR cache keyed on codegen epoch.** The incremental MIR→IR cache now includes a fingerprint of `src/compiler/mir` sources (emitted via `MIRE_CODEGEN_EPOCH` from build.rs). This prevents a codegen edit from silently reusing IR produced by the previous compiler, which would appear as a no-op. The epoch is overridable with `MIRE_CACHE_EPOCH` for development workflows.
+- **install.sh: package manager + AUR + compiler validation.** `deps_for_pm()` lists gcc as non‑optional (Avenys compiles its own PAL/runtime in C). `install_deps()` adds error capture, AUR tcc installation when a helper is present (paru/yay/pikaur/trizen), and a post‑install check that a C compiler is on PATH. `prereq_missing()` reports the exact missing tool (tcc/cc/gcc/clang or opt/llc). The audit report now shows C compiler status, AUR helper availability, and system library presence.
+- **alloc_pressure representational gap.** Vector `len` resides in heap memory, not a register, so 8 M pushes incur 2 loads + 2 stores each instead of register‑promoted stores. This same cost appears in `vec_growth` (~2.4× vs C). The `with_capacity` OOM clamp adds ~16 % overhead on the push path. Through owl CLI the measurement is ~1.33×; through mire CLI it is ~3.1× due to cache‑cold differences.
+- **vec_growth A/B growth policy.** Measured at ~2.4× vs C (Mire ~78–80 ms, C ~55 ms). The 1.5× growth factor generates realloc traffic; guarded vs unguarded measurements show <1 % variance from glibc realloc non‑determinism.
+
+
 All notable changes to Avenys will be documented in this file.
 
 ## 4.3.13 - 2026-10-09
