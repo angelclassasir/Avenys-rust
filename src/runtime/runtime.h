@@ -1,6 +1,10 @@
 #ifndef MIRE_RUNTIME_H
 #define MIRE_RUNTIME_H
 
+// Thread-local storage spelling. Included before anything that declares a
+// MIRE_TLS local. See tls_compat.h for why this cannot be a plain keyword.
+#include "tls_compat.h"
+
 // Compatibilidad con Tiny C Compiler (tcc): tcc no soporta __int128.
 // Cuando se compila con tcc, usamos long long (64-bit) como sustituto.
 // Nota: esto limita el rango de i128/u128 a 64-bit en builds tcc, lo cual

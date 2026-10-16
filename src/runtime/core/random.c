@@ -1,7 +1,7 @@
 #include "runtime.h"
 #include <stdint.h>
 
-static __thread uint64_t g_math_random_state = 0;
+static MIRE_TLS uint64_t g_math_random_state = 0;
 
 static uint64_t next_u64(void) {
     uint64_t x = g_math_random_state;

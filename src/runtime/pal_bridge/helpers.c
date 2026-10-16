@@ -497,7 +497,7 @@ char *rt_proc_capture_output(const char *cmd) {
 
 // Safe argv-based process execution with output capture (no shell). Process
 // creation, output reads, and exit status all cross the PAL boundary.
-static _Thread_local __attribute__((tls_model("global-dynamic"))) int64_t g_last_proc_exit = -1;
+static MIRE_TLS MIRE_TLS_MODEL int64_t g_last_proc_exit = -1;
 
 static char *rt_proc_capture_with_options(const char *cmd, void *args_vec,
                                          const char *working_directory,
@@ -939,9 +939,9 @@ const char *rt_sbx_get_tool_home(void) {
 // would hit the missing-@free-declaration path described above, so the copy
 // and the free both happen here, where they are explicit: the PAL buffer is
 // released, and what crosses into Mire is a borrowed thread-local copy.
-static _Thread_local char g_shell_out[1];
-static _Thread_local char *g_shell_buf = NULL;
-static _Thread_local size_t g_shell_buf_cap = 0;
+static MIRE_TLS char g_shell_out[1];
+static MIRE_TLS char *g_shell_buf = NULL;
+static MIRE_TLS size_t g_shell_buf_cap = 0;
 
 const char *rt_proc_shell(const char *command) {
     char *owned = pal_proc_shell(command);

@@ -106,9 +106,9 @@ static bool g_sbx_root_set = false;
 static char g_sbx_tool_home[PATH_MAX];
 static bool g_sbx_tool_home_set = false;
 
-static __thread int t_sbx_unsafe = 0;
-static __thread pal_sbx_reason_t t_sbx_reason = PAL_SBX_DENY_NONE;
-static __thread char t_sbx_detail[256] = {0};
+static MIRE_TLS int t_sbx_unsafe = 0;
+static MIRE_TLS pal_sbx_reason_t t_sbx_reason = PAL_SBX_DENY_NONE;
+static MIRE_TLS char t_sbx_detail[256] = {0};
 
 // ── Root ──
 

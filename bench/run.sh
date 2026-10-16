@@ -30,7 +30,17 @@ WORK="${MIRE_BENCH_WORK:-/tmp/mire-bench}"
 DEFAULT_MIRE="$BENCH_DIR/../target/release/mire"
 [[ -x "$DEFAULT_MIRE" ]] || DEFAULT_MIRE="$HOME/.local/bin/mire"
 MIRE="${MIRE_BIN:-$DEFAULT_MIRE}"
-MIRE_LIB_DIR="${MIRE_LIB_DIR:-$HOME/.owl/libs-beta}"
+# Owl installs packages here and CI populates the same path, so it is the one
+# location that exists both on a developer machine and on a runner. The old
+# `libs-beta` default was never created by anything, so every kernel that loads
+# a package failed with "Package 'mire' is not installed in the library
+# directory" unless MIRE_LIB_DIR was exported by hand.
+MIRE_LIB_DIR="${MIRE_LIB_DIR:-$HOME/.owl/libs}"
+if [[ ! -d "$MIRE_LIB_DIR" ]]; then
+  print -u2 -- "bench: library directory '$MIRE_LIB_DIR' does not exist."
+  print -u2 -- "bench: install the packages (owl install) or point MIRE_LIB_DIR at one."
+  exit 1
+fi
 MSSEC=5
 # Store options in an array: zsh does not split an unquoted scalar into words,
 # so a string would pass `-C opt-level=3` as one argument.

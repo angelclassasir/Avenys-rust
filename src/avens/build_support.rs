@@ -463,6 +463,7 @@ pub(super) fn c_object_hash(
     position_independent: bool,
     cflags: &[String],
     opt_level: OptLevel,
+    tcc_path: &str,
 ) -> u64 {
     let mut hasher = crate::incremental::FxHasher::new();
     content.hash(&mut hasher);
@@ -473,15 +474,29 @@ pub(super) fn c_object_hash(
     position_independent.hash(&mut hasher);
     cflags.hash(&mut hasher);
     opt_level.hash(&mut hasher);
+    // MIRE_HAVE_TLS changes how tls_compat.h spells every thread-local
+    // declaration, so an object built by a TLS-capable compiler must not be
+    // reused for a compiler without TLS (and the other way round).
+    tcc_supports_tls(tcc_path).hash(&mut hasher);
     hasher.finish()
 }
 
 /// Localiza el compilador Tiny C (tcc / libtcc).
 /// Orden de preferencia:
-///   1. `tcc` en PATH
-///   2. variable de entorno $TCC_PATH (si apunta a un ejecutable existente)
+///   1. variable de entorno $TCC_PATH (si apunta a un ejecutable existente)
+///   2. `tcc` en PATH
 ///   3. rutas habituales de instalación
+///
+/// $TCC_PATH va primero porque es la única forma de señalar "usa este tcc
+/// concreto". Con el orden anterior, un `tcc` de distribución en el PATH
+/// ganaba siempre y el valor exportado se ignoraba en silencio.
 pub(super) fn find_tcc() -> Option<String> {
+    if let Ok(env) = std::env::var("TCC_PATH")
+        && !env.is_empty()
+        && std::path::Path::new(&env).exists()
+    {
+        return Some(env);
+    }
     if let Ok(path_env) = std::env::var("PATH") {
         for dir in path_env.split(':') {
             let p = std::path::Path::new(dir).join("tcc");
@@ -490,18 +505,82 @@ pub(super) fn find_tcc() -> Option<String> {
             }
         }
     }
-    if let Ok(env) = std::env::var("TCC_PATH")
-        && !env.is_empty()
-        && std::path::Path::new(&env).exists()
-    {
-        return Some(env);
-    }
     for p in ["/usr/bin/tcc", "/usr/local/bin/tcc", "/opt/bin/tcc"] {
         if std::path::Path::new(p).exists() {
             return Some(p.to_string());
         }
     }
     None
+}
+
+/// Cachea el resultado del sondeo de TLS por ruta de compilador.
+static TCC_TLS_CAPABLE: std::sync::OnceLock<
+    std::sync::Mutex<std::collections::HashMap<String, bool>>,
+> = std::sync::OnceLock::new();
+
+/// Sondea si el tcc elegido soporta almacenamiento thread-local.
+///
+/// Ambas compilaciones de tcc de esta máquina (la de Arch y la de git)
+/// declaran `__TINYC__ 928` y `__STDC_VERSION__ 199901L`, así que ninguna
+/// prueba de preprocesador las distingue. La única señal fiable es compilar
+/// algo: el tcc de Arch rechaza `__thread` con "';' expected (got 'int')" y
+/// `_Thread_local` con "_Thread_local is not implemented".
+///
+/// El sondeo ocurre una vez por ruta de compilador y por proceso. Si el
+/// compilador no se puede ejecutar, se asume que sí soporta TLS: ese es el
+/// caso de todos los compiladores salvo un tcc antiguo, y así un fallo
+/// transitorio de la sonda no degrada silenciosamente el runtime.
+fn tcc_supports_tls(tcc_path: &str) -> bool {
+    let cache =
+        TCC_TLS_CAPABLE.get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()));
+    if let Ok(map) = cache.lock()
+        && let Some(&known) = map.get(tcc_path)
+    {
+        return known;
+    }
+    let verdict = probe_tcc_tls(tcc_path);
+    if let Ok(mut map) = cache.lock() {
+        map.insert(tcc_path.to_string(), verdict);
+    }
+    verdict
+}
+
+fn probe_tcc_tls(tcc_path: &str) -> bool {
+    // One directory per call, not per process: precompilation runs on several
+    // threads and a shared directory meant one thread's cleanup deleted the
+    // directory another was still writing into ("could not write probe.o: No
+    // such file or directory").
+    static PROBE_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let unique = (std::process::id() as u64)
+        .wrapping_mul(0x9E3779B97F4A7C15)
+        .wrapping_add(PROBE_SEQ.fetch_add(1, Ordering::Relaxed));
+    let dir = std::env::temp_dir().join(format!("mire-tls-probe-{unique}"));
+    if fs::create_dir_all(&dir).is_err() {
+        return true;
+    }
+    let src = dir.join("probe.c");
+    // Both spellings appear so a compiler that only has one of them still
+    // counts as capable.
+    let body = "__thread int a;\n_Thread_local int b;\nint main(void){return a+b;}\n";
+    if fs::write(&src, body).is_err() {
+        let _ = fs::remove_dir(&dir);
+        return true;
+    }
+    let out = dir.join("probe.o");
+    let status = std::process::Command::new(tcc_path)
+        .args(["-c", "-o"])
+        .arg(&out)
+        .arg(&src)
+        // The probe is expected to fail on a compiler without TLS. Its
+        // diagnostics must not reach the user as if they came from the build.
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status();
+    let ok = matches!(status, Ok(s) if s.success());
+    let _ = fs::remove_file(&src);
+    let _ = fs::remove_file(&out);
+    let _ = fs::remove_dir(&dir);
+    ok
 }
 
 pub(super) fn precompile_c_object(
@@ -518,7 +597,16 @@ pub(super) fn precompile_c_object(
     })?;
     let extra = c_defs();
     let is_shared = matches!(extra.artifact, super::config::LibType::Shared);
-    let hash = c_object_hash(&content, is_shared, &extra.cflags, opt_level);
+    // Resolve the compiler before hashing: the object key depends on whether
+    // that compiler can do thread-local storage.
+    let tcc_path = find_tcc().ok_or_else(|| {
+        MireError::new(ErrorKind::Runtime {
+            span: crate::error::Span::unknown(),
+            message: "libtcc (tcc) not found. Install tcc or set the TCC_PATH environment variable. C object compilation (runtime, PAL) requires libtcc."
+                .to_string(),
+        })
+    })?;
+    let hash = c_object_hash(&content, is_shared, &extra.cflags, opt_level, &tcc_path);
     fs::create_dir_all(cache_dir).map_err(|err| {
         MireError::new(ErrorKind::Runtime {
             span: crate::error::Span::unknown(),
@@ -541,14 +629,7 @@ pub(super) fn precompile_c_object(
         .wrapping_mul(0x9E3779B97F4A7C15)
         .wrapping_add(C_PRECOMPILE_SEQ.fetch_add(1, Ordering::Relaxed));
     let tmp_path = cache_dir.join(format!("{:x}.{:016x}.o", hash, unique));
-    let tcc_path = find_tcc().ok_or_else(|| {
-        MireError::new(ErrorKind::Runtime {
-            span: crate::error::Span::unknown(),
-            message: "libtcc (tcc) not found. Install tcc or set the TCC_PATH environment variable. C object compilation (runtime, PAL) requires libtcc."
-                .to_string(),
-        })
-    })?;
-    let mut cmd = std::process::Command::new(tcc_path);
+    let mut cmd = std::process::Command::new(&tcc_path);
     cmd.args(["-c", opt_level.as_opt_flag(), "-o"])
         .arg(&tmp_path)
         .arg(c_path);
@@ -557,6 +638,13 @@ pub(super) fn precompile_c_object(
     }
     cmd.arg("-I").arg(runtime_base.join("runtime"));
     cmd.arg("-I").arg(runtime_base.join("pal"));
+    // tls_compat.h keys off this. See probe_tcc_tls for why it cannot be
+    // detected inside the preprocessor.
+    if tcc_supports_tls(&tcc_path) {
+        cmd.arg("-DMIRE_HAVE_TLS=1");
+    } else {
+        cmd.arg("-DMIRE_HAVE_TLS=0");
+    }
     for inc in &extra.include {
         cmd.arg("-I").arg(inc);
     }

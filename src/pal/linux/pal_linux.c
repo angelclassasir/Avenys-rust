@@ -316,7 +316,7 @@ static int64_t linux_tty_read_line(char *buffer, int64_t capacity) {
     return length;
 }
 
-static __thread int linux_stdio_error_flags[2];
+static MIRE_TLS int linux_stdio_error_flags[2];
 
 static int64_t linux_stdio_write(int64_t selector, const void *buffer, int64_t length) {
     int stream_index = selector == 2 ? 1 : 0;

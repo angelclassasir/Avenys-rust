@@ -267,7 +267,7 @@ pub(super) fn compile_binary_from_ir(
                 .to_string(),
         })
     })?;
-    let mut linker = Command::new(tcc_path);
+    let mut linker = Command::new(&tcc_path);
     let mut seen_objects = std::collections::HashSet::new();
 
     // Pass the LLVM object and native objects to the target-aware linker.
@@ -401,22 +401,22 @@ pub(super) fn compile_binary_from_ir(
         linker.arg(clean_name);
     }
 
-    let child = linker.spawn().map_err(|err| {
-        let _ = std::fs::remove_file(&ir_object);
-        MireError::new(ErrorKind::Runtime {
-            span: crate::error::Span::new(1, 1),
-            message: format!("Failed to run tcc: {}", err),
-        })
-        .with_filename(source_filename.to_string())
-    })?;
-    let output = child.wait_with_output().map_err(|err| {
-        let _ = std::fs::remove_file(&ir_object);
-        MireError::new(ErrorKind::Runtime {
-            span: crate::error::Span::new(1, 1),
-            message: format!("Failed to wait for tcc: {}", err),
-        })
-        .with_filename(source_filename.to_string())
-    })?;
+    // Some tcc builds refuse to mix an LLVM-emitted object with their own
+    // startup objects because the two disagree on the `.note.GNU-stack`
+    // section flags ("section type conflict: .note.GNU-stack 01 <> 07").
+    // Neither the compile flags nor -Wl,-z,noexecstack change the note; only
+    // dropping the section does, and tcc's linker emits no GNU_STACK program
+    // header of its own, so nothing is lost. Retrying once keeps the normal
+    // path free of an extra process.
+    let link_args = linker
+        .get_args()
+        .map(|a| a.to_os_string())
+        .collect::<Vec<_>>();
+    let mut output = run_tcc_link(&tcc_path, &link_args)?;
+    if link_failed_on_gnu_stack_note(&output) {
+        output = retry_link_without_gnu_stack_note(&tcc_path, &link_args, &ir_object)?;
+    }
+
     let _ = std::fs::remove_file(&ir_object);
     if !output.status.success() {
         return Err(MireError::new(ErrorKind::Runtime {
@@ -434,6 +434,68 @@ pub(super) fn compile_binary_from_ir(
     }
 
     Ok(())
+}
+
+fn run_tcc_link(tcc_path: &str, args: &[std::ffi::OsString]) -> Result<std::process::Output> {
+    Command::new(tcc_path)
+        .args(args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .map_err(|err| {
+            MireError::new(ErrorKind::Runtime {
+                span: crate::error::Span::unknown(),
+                message: format!("Failed to run tcc: {}", err),
+            })
+        })
+}
+
+fn link_failed_on_gnu_stack_note(output: &std::process::Output) -> bool {
+    if output.status.success() {
+        return false;
+    }
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    stderr.contains("section type conflict") && stderr.contains(".note.GNU-stack")
+}
+
+/// Drop `.note.GNU-stack` from the IR object and run the same link again.
+fn retry_link_without_gnu_stack_note(
+    tcc_path: &str,
+    link_args: &[std::ffi::OsString],
+    ir_object: &Path,
+) -> Result<std::process::Output> {
+    if let Err(err) = strip_gnu_stack_note(ir_object) {
+        return Err(MireError::new(ErrorKind::Runtime {
+            span: crate::error::Span::unknown(),
+            message: format!(
+                "tcc rejected the LLVM object over .note.GNU-stack and the section \
+                 could not be removed: {}",
+                err
+            ),
+        }));
+    }
+    run_tcc_link(tcc_path, link_args)
+}
+
+fn strip_gnu_stack_note(object: &Path) -> std::io::Result<()> {
+    for tool in ["llvm-objcopy", "objcopy"] {
+        let ran = Command::new(tool)
+            .arg("--remove-section=.note.GNU-stack")
+            .arg(object)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
+        if let Ok(status) = ran
+            && status.success()
+        {
+            return Ok(());
+        }
+    }
+    Err(std::io::Error::new(
+        std::io::ErrorKind::NotFound,
+        "neither llvm-objcopy nor objcopy could remove the section",
+    ))
 }
 
 fn lower_ir_to_object(

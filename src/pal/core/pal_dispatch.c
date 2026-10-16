@@ -835,7 +835,7 @@ const char *pal_fs_read_file(const char *path) {
 
 // ── Environment ──────────────────────────────────────────────
 
-static __thread char g_cwd_buf[4096];
+static MIRE_TLS char g_cwd_buf[4096];
 
 const char *pal_env_cwd(void) {
     if (getcwd(g_cwd_buf, sizeof(g_cwd_buf))) {
@@ -889,7 +889,7 @@ const char *pal_proc_capture_output(const char *cmd) {
 // (pal_sbx_set_unsafe(1)). Without one it is denied and the reason is
 // reported through the normal error surface.
 
-static __thread int64_t t_shell_status = -1;
+static MIRE_TLS int64_t t_shell_status = -1;
 
 int64_t pal_proc_shell_status(void) { return t_shell_status; }
 

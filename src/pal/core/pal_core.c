@@ -137,8 +137,8 @@ bool pal_handle_is_valid(pal_handle_t h) {
 // ── Error State ──────────────────────────────────────────────
 
 // Use initial-exec TLS model for shared library compatibility
-static __thread __attribute__((tls_model("global-dynamic"))) pal_error_code_t t_last_error;
-static __thread __attribute__((tls_model("global-dynamic"))) const char *t_last_message;
+static MIRE_TLS MIRE_TLS_MODEL pal_error_code_t t_last_error;
+static MIRE_TLS MIRE_TLS_MODEL const char *t_last_message;
 
 void pal_set_error(pal_error_code_t code, const char *message) {
     t_last_error = code;

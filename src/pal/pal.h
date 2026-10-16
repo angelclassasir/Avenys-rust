@@ -5,6 +5,11 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+// Thread-local storage spelling, shared with the runtime. PAL Core declares
+// MIRE_TLS state in several translation units, and some of them include pal.h
+// without runtime.h.
+#include "tls_compat.h"
+
 // PAL v4 — Host Resource Model
 // ABI contract between Mire and any Host.
 // Handles are opaque: {index, generation}. Only PAL Core knows the slot table.
