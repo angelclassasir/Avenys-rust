@@ -81,9 +81,23 @@ static char *free_list_find(size_t need) {
 
 // ── Managed pointer detection ─────────────────────────────────────────
 
+// The address has to be the START of a block, not merely somewhere inside the
+// arena. A pointer into the middle of a string — what strstr() returns, or
+// `pos + from_len` in rt_strings_replace — passes a range check but has no
+// header in front of it, so rt_string_header() read unrelated bytes as a
+// length. That bogus length (2^40 in practice) went straight into a memcpy
+// size, which is how a perfectly ordinary `strings::replace::all(s ".mr" "")`
+// produced an empty string and eventually a double free.
+//
+// The flags word is the discriminator: only rt_managed_alloc() ever sets
+// MIRE_STR_MANAGED, and it sets it on the block header. The offset is checked
+// against the arena first so a pointer near the base cannot read before it.
 int rt_managed_is_managed(const char *data_ptr) {
     if (!data_ptr || !arena_base) return 0;
-    return (size_t)(data_ptr - arena_base) < arena_pos;
+    size_t offset = (size_t)((const char *)data_ptr - arena_base);
+    if (offset < sizeof(MireManagedString) || offset >= arena_pos) return 0;
+    const MireManagedString *hdr = rt_string_header(data_ptr);
+    return (hdr->flags & MIRE_STR_MANAGED) != 0;
 }
 
 int rt_managed_contains(const char *data_ptr) {

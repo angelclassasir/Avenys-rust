@@ -324,7 +324,26 @@ void *rt_vecs_with_capacity_i64(int64_t capacity) {
     return rt_list_create(capacity, 8);
 }
 int64_t rt_vecs_get_i64(void *vec, int64_t index) { return rt_list_get_i64(vec, index); }
-void   *rt_vecs_get_ptr(void *vec, int64_t index) { return rt_list_get_ptr(vec, index); }
+// `vec::get::str` is declared in mire as returning an owned `:str`, so the
+// compiler treats the result as the caller's property and releases it when the
+// binding goes out of scope. Returning the element pointer itself therefore
+// handed the caller a borrowed address: the release dropped the element's
+// refcount to zero, freed the block, and the next allocation reused it. A
+// later `vec::get::str` on the same vector then returned whatever now occupied
+// that memory.
+//
+// Give the caller exactly one owned reference instead: retain when the element
+// is already managed, and copy when it is not. The cost is one refcount
+// increment; a use-after-free is not a trade worth making.
+void   *rt_vecs_get_ptr(void *vec, int64_t index) {
+    char *raw = (char *)rt_list_get_ptr(vec, index);
+    if (raw == NULL) return NULL;
+    if (rt_managed_is_managed(raw)) {
+        rt_managed_retain(raw);
+        return raw;
+    }
+    return rt_managed_from_cstr(raw);
+}
 void   *rt_vecs_push_i64(void *vec, int64_t value) { return rt_list_push_i64(vec, value); }
 void   *rt_vecs_push_ptr(void *vec, void *value) { return rt_list_push_ptr(vec, value); }
 void    rt_vecs_set_i64(void *vec, int64_t index, int64_t value) { rt_list_set_i64(vec, index, value); }
