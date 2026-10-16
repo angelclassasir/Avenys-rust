@@ -651,6 +651,9 @@ impl<'a> ModuleRenamer<'a> {
                 target: Box::new(self.rename_expression(*target, scope_stack)),
                 index: Box::new(self.rename_expression(*index, scope_stack)),
             },
+            AssignmentTarget::Dereference { target } => AssignmentTarget::Dereference {
+                target: Box::new(self.rename_expression(*target, scope_stack)),
+            },
         }
     }
 

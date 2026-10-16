@@ -85,6 +85,7 @@ impl TypeChecker {
         target: &mut AssignmentTarget,
         value: &mut Expression,
     ) -> Result<()> {
+        eprintln!("[DBG] check_assignment_statement ENTERed\n");
         let value_type = self.check_expression(value)?;
         let (mut target_type, is_target_mutable) =
             self.resolve_assignment_target(target)?.ok_or_else(|| {
@@ -94,6 +95,9 @@ impl TypeChecker {
                 )
             })?;
 
+        eprintln!("[DBG] is_assignable expected={target_type:?} actual={value_type:?}");
+        eprintln!("[DBG] expected={target_type:?} actual={value_type:?}");
+        eprintln!("[DBG2] assign expected={target_type:?} actual={value_type:?} assignable={}", self.is_assignable(&target_type, &value_type));
         if !self.is_assignable(&target_type, &value_type) {
             return Err(type_error_at_span(
                 self.current_span,
@@ -113,7 +117,9 @@ impl TypeChecker {
             ));
         }
 
-        if !is_target_mutable {
+        // A store through a pointer has no binding to be mutable.
+        let needs_mutable_binding = !matches!(target, AssignmentTarget::Dereference { .. });
+        if needs_mutable_binding && !is_target_mutable {
             return Err(type_error_at_span(
                 self.current_span,
                 format!(
@@ -128,6 +134,8 @@ impl TypeChecker {
                 self.check_field_assignment(path, value, &value_type)?
             }
             AssignmentTarget::Index { .. } => {}
+            // A store through a pointer introduces no binding to refresh.
+            AssignmentTarget::Dereference { .. } => {}
             AssignmentTarget::Variable(name) => {
                 Self::validate_explicit_nested_literal(&target_type, value)?;
                 target_type = Self::unify_types(&target_type, &value_type)?;

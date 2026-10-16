@@ -289,5 +289,9 @@ pub(super) fn hash_assignment_target(target: &AssignmentTarget, hasher: &mut FxH
             hash_expression(target, hasher);
             hash_expression(index, hasher);
         }
+        AssignmentTarget::Dereference { target } => {
+            hasher.write_u8(3);
+            hash_expression(target, hasher);
+        }
     }
 }

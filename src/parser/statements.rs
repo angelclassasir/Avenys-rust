@@ -204,6 +204,9 @@ impl Parser {
     }
 
     fn parse_set_statement(&mut self) -> Result<Statement> {
+        if std::env::var("MIRE_DBG_SET").is_ok() {
+            eprintln!("[DBG] parse_set_statement ENTERed");
+        }
         self.expect(TokenType::Set)?;
 
         let var_token = self.peek();
@@ -295,6 +298,7 @@ impl Parser {
             target,
             crate::parser::ast::AssignmentTarget::Field(_)
                 | crate::parser::ast::AssignmentTarget::Index { .. }
+                | crate::parser::ast::AssignmentTarget::Dereference { .. }
         ) {
             return Ok(Statement::Assignment {
                 target,

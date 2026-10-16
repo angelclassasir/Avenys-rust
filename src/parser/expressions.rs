@@ -903,6 +903,20 @@ impl Parser {
     }
 
     pub(super) fn parse_assignment_target(&mut self) -> Result<AssignmentTarget> {
+        // `*p = v` stores through a pointer. Reading through one already parsed
+        // as an expression, so without this branch a store had to be written as
+        // a runtime helper call.
+        if self.check(TokenType::Star) {
+            self.advance();
+            let target = self.parse_unary()?;
+            if std::env::var("MIRE_DBG_SET").is_ok() {
+                eprintln!("[DBG] parse_assignment_target: Dereference target={target:?}");
+            }
+            return Ok(AssignmentTarget::Dereference {
+                target: Box::new(target),
+            });
+        }
+
         let mut target = if self.check(TokenType::SelfToken) {
             self.advance();
             "self".to_string()

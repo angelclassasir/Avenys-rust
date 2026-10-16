@@ -249,6 +249,24 @@ impl TypeChecker {
     ) -> Result<Option<(DataType, bool)>> {
         match target {
             AssignmentTarget::Variable(name) => Ok(self.lookup_var(name)),
+            // A store through a pointer. The type is the pointee's, which the
+            // pointer expression already carries: an extern declared to return
+            // `&u32` hands back a reference whose referenced type is known, so
+            // the store is checked against that and lowered as a direct store.
+            AssignmentTarget::Dereference { target } => {
+                let mut probe = target.clone();
+                let inner = self.check_expression(&mut probe)?;
+                let pointee = match inner {
+                    DataType::Ref { inner } | DataType::RefMut { inner } => *inner,
+                    other => {
+                        return Err(type_error_at_span(
+                            self.current_span,
+                            format!("Cannot dereference non-reference type {:?}", other),
+                        ));
+                    }
+                };
+                Ok(Some((pointee, true)))
+            }
             AssignmentTarget::Field(path) => {
                 let Some((owner, field_path)) = path.split_once('.') else {
                     return Ok(self.lookup_var(path));
@@ -731,6 +749,9 @@ fn collect_used_identifiers_in_assignment_target(
         AssignmentTarget::Index { target, index } => {
             collect_used_identifiers_in_expr(target, declared, used);
             collect_used_identifiers_in_expr(index, declared, used);
+        }
+        AssignmentTarget::Dereference { target } => {
+            collect_used_identifiers_in_expr(target, declared, used);
         }
     }
 }

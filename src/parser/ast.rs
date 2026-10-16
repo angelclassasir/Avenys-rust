@@ -512,6 +512,16 @@ pub enum AssignmentTarget {
         target: Box<Expression>,
         index: Box<Expression>,
     },
+    /// `*p = v` — a store through a pointer.
+    ///
+    /// Reading through a pointer already worked (`*p` in an expression), so
+    /// writing had no counterpart: every store through a `:ptr` had to go out
+    /// to a runtime helper, and a hot loop paid one call per store on top of
+    /// the call it already paid for the read. This variant makes the store a
+    /// direct store, which is what the load already was.
+    Dereference {
+        target: Box<Expression>,
+    },
 }
 
 impl AssignmentTarget {
@@ -521,6 +531,8 @@ impl AssignmentTarget {
                 name.split('.').next()
             }
             AssignmentTarget::Index { target, .. } => Self::root_identifier(target),
+            // A store through a pointer introduces no binding.
+            AssignmentTarget::Dereference { .. } => None,
         }
     }
 
@@ -555,6 +567,10 @@ impl AssignmentTarget {
                 index: index.clone(),
                 data_type: DataType::Unknown,
             },
+            AssignmentTarget::Dereference { target } => Expression::Dereference {
+                expr: target.clone(),
+                data_type: DataType::Unknown,
+            },
         }
     }
 
@@ -564,6 +580,7 @@ impl AssignmentTarget {
             Expression::MemberAccess { target, .. } | Expression::Index { target, .. } => {
                 Self::root_identifier(target)
             }
+            Expression::Dereference { expr, .. } => Self::root_identifier(expr),
             _ => None,
         }
     }
@@ -576,6 +593,7 @@ impl std::fmt::Display for AssignmentTarget {
                 write!(f, "{name}")
             }
             AssignmentTarget::Index { target, index } => write!(f, "{target:?} at {index:?}"),
+            AssignmentTarget::Dereference { target } => write!(f, "*{target:?}"),
         }
     }
 }

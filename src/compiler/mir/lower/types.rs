@@ -111,3 +111,16 @@ pub(crate) fn data_type_to_kind(dt: &DataType) -> i64 {
         _ => 1,
     }
 }
+
+/// The type a pointer expression points at, when it carries one.
+///
+/// A dereference of a bare `:ptr` has no pointee type, so this returns `None`
+/// and the caller falls back to the pointer's own type. An extern declared to
+/// return `&u32` does carry one, which is what lets `*p = v` store the right
+/// width.
+pub(crate) fn pointee_referenced_type(ty: &DataType) -> Option<DataType> {
+    match ty {
+        DataType::Ref { inner } | DataType::RefMut { inner } => Some((**inner).clone()),
+        _ => None,
+    }
+}

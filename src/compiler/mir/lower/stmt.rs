@@ -1,6 +1,8 @@
 use super::MirLower;
 use super::collections::lower_index_write;
-use super::types::{extract_data_type, llvm_elem_type_str, llvm_type_byte_size};
+use super::types::{
+    extract_data_type, llvm_elem_type_str, llvm_type_byte_size, pointee_referenced_type,
+};
 use crate::compiler::location::statement_location;
 use crate::compiler::mir::*;
 use crate::parser::ast::{AssignmentTarget, DataType, Expression, Statement};
@@ -431,6 +433,22 @@ impl MirLower {
                             MirOp::Store(MirValue::temp(gep), v),
                             loc,
                         );
+                    }
+                    AssignmentTarget::Dereference { target } => {
+                        // `*p = v` is a direct store. The pointer expression
+                        // yields the address (an extern declared `:&u32` lowers
+                        // to one), so the value is stored straight through it
+                        // with no runtime call.
+                        let ptr_val = self.lower_expression(target);
+                        let pointee = extract_data_type(target);
+                        let mut stored = v;
+                        let store_ty = pointee_referenced_type(&pointee).unwrap_or(pointee.clone());
+                        let val_ty = extract_data_type(value);
+                        if needs_convert(&val_ty, &store_ty) {
+                            stored = self.emit_convert(stored, &val_ty, &store_ty, loc);
+                        }
+                        let last = self.current_block;
+                        self.func.blocks[last].push(None, MirOp::Store(ptr_val, stored), loc);
                     }
                     AssignmentTarget::Field(path) => {
                         let last = self.current_block;
