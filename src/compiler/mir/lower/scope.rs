@@ -179,6 +179,72 @@ impl MirLower {
             );
         }
     }
+
+    /// Release the owned locals of every open frame without popping any of
+    /// them. This is what a `return` needs.
+    ///
+    /// `return` used to call `end_scope_and_release`, which releases one frame
+    /// and pops it. At the top level of a function body that frame IS the
+    /// function's own frame, so every top-level `return` tore the function
+    /// scope down. Statements after it then ran against a stack that
+    /// `frame_mut` silently refilled, and a local declared before the first
+    /// `return` and rebound after it — `set out = []` followed by
+    /// `set out = vec::push::str(out, x)` — was tracked in a second frame and
+    /// released a second time. That is a double free, and it is why
+    /// `owl info --json` aborted with one.
+    ///
+    /// Releasing every frame here and leaving them in place keeps the invariant
+    /// that a name is tracked in exactly one frame. The emitted drops still sit
+    /// in the block of the `return`, so only the `return` that actually runs
+    /// performs them and each local is released on exactly one path.
+    pub(crate) fn release_all_frames(&mut self) {
+        let mut pending: Vec<(String, usize, DataType)> = Vec::new();
+        let mut escaped: Vec<String> = Vec::new();
+        for frame in self.scope_stack.iter_mut() {
+            if frame.blocked {
+                continue;
+            }
+            pending.extend(std::mem::take(&mut frame.owned_locals));
+            escaped.extend(std::mem::take(&mut frame.escaped_locals));
+        }
+        if pending.is_empty() {
+            return;
+        }
+        for (name, slot, ty) in pending {
+            if escaped.contains(&name) {
+                continue;
+            }
+            // A local whose slot was reused by another name is not ours.
+            match self.vars.get(&name) {
+                Some(current) if *current == slot => {}
+                _ => continue,
+            }
+            let ownership = super::stmt::ownership_of(&ty);
+            if matches!(
+                ownership,
+                crate::compiler::mir::Ownership::Borrowed | crate::compiler::mir::Ownership::None
+            ) {
+                continue;
+            }
+            let temp = self.new_temp();
+            let block = self.current_block;
+            self.func.blocks[block].push(
+                Some(temp),
+                MirOp::Load(
+                    MirValue::temp(slot),
+                    MirType {
+                        data_type: ty.clone(),
+                    },
+                ),
+                (0, 0),
+            );
+            self.func.blocks[block].push(
+                None,
+                MirOp::Drop(MirValue::temp(temp), ownership),
+                (0, 0),
+            );
+        }
+    }
 }
 
 impl MirLower {

@@ -580,7 +580,13 @@ impl MirLower {
                 // that the return expression reaches through, was recorded as
                 // escaped above and is skipped — releasing it would free what
                 // the caller now owns.
-                self.end_scope_and_release();
+                //
+                // Every open frame is released, not just the innermost one. At
+                // the top level of a body the innermost frame is the function's
+                // own; releasing and popping just that one made the next
+                // top-level `return` operate on a scope that no longer existed,
+                // which released an already-released local a second time.
+                self.release_all_frames();
 
                 let last = self.current_block;
                 self.func.blocks[last].terminator = MirTerminator::Ret(v);
