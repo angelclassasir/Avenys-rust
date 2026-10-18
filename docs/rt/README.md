@@ -2,7 +2,7 @@
 
 > Runtime tiers, verified symbol reference, and configuration.
 
-Version: **4.3.13**
+Version: **4.4.9**
 Status: **Stable**
 Date: **2026-09-12**
 
@@ -10,27 +10,22 @@ Date: **2026-09-12**
 
 ## Overview
 
-Mire supports **three runtime tiers** that control how much of the standard runtime is linked into your program. The tier is configured via `[c] runtime` in `owl.toml`.
+Mire supports two runtime tiers that control how much of the standard runtime is linked into your program. The tier is configured via `[build].runtime` in `owl.toml`.
 
 ---
 
 ## Tier Comparison
 
-| Feature | `full` (default) | `minimal` | `none` |
-|---------|------------------|-----------|--------|
-| String ops (`str::*`) | Yes | Yes | No |
-| Vector ops (`vec::*`) | Yes | Yes | No |
-| Map ops (`map::*`) | Yes | Yes | No |
-| Math functions | Yes | Yes | No |
-| Random | Yes | No | No |
-| Threads | Yes | No | No |
-| File I/O | Yes | On demand | No |
-| Process spawning | Yes | On demand | No |
-| Managed memory | Yes | Yes | User provides |
-| Safety checks | Yes | Yes | User provides |
-| PAL (fs, proc, crypto) | Yes | On demand | User provides |
-| Binary size | ~200 KB | ~80 KB | ~15 KB |
-| Libraries linked | `-lm -lssl -lcrypto -lsodium -lpthread -lc` | `-lm -lc` (+ crypto if PAL) | `-lc` (or `-nostdlib`) |
+| Feature | `minimal` (default) | `none` |
+|---------|---------------------|--------|
+| String/vector/map operations | On demand | No runtime provided |
+| File I/O and process support | On demand through PAL | User provides |
+| Managed memory and safety | Included when used | User provides |
+| PAL | Included when referenced | User provides |
+| Libraries linked | Only those required by selected runtime/PAL code | `-lc` or freestanding |
+
+The legacy value `runtime = "full"` is accepted as an alias for `minimal`;
+it does not force-link otherwise unused runtime or PAL modules.
 
 ---
 

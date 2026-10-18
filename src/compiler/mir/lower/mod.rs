@@ -321,6 +321,12 @@ pub fn lower_program_with_filename(
     // Predeclare runtime externs for built-in functions (bare contains etc.)
     let builtin_runtime_externs: Vec<MirExternFunction> = vec![
         MirExternFunction {
+            name: "strcmp".to_string(),
+            lib_name: "c".to_string(),
+            params: vec![DataType::Str, DataType::Str],
+            return_type: DataType::I32,
+        },
+        MirExternFunction {
             name: "rt_strings_contains".to_string(),
             lib_name: "c".to_string(),
             params: vec![DataType::Str, DataType::Str],

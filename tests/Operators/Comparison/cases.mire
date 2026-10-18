@@ -71,6 +71,34 @@ pub fn string_equality_case: () :bool {
 }
 
 @[test]
+pub fn independently_allocated_strings_compare_by_content: () :bool {
+    set first = "same" + " value"
+    set second = "same" + " value"
+    set different = "other" + " value"
+    return first == second && first != different
+}
+
+@[test]
+pub fn borrowed_strings_compare_by_content: () :bool {
+    set first = "same" + " value"
+    set second = "same" + " value"
+    set first_view = &first
+    set second_view = &second
+    return first_view == second_view
+}
+
+pub fn borrowed_string_parameters_compare_by_content: (left :&str, right :&str) :bool {
+    return left == right
+}
+
+@[test]
+pub fn borrowed_string_parameter_case: () :bool {
+    set first = "same" + " value"
+    set second = "same" + " value"
+    return borrowed_string_parameters_compare_by_content(first second)
+}
+
+@[test]
 pub fn comparison_expression_case: () :bool {
     set a = 2
     set b = 2

@@ -2,7 +2,7 @@
 
 > Stable Application Binary Interface for the Mire programming language.
 
-Version: **4.3.12**
+Version: **4.4.9**
 Status: **Stable**
 Date: **2026-09-12**
 
@@ -167,9 +167,11 @@ Closure:   _C<capture_hash><func_len><func><types>
 
 | Tier | Runtime Symbols | PAL Symbols |
 |------|-----------------|-------------|
-| `full` | All `rt_*` available | All `pal_*` available |
-| `minimal` | Demand-driven (used only) | Demand-driven |
+| `minimal` (default) | Demand-driven (used only) | Demand-driven |
 | `none` | None (user provides) | User provides |
+
+The legacy configuration value `full` aliases `minimal`; it does not select a
+separate runtime or expand the linked ABI surface.
 
 ---
 

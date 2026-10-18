@@ -565,7 +565,8 @@ fn add_tcc_library_search_paths(tcc_path: &str, linker: &mut Command) {
         }
         if in_libs {
             let trimmed = line.trim();
-            if trimmed.is_empty() || trimmed.starts_with("libtcc1:") || trimmed.starts_with("crt:") {
+            if trimmed.is_empty() || trimmed.starts_with("libtcc1:") || trimmed.starts_with("crt:")
+            {
                 in_libs = false;
                 continue;
             }

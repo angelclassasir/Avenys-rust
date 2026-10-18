@@ -1,6 +1,12 @@
 # Changelog
 
-## 4.4.4 unreleased - unreleased
+## 4.4.9 - 2026-10-18
+### Performance and verification
+- Vector append/read/pop/set paths read their existing length metadata directly instead of making redundant `rt_list_len` calls. Bounds checks, null behavior, and growth fallback are unchanged. Paired medians (five runs each): `alloc_pressure` 791→553 ms (30%), `vec_growth` 779→439 ms (44%), `vec_mixed_reads` 143→94 ms (34%), and `vec_pop_drain` 163→102 ms (37%). These paired results supersede earlier estimates below.
+- The 15-kernel benchmark suite verifies identical outputs across Mire, Rust, and C where present. Latest best-of-five run: `alloc_pressure` 487 ms (Rust 26 ms, C 62 ms), `vec_growth` 423 ms (Rust 53 ms, C 75 ms); full table and measurement caveats are in `bench/README.md`.
+- String content comparisons (including borrowed strings) and raw pointer identity are distinguished by semantic type. Pointer arithmetic uses byte offsets and raw `u32` access uses four-byte widths; focused FFI regressions cover the fixes.
+- Release tests: 246 library + 14 CLI tests pass. `cargo clippy --all-targets -- -D warnings` is clean.
+
 ### Added
 - **IR cache keyed on codegen epoch.** The incremental MIR→IR cache now includes a fingerprint of `src/compiler/mir` sources (emitted via `MIRE_CODEGEN_EPOCH` from build.rs). This prevents a codegen edit from silently reusing IR produced by the previous compiler, which would appear as a no-op. The epoch is overridable with `MIRE_CACHE_EPOCH` for development workflows.
 - **install.sh: package manager + AUR + compiler validation.** `deps_for_pm()` lists gcc as non‑optional (Avenys compiles its own PAL/runtime in C). `install_deps()` adds error capture, AUR tcc installation when a helper is present (paru/yay/pikaur/trizen), and a post‑install check that a C compiler is on PATH. `prereq_missing()` reports the exact missing tool (tcc/cc/gcc/clang or opt/llc). The audit report now shows C compiler status, AUR helper availability, and system library presence.

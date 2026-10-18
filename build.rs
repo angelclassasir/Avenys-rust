@@ -17,7 +17,7 @@ use std::path::{Path, PathBuf};
 /// Directories whose contents can change the generated IR.
 const IR_INPUTS: &[&str] = &["src/compiler/mir"];
 
-fn collect(root: &Path, dir: &Path, out: &mut Vec<PathBuf>) {
+fn collect(dir: &Path, out: &mut Vec<PathBuf>) {
     let entries = match std::fs::read_dir(dir) {
         Ok(e) => e,
         Err(_) => return,
@@ -27,7 +27,7 @@ fn collect(root: &Path, dir: &Path, out: &mut Vec<PathBuf>) {
     items.sort();
     for path in items {
         if path.is_dir() {
-            collect(root, &path, out);
+            collect(&path, out);
         } else if path.extension().map(|e| e == "rs").unwrap_or(false) {
             out.push(path);
         }
@@ -38,7 +38,7 @@ fn main() {
     let root = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR"));
     let mut files = Vec::new();
     for dir in IR_INPUTS {
-        collect(&root, &root.join(dir), &mut files);
+        collect(&root.join(dir), &mut files);
     }
     files.sort();
 

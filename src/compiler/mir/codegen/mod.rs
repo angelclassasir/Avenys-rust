@@ -29,8 +29,6 @@ pub(crate) struct LlvmCtx<'a> {
     next_string_id: usize,
     defined_fn_names: HashSet<String>,
     extern_fn_names: HashSet<String>,
-    /// Runtime tier for codegen decisions (e.g., pointer comparison semantics)
-    pub(crate) runtime_tier: RuntimeTier,
     /// Maps extern function name -> its mire-wrapper LLVM name (e.g. "abs" -> "@fn_abs_wrapper").
     extern_wrapper_names: HashMap<String, String>,
     struct_types: &'a HashMap<String, Vec<(String, DataType)>>,
@@ -44,7 +42,7 @@ pub fn mir_to_llvm(program: &MirProgram) -> (String, Vec<(String, String)>) {
 pub fn mir_to_llvm_with_filename(
     program: &MirProgram,
     source_filename: &str,
-    runtime_tier: RuntimeTier,
+    _runtime_tier: RuntimeTier,
 ) -> (String, Vec<(String, String)>) {
     let mut extern_decls = Vec::new();
     let mut declared = std::collections::HashSet::new();
@@ -94,7 +92,6 @@ pub fn mir_to_llvm_with_filename(
         extern_wrapper_names,
         struct_types: &program.struct_types,
         _source_filename: source_filename.to_string(),
-        runtime_tier,
     };
     for func in &program.functions {
         let func_ir = compile_function_to_llvm(func, &mut ctx);

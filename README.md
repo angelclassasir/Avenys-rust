@@ -1,4 +1,4 @@
-# Avenys v4.4.3
+# Avenys v4.4.9
 
 **A compiled, ownership-aware systems language with an LLVM backend.**
 
@@ -11,12 +11,13 @@ The compiler, Avenys, translates Mire source through a multi-stage pipeline into
 native binaries via LLVM. It ships with Kioto, a standard library covering
 strings, collections, math, filesystem, processes, and more.
 
-## Recent Changes (v4.4.3)
+## Recent Changes (v4.4.9)
 
 - **IR cache keyed on codegen epoch.** The incremental MIR→IR cache now includes a fingerprint of `src/compiler/mir` sources (emitted via `MIRE_CODEGEN_EPOCH` from build.rs). This prevents a codegen edit from silently reusing IR produced by the previous compiler, which would appear as a no-op. The epoch is overridable with `MIRE_CACHE_EPOCH` for development workflows.
 - **install.sh: package manager + AUR + compiler validation.** `deps_for_pm()` lists gcc as non‑optional (Avenys compiles its own PAL/runtime in C). `install_deps()` adds error capture, AUR tcc installation when a helper is present (paru/yay/pikaur/trizen), and a post‑install check that a C compiler is on PATH. `prereq_missing()` reports the exact missing tool (tcc/cc/gcc/clang or opt/llc). The audit report now shows C compiler status, AUR helper availability, and system library presence.
-- **alloc_pressure representational gap.** Vector `len` resides in heap memory, not a register, so 8 M pushes incur 2 loads + 2 stores each instead of register‑promoted stores. This same cost appears in `vec_growth` (~2.4× vs C). The `with_capacity` OOM clamp adds ~16 % overhead on the push path. Through owl CLI the measurement is ~1.33×; through mire CLI it is ~3.1× due to cache‑cold differences.
-- **vec_growth A/B growth policy.** Measured at ~2.4× vs C (Mire ~78–80 ms, C ~55 ms). The 1.5× growth factor generates realloc traffic; guarded vs unguarded measurements show <1 % variance from glibc realloc non‑determinism.
+- **Vector hot paths.** Append, indexed read, pop, and set now read vector metadata directly rather than calling `rt_list_len` internally. Paired five-run medians improved `alloc_pressure` 791→553 ms, `vec_growth` 779→439 ms, `vec_mixed_reads` 143→94 ms, and `vec_pop_drain` 163→102 ms. The latest full suite measures `alloc_pressure` at 487 ms (18.73x Rust) and `vec_growth` at 423 ms (7.98x Rust); these remain optimization targets. See [the benchmark report](bench/README.md) for the full table and methodology.
+- **String and raw-pointer comparisons are type-correct.** Strings, including borrowed strings, compare by content; opaque pointers compare by address. Byte pointer arithmetic and raw `u32` widths have FFI regression coverage.
+- **Validation.** The release suite passes 260 Rust tests; Clippy passes with warnings denied; all 15 benchmark kernels verify identical outputs.
 - Runtime elapsed-time formatting and standard input now cross the PAL instead
   of calling host clock and input APIs directly. Runtime standard output/error
   APIs use PAL writes as well. The WASI PAL can read and write standard
@@ -27,12 +28,11 @@ strings, collections, math, filesystem, processes, and more.
   WASI does not expose lazy virtual-memory reservation. Filesystem helpers and
   process creation still have direct host calls under review.
 
-## Recent Changes (v4.3.12)
-- **Collection drops use semantic ownership.** Vectors and maps now use their
-  collection destructors instead of the managed-string free path. The former
-  path silently ignored ordinary malloc-backed collections. A second ownership
-  defect in reused `vec.push` assignment targets was fixed before publishing
-  performance results; the earlier 3.12x result is invalid and is not claimed.
+## Compatibility and design notes
+- **Collection drops use semantic ownership.** Vectors and maps use their own
+  destructors instead of the managed-string free path. Earlier 3.12x numbers
+  were invalidated by a separate vector-push ownership defect; see the current
+  benchmark report for verified results.
 - **Builtin registrations are checked against lowering.** Every registered
   builtin has an explicit implementation or unsupported disposition, and
   unsupported calls receive a type-checking diagnostic instead of producing
@@ -576,9 +576,11 @@ The `[c] runtime` setting in `owl.toml` controls what gets linked:
 
 | Tier | C files | Libraries | Use case |
 |------|---------|-----------|----------|
-| `full` (default) | 15 runtime + PAL | `-lm -lssl -lcrypto -lsodium -lc` | Full stdlib, backward compatible |
-| `minimal` | demand-driven (1-6) | `-lm -lc` (+ crypto if PAL used) | Size optimization, embeddings |
+| `minimal` (default) | demand-driven | `-lm -lc` (+ crypto if PAL used) | Standard builds, embeddings |
 | `none` | 0 | none (static) | Freestanding, kernels, bare metal |
+
+The legacy setting `runtime = "full"` is accepted as an alias for `minimal`;
+there is no separate full-runtime build tier.
 
 With `runtime = "none"` + `nostartfiles = true` + `nostdlib = true` you get a
 ~14KB statically linked binary with **zero external dependencies**.

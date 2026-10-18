@@ -14,6 +14,16 @@ fn is_float_dt(t: &DataType) -> bool {
     matches!(t, DataType::F32 | DataType::F64)
 }
 
+fn is_string_comparison_type(t: &DataType) -> bool {
+    match t {
+        DataType::Str => true,
+        DataType::Ref { inner } | DataType::RefMut { inner } => {
+            matches!(inner.as_ref(), DataType::Str)
+        }
+        _ => false,
+    }
+}
+
 /// Returns true if both operands of a binary / or % are integer types
 /// (i.e. the operation should be lowered with a div-by-zero check instead of fdiv/frem).
 fn is_int_division(left: &Expression, right: &Expression) -> bool {
@@ -268,6 +278,68 @@ impl MirLower {
                             loc,
                         );
                     }
+                    return MirValue::temp(result);
+                }
+
+                // `str` and raw `ptr` share an LLVM representation, but not
+                // comparison semantics. Preserve the source-level string type
+                // here so equal strings allocated independently still compare
+                // by content; generic pointer comparisons remain address-based.
+                if matches!(operator.as_str(), "==" | "!=")
+                    && is_string_comparison_type(&extract_data_type(left))
+                    && is_string_comparison_type(&extract_data_type(right))
+                {
+                    let lower_string_operand = |this: &mut Self, expr: &Expression| {
+                        // A borrowed string parameter already is the string
+                        // pointer at the ABI boundary. Identifier lowering
+                        // normally loads from its variable slot, which would
+                        // interpret the first eight text bytes as a pointer.
+                        if matches!(
+                            extract_data_type(expr),
+                            DataType::Ref { inner } | DataType::RefMut { inner }
+                                if matches!(inner.as_ref(), DataType::Str)
+                        ) && let Expression::Identifier(identifier) = expr
+                            && this
+                                .func
+                                .params
+                                .iter()
+                                .any(|parameter| parameter.name == identifier.name)
+                        {
+                            return MirValue::Param(identifier.name.clone());
+                        }
+                        this.lower_expression(expr)
+                    };
+                    let l = lower_string_operand(self, left);
+                    let r = lower_string_operand(self, right);
+                    let compared = self.new_temp();
+                    let last = self.current_block;
+                    self.func.blocks[last].push(
+                        Some(compared),
+                        MirOp::Call(
+                            MirValue::Global("strcmp".to_string()),
+                            vec![l, r],
+                            MirType {
+                                data_type: DataType::I32,
+                            },
+                        ),
+                        loc,
+                    );
+                    let result = self.new_temp();
+                    let comparison = if operator == "==" {
+                        MirCmp::Eq
+                    } else {
+                        MirCmp::Ne
+                    };
+                    let last = self.current_block;
+                    self.func.blocks[last].push(
+                        Some(result),
+                        MirOp::ICmp(
+                            comparison,
+                            MirValue::temp(compared),
+                            MirValue::Const(MirConst::Int(0)),
+                        ),
+                        loc,
+                    );
                     return MirValue::temp(result);
                 }
 
@@ -569,15 +641,36 @@ impl MirLower {
             // Byte-granular pointer arithmetic. The GEP element type must be
             // `i8` so that one index step advances exactly one byte; using `ptr`
             // would stride by the pointer size and silently address the wrong
-            // element.
-            Expression::Call { name, args, .. } if name == "rt_ptr_add" && args.len() == 2 => {
-                let base = self.lower_expression(&args[0]);
+            // element. The dedicated codegen form also preserves the runtime
+            // helper's null-in/null-out behavior without a C call. The explicit
+            // `rt_ptr_add_nonnull` form is for callers that guarantee a valid,
+            // non-null base and want to avoid the repeated null-preserving select.
+            Expression::Call { name, args, .. }
+                if matches!(name.as_str(), "rt_ptr_add" | "rt_ptr_add_nonnull")
+                    && args.len() == 2 =>
+            {
+                let mut base = self.lower_expression(&args[0]);
+                if !matches!(extract_data_type(&args[0]), DataType::Pointer(_)) {
+                    let converted = self.new_temp();
+                    let last = self.current_block;
+                    self.func.blocks[last].push(
+                        Some(converted),
+                        MirOp::IntToPtr(
+                            base,
+                            MirType {
+                                data_type: DataType::Pointer(Box::new(DataType::Unknown)),
+                            },
+                        ),
+                        loc,
+                    );
+                    base = MirValue::temp(converted);
+                }
                 let delta = self.lower_expression(&args[1]);
                 let result = self.new_temp();
                 let last = self.current_block;
                 self.func.blocks[last].push(
                     Some(result),
-                    MirOp::Gep(base, vec![delta], "i8".to_string()),
+                    MirOp::Gep(base, vec![delta], name.clone()),
                     loc,
                 );
                 MirValue::temp(result)
@@ -629,11 +722,7 @@ impl MirLower {
                     loc,
                 );
                 let last = self.current_block;
-                self.func.blocks[last].push(
-                    None,
-                    MirOp::Store(p, MirValue::temp(narrowed)),
-                    loc,
-                );
+                self.func.blocks[last].push(None, MirOp::Store(p, MirValue::temp(narrowed)), loc);
                 MirValue::Const(MirConst::None)
             }
             Expression::Call {
@@ -1230,6 +1319,24 @@ impl MirLower {
             Expression::Reference { expr, .. } => {
                 if let Expression::Identifier(id) = expr.as_ref() {
                     if let Some(&ptr) = self.vars.get(&id.name) {
+                        // `&str` uses the same pointer ABI as `str`: borrowing
+                        // a string binding must yield its character pointer,
+                        // not the address of the local slot that stores it.
+                        if self.var_types.get(&id.name) == Some(&DataType::Str) {
+                            let loaded = self.new_temp();
+                            let block = self.current_block;
+                            self.func.blocks[block].push(
+                                Some(loaded),
+                                MirOp::Load(
+                                    MirValue::temp(ptr),
+                                    MirType {
+                                        data_type: DataType::Str,
+                                    },
+                                ),
+                                loc,
+                            );
+                            return MirValue::temp(loaded);
+                        }
                         MirValue::temp(ptr)
                     } else {
                         MirValue::Const(MirConst::None)

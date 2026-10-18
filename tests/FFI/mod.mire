@@ -27,6 +27,7 @@ pub fn ffi_abs_negative: () :bool {
 extern fn rt_alloc_raw: (size :i64) :ptr lib "c"
 extern fn rt_free_raw: (ptr :ptr) lib "c"
 extern fn rt_ptr_add: (ptr :ptr, delta :i64) :ptr lib "c"
+extern fn rt_ptr_add_nonnull: (ptr :ptr, delta :i64) :ptr lib "c"
 extern fn rt_write_u8: (ptr :ptr, value :i64) lib "c"
 extern fn rt_read_u8: (ptr :ptr) :i64 lib "c"
 extern fn rt_managed_from_slice: (src :ptr, len :i64) :str lib "c"
@@ -56,6 +57,43 @@ pub fn ffi_write_and_read_byte_at_offset: () :bool {
     set ok = rt_read_u8(buffer) == 0x41 && rt_read_u8(rt_ptr_add(buffer 3)) == 0xFA
     rt_free_raw(buffer)
     return ok
+}
+
+@[test]
+pub fn ffi_nonnull_pointer_offset_preserves_byte_stride: () :bool {
+    set buffer = rt_alloc_raw(8)
+    if buffer == 0 {
+        return false
+    }
+    rt_write_u8(rt_ptr_add_nonnull(buffer 5) 0x7B)
+    set ok = rt_read_u8(rt_ptr_add_nonnull(buffer 5)) == 0x7B
+    rt_free_raw(buffer)
+    return ok
+}
+
+@[test]
+pub fn ffi_distinct_raw_pointers_compare_by_address: () :bool {
+    set first = rt_alloc_raw(4)
+    set second = rt_alloc_raw(4)
+    if first == 0 || second == 0 {
+        if first != 0 { rt_free_raw(first) }
+        if second != 0 { rt_free_raw(second) }
+        return false
+    }
+    // Equal bytes are deliberately not NUL-terminated: pointer identity must
+    // not read past either allocation as a string comparison would.
+    rt_write_u8(first 0x41)
+    rt_write_u8(rt_ptr_add(first 1) 0x42)
+    rt_write_u8(rt_ptr_add(first 2) 0x43)
+    rt_write_u8(rt_ptr_add(first 3) 0x44)
+    rt_write_u8(second 0x41)
+    rt_write_u8(rt_ptr_add(second 1) 0x42)
+    rt_write_u8(rt_ptr_add(second 2) 0x43)
+    rt_write_u8(rt_ptr_add(second 3) 0x44)
+    set distinct = first != second
+    rt_free_raw(first)
+    rt_free_raw(second)
+    return distinct
 }
 
 @[test]

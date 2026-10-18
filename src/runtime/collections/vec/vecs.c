@@ -59,8 +59,11 @@ void *rt_list_push_i64(void *list_ptr, int64_t value) {
         list_ptr = rt_list_create(4, 8);
         if (!list_ptr) return NULL;
     }
-    int64_t len = rt_list_len(list_ptr);
-    int64_t cap = list_cap(list_ptr);
+    // The list pointer addresses its length field; avoid an out-of-line
+    // rt_list_len call on this hottest append path.
+    int64_t *header = (int64_t *)list_ptr;
+    int64_t len = header[0];
+    int64_t cap = header[-1];
     if (len >= cap) {
         list_ptr = list_grow(list_ptr, 8);
         if (!list_ptr) return NULL;
@@ -75,8 +78,9 @@ void *rt_list_push_ptr(void *list_ptr, void *value) {
         list_ptr = rt_list_create(4, 8);
         if (!list_ptr) return NULL;
     }
-    int64_t len = rt_list_len(list_ptr);
-    int64_t cap = list_cap(list_ptr);
+    int64_t *header = (int64_t *)list_ptr;
+    int64_t len = header[0];
+    int64_t cap = header[-1];
     if (len >= cap) {
         list_ptr = list_grow(list_ptr, 8);
         if (!list_ptr) return NULL;
@@ -92,8 +96,9 @@ void *rt_list_push_scalar(void *list_ptr, int64_t value, int64_t elem_size) {
         list_ptr = rt_list_create(4, elem_size);
         if (!list_ptr) return NULL;
     }
-    int64_t len = rt_list_len(list_ptr);
-    int64_t cap = list_cap(list_ptr);
+    int64_t *header = (int64_t *)list_ptr;
+    int64_t len = header[0];
+    int64_t cap = header[-1];
     if (len >= cap) {
         list_ptr = list_grow(list_ptr, elem_size);
         if (!list_ptr) return NULL;
@@ -114,9 +119,11 @@ void *rt_list_push_scalar(void *list_ptr, int64_t value, int64_t elem_size) {
 }
 
 int64_t rt_list_pop_i64(void *list_ptr) {
-    int64_t len = rt_list_len(list_ptr);
+    if (!list_ptr) return 0;
+    int64_t *header = (int64_t *)list_ptr;
+    int64_t len = header[0];
     if (len <= 0) return 0;
-    ((int64_t *)list_ptr)[0] = len - 1;
+    header[0] = len - 1;
     return ((int64_t *)list_ptr)[len];
 }
 
@@ -192,21 +199,24 @@ void *rt_list_clear(void *list_ptr) {
 }
 
 int64_t rt_list_get_i64(void *list_ptr, int64_t index) {
-    int64_t len = rt_list_len(list_ptr);
+    if (!list_ptr) return 0;
+    int64_t len = ((int64_t *)list_ptr)[0];
     if (index < 0 || index >= len) return 0;
     return ((int64_t *)list_ptr)[index + 1];
 }
 
 void *rt_list_get_ptr(void *list_ptr, int64_t index) {
-    int64_t len = rt_list_len(list_ptr);
+    if (!list_ptr) return NULL;
+    int64_t len = ((int64_t *)list_ptr)[0];
     if (index < 0 || index >= len) return NULL;
     void *value = ((void **)list_ptr)[index + 1];
     return value;
 }
 
 void rt_list_set_i64(void *list_ptr, int64_t index, int64_t value) {
-    int64_t len = rt_list_len(list_ptr);
-    if (!list_ptr || index < 0 || index >= len) return;
+    if (!list_ptr) return;
+    int64_t len = ((int64_t *)list_ptr)[0];
+    if (index < 0 || index >= len) return;
     ((int64_t *)list_ptr)[index + 1] = value;
 }
 void rt_lists_set_i64(void *list, int64_t index, int64_t value) { rt_list_set_i64(list, index, value); }

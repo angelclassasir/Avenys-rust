@@ -2,7 +2,7 @@
 
 > Capability-based host interaction with tests and examples.
 
-Version: **4.3.12**
+Version: **4.4.9**
 Status: **Stable**
 Date: **2026-09-12**
 

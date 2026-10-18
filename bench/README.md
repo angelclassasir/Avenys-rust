@@ -29,18 +29,21 @@ sets the isolated work directory (default: `/tmp/mire-bench`).
 
 | Kernel | Workload |
 |---|---|
-| `L1_while` | Counter-based while loop |
-| `L2_for_lista` | Indexed reads from a dynamic list |
-| `L3_anidados` | Two nested loops |
-| `L4_break_continue` | `break` and `continue` control flow |
-| `V1_muchas_locales` | 24 live local variables and register pressure |
-| `V2_intercambio` | Rotation of eight variables |
-| `P1_metodo` | Struct method dispatch |
-| `P2_trait_dos` | Trait dispatch across two implementations |
-| `P3_cadena_impl` | Method delegation through a trait |
-| `C1_recursion` | Recursive Ackermann workload |
-| `C2_allocacion` | Eight million iterations, each creating a vector |
-| `C3_mixed_ops` | Interleaved integer and floating-point operations |
+| `alloc_pressure` | Eight million short-lived vectors, each pushed eight times |
+| `break_continue` | Branch-heavy loop control |
+| `list_indexed_read` | Repeated indexed reads from a vector |
+| `many_locals` | Live local variables and register pressure |
+| `method_dispatch` | Struct method dispatch |
+| `mixed_int_float` | Interleaved integer and floating-point operations |
+| `nested_loops` | Two nested loops |
+| `recursion_ackermann` | Recursive Ackermann workload |
+| `string_impl` | Method delegation through an implementation |
+| `swap_exchange` | Rotation of eight variables |
+| `trait_dispatch` | Trait dispatch across implementations |
+| `vec_growth` | Repeated vector growth and reallocation |
+| `vec_mixed_reads` | Interleaved vector reads |
+| `vec_pop_drain` | Repeated pop/drain operations |
+| `while_counter` | Counter-based while loop |
 
 `noop` is reserved for measuring process startup and is not part of the
 12-kernel comparison.
@@ -54,61 +57,46 @@ no reference counting, and no allocator of the compiler's own. Where a Mire
 version would need runtime machinery to reach the same numbers, that gap is a
 finding to record, not an excuse to rewrite the kernel until it passes.
 
-Measured October 10, 2026, with Rust 1.99.0 (`-C opt-level=3`), C
-(`cc -O3 -march=native`), and Mire/Avenys 4.3.13 (`-O3`), best of five runs.
-Output verification passed for all 12 kernels across all three legs
-immediately beforehand.
+Measured October 18, 2026, with Rust 1.99.0 (`-C opt-level=3`), C
+(`cc -O3 -march=native`), and the Avenys 4.4.9 release candidate (`-O3`),
+best of five runs. Output verification passed for all 15 kernels across all
+available legs immediately beforehand. Values are machine-specific; runs are
+not pinned to a CPU, and sub-25 ms results are dominated by process startup.
 
 | Kernel | Workload | Rust -O3 | C -O3 | Mire -O3 | Mire/C | Mire/Rust |
 |---|---|---:|---:|---:|---:|---:|
-| `C1_recursion` | hard | 36 ms | 36 ms | 37 ms | 1.03x | 1.03x |
-| `C2_allocacion` | hard | 26 ms | 65 ms | 1442 ms | **22.18x** | 55.46x |
-| `C3_mixed_ops` | medium | 40 ms | 35 ms | 40 ms | 1.14x | 1.00x |
-| `L1_while` | trivial | 47 ms | 39 ms | 49 ms | 1.26x | 1.04x |
-| `L2_for_lista` | easy | 14 ms | 13 ms | 23 ms | 1.77x | noise floor |
-| `L3_anidados` | medium | 50 ms | 55 ms | 57 ms | 1.04x | 1.14x |
-| `L4_break_continue` | medium | 31 ms | 16 ms | 28 ms | 1.75x | 0.90x |
-| `P1_metodo` | trivial | 129 ms | 126 ms | 133 ms | 1.06x | 1.03x |
-| `P2_trait_dos` | medium | 59 ms | 64 ms | 63 ms | 0.98x | 1.07x |
-| `P3_cadena_impl` | hard | 57 ms | 54 ms | 58 ms | 1.07x | 1.02x |
-| `V1_muchas_locales` | medium | 44 ms | 38 ms | 46 ms | 1.21x | 1.05x |
-| `V2_intercambio` | easy | 34 ms | 32 ms | 36 ms | 1.12x | 1.06x |
+| `alloc_pressure` | hard | 26 ms | 62 ms | 487 ms | 7.85x | 18.73x |
+| `break_continue` | medium | 30 ms | 15 ms | 28 ms | 1.87x | 0.93x |
+| `list_indexed_read` | easy | 15 ms | 14 ms | 23 ms | 1.64x | 1.53x* |
+| `many_locals` | medium | 44 ms | 37 ms | 46 ms | 1.24x | 1.05x |
+| `method_dispatch` | trivial | 128 ms | 125 ms | 131 ms | 1.05x | 1.02x |
+| `mixed_int_float` | medium | 39 ms | 33 ms | 40 ms | 1.21x | 1.03x |
+| `nested_loops` | medium | 50 ms | 54 ms | 56 ms | 1.04x | 1.12x |
+| `recursion_ackermann` | hard | 36 ms | 35 ms | 37 ms | 1.06x | 1.03x |
+| `string_impl` | hard | 57 ms | 53 ms | 58 ms | 1.09x | 1.02x |
+| `swap_exchange` | easy | 34 ms | 32 ms | 37 ms | 1.16x | 1.09x |
+| `trait_dispatch` | medium | 59 ms | 62 ms | 63 ms | 1.02x | 1.07x |
+| `vec_growth` | hard | 53 ms | 75 ms | 423 ms | 5.64x | 7.98x |
+| `vec_mixed_reads` | medium | 44 ms | 39 ms | 94 ms | 2.41x | 2.14x |
+| `vec_pop_drain` | medium | 47 ms | 44 ms | 98 ms | 2.23x | 2.09x |
+| `while_counter` | trivial | 47 ms | 38 ms | 49 ms | 1.29x | 1.04x |
 
 ### What the C leg shows
 
-**Eleven of the twelve kernels sit between 0.98x and 1.26x of C.** `P2_trait_dos`
-is marginally faster than C (0.98x): trait dispatch by branch costs no more than
-a function pointer. `L4_break_continue` is faster than Rust (0.90x) while
-slower than C, which compiles that loop's `continue` into a jump table the
-Mire backend does not match.
+**The general compute kernels remain close to native baselines.** Ten of the
+non-allocation/non-vector kernels are at or below 1.12x; the vector and
+allocation kernels are the clear remaining performance work. `list_indexed_read`
+is below the 25 ms noise floor and should not be used to draw a ratio conclusion.
 
-**The one real gap is allocation.** At 22.18x of C, `C2_allocacion` is the
-kernel worth understanding. Note that C is itself 2.5x slower than Rust here
-(65 ms against 26 ms): a `malloc`/`free` pair per iteration costs the system
-allocator more than `Vec`'s reuse does, and the C leg pays it honestly because
-the barrier keeps the allocation observable. Mire pays that same pair through
-the runtime and adds its own overhead on top.
+**The recent vector change is a measured improvement, not a claim of parity.**
+In paired five-run process timings, direct vector-header reads reduced
+`alloc_pressure` from 791 to 553 ms (30%), `vec_growth` from 779 to 439 ms
+(44%), `vec_mixed_reads` from 143 to 94 ms (34%), and `vec_pop_drain` from 163
+to 102 ms (37%). These are paired before/after samples; the full-suite
+best-of-five measurements above were rerun separately and show the current
+cross-language comparison. Allocation and growth remain substantially slower
+than Rust: `alloc_pressure` is 18.73x Rust and `vec_growth` is 7.98x.
 
-Isolating the parts of that kernel, at eight million iterations:
-
-| Workload | Time | Per iteration |
-|---|---|---|
-| allocate and release one `vec[i64]` | ~430 ms | ~54 ns |
-| plus eight `vec::push` and one `vec::len` | ~1442 ms | ~187 ns |
-
-Allocation is roughly a quarter of the cost; the `push` path is the other
-three quarters, at about 17 ns per call. A size-class slab allocator was built
-and measured against this kernel, did not improve it, and was reverted rather
-than kept on a favourable micro-benchmark — see the project history for those
-numbers.
-
-`L2_for_lista` is below the 25 ms noise floor; its ratio should not be read as
-a reliable performance comparison.
-
-## Current reference
-
-The current C2 result is an allocator baseline, not a final result. It
-supersedes the preliminary 81 ms result, which was invalid because a separate
-vector-push ownership bug caused use-after-free. Rerun `verify` and
-`measure C2_allocacion` after runtime or ownership changes before quoting this
-number as current.
+The former 3.12x C2 result is withdrawn: it was affected by a vector-push
+ownership defect and is not comparable. Always run `verify` before publishing
+measurements; use paired runs when attributing a change to a code revision.

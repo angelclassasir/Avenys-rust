@@ -2,7 +2,6 @@ use super::builtins::{builtin_to_pal, compile_pal_builtin};
 use super::resolve::{coerce_to, coerce_to_bool, resolve_named_call, resolve_typed};
 use super::types::{llvm_type_str, render_struct_llvm_type};
 use super::{LlvmCtx, sanitize_fn_name, tmp_extra, tmp_result};
-use crate::avens::config::RuntimeTier;
 use crate::compiler::mir::{DataType, MirCmp, MirConst, MirInst, MirOp, MirValue, Ownership};
 
 /// Resolves the common floating-point result type for a binary operation.
@@ -298,28 +297,11 @@ pub(crate) fn compile_inst(inst: &MirInst, ctx: &mut LlvmCtx) -> Vec<String> {
                     _ => "eq",
                 };
                 if lt == "ptr" && rt == "ptr" {
-                    // `ptr` and `str` share the LLVM type, so decide by whether
-                    // either side is a string *literal*. A literal can only ever
-                    // be compared by content, so it goes through strcmp. Two
-                    // pointer-valued operands are identities: comparing their
-                    // addresses. Sending those to strcmp (as this used to for
-                    // every runtime tier but `none`) answered "are these the
-                    // same C string?" for raw buffers, which is true for
-                    // unrelated pointers and reads out of bounds on buffers
-                    // that are not NUL-terminated. Anything branching on
-                    // buffer identity took the wrong path as a result.
-                    let is_str = matches!(l, MirValue::Const(MirConst::Str(_)))
-                        || matches!(r, MirValue::Const(MirConst::Str(_)));
-                    if is_str && ctx.runtime_tier != RuntimeTier::None {
-                        let scmp = tmp_extra(ctx, "i32");
-                        extra.push(format!(
-                            "{} = call i32 @strcmp(ptr {}, ptr {})",
-                            scmp, l_str, r_str
-                        ));
-                        format!("%t{} = icmp {} i32 {}, 0", result, cond, scmp)
-                    } else {
-                        format!("%t{} = icmp {} ptr {}, {}", result, cond, l_str, r_str)
-                    }
+                    // String content comparisons have already been lowered
+                    // explicitly from their semantic types. Two remaining
+                    // pointer operands are raw identities and must never be
+                    // passed to strcmp (they may not be NUL-terminated).
+                    format!("%t{} = icmp {} ptr {}, {}", result, cond, l_str, r_str)
                 } else {
                     // Pointer against an integer: an address comparison. This is
                     // the null check, `if ptr == 0`, and it used to be lowered to
@@ -797,36 +779,59 @@ pub(crate) fn compile_inst(inst: &MirInst, ctx: &mut LlvmCtx) -> Vec<String> {
         MirOp::Gep(base, indices, struct_name) => {
             let (base_str, _) = resolve_typed(base, ctx);
             let result = tmp_result(ctx, "ptr", inst.result);
-            let idx_strs: Vec<String> = indices
-                .iter()
-                .map(|i| {
-                    let (v, t) = resolve_typed(i, ctx);
-                    if t == "i64" && v.starts_with("%t") {
-                        let trunc = tmp_extra(ctx, "i32");
-                        extra.push(format!("{} = trunc i64 {} to i32", trunc, v));
-                        format!("i32 {}", trunc)
-                    } else {
-                        format!("i32 {}", v)
-                    }
-                })
-                .collect();
-            let struct_ty = if let Some(name) = struct_name.strip_prefix("struct:") {
-                ctx.struct_types
-                    .get(name)
-                    .map(|fields| render_struct_llvm_type(fields))
-                    .unwrap_or_else(|| "ptr".to_string())
-            } else if ctx.struct_types.contains_key(struct_name) {
-                render_struct_llvm_type(ctx.struct_types.get(struct_name).unwrap())
+            if struct_name == "rt_ptr_add" && indices.len() == 1 {
+                let (index_value, index_type) = resolve_typed(&indices[0], ctx);
+                let index = coerce_to(&index_value, &index_type, "i64", ctx, &mut extra);
+                let offset_pointer = tmp_extra(ctx, "ptr");
+                let is_null = tmp_extra(ctx, "i1");
+                extra.push(format!(
+                    "{} = getelementptr i8, ptr {}, i64 {}",
+                    offset_pointer, base_str, index
+                ));
+                extra.push(format!("{} = icmp eq ptr {}, null", is_null, base_str));
+                format!(
+                    "%t{} = select i1 {}, ptr null, ptr {}",
+                    result, is_null, offset_pointer
+                )
+            } else if struct_name == "rt_ptr_add_nonnull" && indices.len() == 1 {
+                let (index_value, index_type) = resolve_typed(&indices[0], ctx);
+                let index = coerce_to(&index_value, &index_type, "i64", ctx, &mut extra);
+                format!(
+                    "%t{} = getelementptr i8, ptr {}, i64 {}",
+                    result, base_str, index
+                )
             } else {
-                struct_name.clone()
-            };
-            format!(
-                "%t{} = getelementptr inbounds {}, ptr {}, {}",
-                result,
-                struct_ty,
-                base_str,
-                idx_strs.join(", ")
-            )
+                let idx_strs: Vec<String> = indices
+                    .iter()
+                    .map(|i| {
+                        let (v, t) = resolve_typed(i, ctx);
+                        if t == "i64" && v.starts_with("%t") {
+                            let trunc = tmp_extra(ctx, "i32");
+                            extra.push(format!("{} = trunc i64 {} to i32", trunc, v));
+                            format!("i32 {}", trunc)
+                        } else {
+                            format!("i32 {}", v)
+                        }
+                    })
+                    .collect();
+                let struct_ty = if let Some(name) = struct_name.strip_prefix("struct:") {
+                    ctx.struct_types
+                        .get(name)
+                        .map(|fields| render_struct_llvm_type(fields))
+                        .unwrap_or_else(|| "ptr".to_string())
+                } else if ctx.struct_types.contains_key(struct_name) {
+                    render_struct_llvm_type(ctx.struct_types.get(struct_name).unwrap())
+                } else {
+                    struct_name.clone()
+                };
+                format!(
+                    "%t{} = getelementptr inbounds {}, ptr {}, {}",
+                    result,
+                    struct_ty,
+                    base_str,
+                    idx_strs.join(", ")
+                )
+            }
         }
         MirOp::ZExt(val, ty) => {
             let (v, src_t) = resolve_typed(val, ctx);
