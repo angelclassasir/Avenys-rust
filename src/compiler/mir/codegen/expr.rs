@@ -298,19 +298,27 @@ pub(crate) fn compile_inst(inst: &MirInst, ctx: &mut LlvmCtx) -> Vec<String> {
                     _ => "eq",
                 };
                 if lt == "ptr" && rt == "ptr" {
-                    // Both sides are pointers: for --runtime none, use address equality.
-                    // For other tiers, use string equality (strcmp) for string pointers.
-                    if matches!(ctx.runtime_tier, RuntimeTier::None) {
-                        // Address equality for freestanding builds
-                        format!("%t{} = icmp {} ptr {}, {}", result, cond, l_str, r_str)
-                    } else {
-                        // String equality for managed builds
+                    // `ptr` and `str` share the LLVM type, so decide by whether
+                    // either side is a string *literal*. A literal can only ever
+                    // be compared by content, so it goes through strcmp. Two
+                    // pointer-valued operands are identities: comparing their
+                    // addresses. Sending those to strcmp (as this used to for
+                    // every runtime tier but `none`) answered "are these the
+                    // same C string?" for raw buffers, which is true for
+                    // unrelated pointers and reads out of bounds on buffers
+                    // that are not NUL-terminated. Anything branching on
+                    // buffer identity took the wrong path as a result.
+                    let is_str = matches!(l, MirValue::Const(MirConst::Str(_)))
+                        || matches!(r, MirValue::Const(MirConst::Str(_)));
+                    if is_str && ctx.runtime_tier != RuntimeTier::None {
                         let scmp = tmp_extra(ctx, "i32");
                         extra.push(format!(
                             "{} = call i32 @strcmp(ptr {}, ptr {})",
                             scmp, l_str, r_str
                         ));
                         format!("%t{} = icmp {} i32 {}, 0", result, cond, scmp)
+                    } else {
+                        format!("%t{} = icmp {} ptr {}, {}", result, cond, l_str, r_str)
                     }
                 } else {
                     // Pointer against an integer: an address comparison. This is

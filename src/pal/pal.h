@@ -246,6 +246,14 @@ const char *pal_last_error_message(void);
 
 // ── Memory (PAL-owned) ─────────────────────────────────────
 
+/// Install the host backend's ops table into the PAL dispatcher. Idempotent:
+/// the backends implement this by storing a static table, so calling it again
+/// after the backend's own constructor already ran is harmless. Exposed
+/// because a C compiler may drop the backend's `.init_array` section, which
+/// would otherwise leave the dispatcher with no backend and every `pal_*`
+/// call silently returning its fallback value.
+int pal_backend_register(void);
+
 void *pal_alloc(int64_t size);
 void pal_free(void *ptr);
 void *pal_realloc(void *ptr, int64_t new_size);

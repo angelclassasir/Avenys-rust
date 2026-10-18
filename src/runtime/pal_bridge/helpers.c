@@ -916,6 +916,16 @@ const char *rt_sbx_detail(void) {
 // deliberately treats NULL as "deny everything"; capture the working
 // directory here instead of relying on that fail-closed API value.
 void rt_sbx_init(void) {
+    // The PAL backend registers itself from an `__attribute__((constructor))`
+    // in pal_linux.c. tcc does not always emit the .init_array section for
+    // that translation unit, and when it does not, nothing registers the ops
+    // and every `pal_*` call falls through to its "no backend" fallback: the
+    // clock returns -1, fs returns unsupported, and the failure is silent
+    // because the sentinels are plausible return values. Register explicitly
+    // here instead. `pal_backend_register` is idempotent (it just stores the
+    // static ops table), so running it when the constructor did work is a
+    // harmless repeat.
+    pal_backend_register();
     char working_directory[PATH_MAX];
     const char *current_directory = pal_env_cwd();
     if (current_directory && strlen(current_directory) < sizeof(working_directory)) {
