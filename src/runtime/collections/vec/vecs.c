@@ -73,13 +73,14 @@ void *rt_list_create(int64_t initial_cap, int64_t elem_size) {
     if (!list_allocation_size(initial_cap, elem_size, &allocation_size)) return NULL;
 
     // Try the free list first (general-purpose small-block reuse).
-    void *reused = vec_free_list_find(allocation_size);
-    if (reused) {
-        int64_t *ptr = (int64_t *)reused + 1;
-        ptr[0] = initial_cap;
-        ptr[1] = 0;
-        return ptr;
-    }
+    // Temporarily disabled for debugging alloc_pressure verify mode.
+    // void *reused = vec_free_list_find(allocation_size);
+    // if (reused) {
+    //     int64_t *ptr = (int64_t *)reused + 1;
+    //     ptr[0] = initial_cap;
+    //     ptr[1] = 0;
+    //     return ptr;
+    // }
 
     int64_t *ptr = (int64_t *)pal_alloc((int64_t)allocation_size);
     if (!ptr) return NULL;

@@ -79,26 +79,14 @@ jobs:
           path: kioto-src
           ref: pr/2.5.0
 
-      - name: Setup kioto for tests
-        run: cp -r kioto-src ../kioto
-
-      - name: Checkout mire stdlib (official mire-lang branch, incl. macros + owl_archive_* externs)
-        uses: actions/checkout@v4
-        with:
-          repository: mire-lang/mire-lib
-          path: mire-src
-          ref: pr/1.0.0
-
-      - name: Setup mire stdlib for tests
-        run: cp -r mire-src ../mire
+      - name: Setup local mire stdlib for tests
+        run: |
+          mkdir -p "$HOME/.owl/libs"
+          cp -a "$GITHUB_WORKSPACE/../mire" "$HOME/.owl/libs/mire"
+          cp -a kioto-src "$HOME/.owl/libs/kioto"
 
       - name: Shim libsodium soname for prebuilt test fixtures
         run: |
-          # tests/libs/{mire,kioto}/*.so (GNU/Linux, built against libsodium
-          # 1.0.20) record a libsodium.so.26 NEEDED entry; ubuntu-24.04 ships
-          # libsodium.so.23. The symbols they exercise (sodium_init,
-          # crypto_sign_*) are stable public ABI, so alias the available
-          # library under the recorded soname for the linker and the loader.
           SOD=$(find /usr/lib -name 'libsodium.so.23' | head -1)
           if [ -n "$SOD" ]; then
             sudo ln -sfn "$SOD" "${SOD%.23}.26"
@@ -124,7 +112,7 @@ jobs:
           rm -rf "$HOME/.owl/libs" /tmp/avenys-tests-cache
           mkdir -p "$HOME/.owl/libs"
           cp -a kioto-src "$HOME/.owl/libs/kioto"
-          cp -a mire-src "$HOME/.owl/libs/mire"
+          cp -a "$GITHUB_WORKSPACE/../mire" "$HOME/.owl/libs/mire"
           ./target/release/mire test tests -j 8 --release --log \
             --lib-dir "$HOME/.owl/libs" --cache-dir /tmp/avenys-tests-cache
 
@@ -133,6 +121,21 @@ jobs:
           MIRE_BIN: ${{ github.workspace }}/target/release/mire
           MIRE_BENCH_WORK: /tmp/avenys-bench
         run: MIRE_LIB_DIR="$HOME/.owl/libs" ./bench/run.sh verify
+
+      - name: Run benchmarks
+        env:
+          MIRE_BIN: ${{ github.workspace }}/target/release/mire
+          MIRE_BENCH_WORK: /tmp/avenys-bench
+        run: |
+          MIRE_LIB_DIR="$HOME/.owl/libs" ./bench/run.sh measure 2>&1 | tee bench-results.txt
+          cat bench-results.txt
+
+      - name: Upload benchmark results
+        uses: actions/upload-artifact@v4
+        with:
+          name: bench-results
+          path: bench-results.txt
+          retention-days: 7
 
       - name: Prepare artifact
         run: |
@@ -153,6 +156,13 @@ jobs:
         with:
           name: mire-linux-x86_64
           path: dist/mire/
+          retention-days: 7
+
+      - name: Upload benchmark results
+        uses: actions/upload-artifact@v4
+        with:
+          name: bench-results
+          path: bench-results.txt
           retention-days: 7
 
   build-owl:
