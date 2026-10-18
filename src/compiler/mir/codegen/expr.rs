@@ -44,9 +44,7 @@ pub(crate) fn compile_inst(inst: &MirInst, ctx: &mut LlvmCtx) -> InstCompile {
     if let MirOp::Call(MirValue::Global(name), args, ret_ty) = &inst.op {
         let name = name.as_str();
         if name == "rt_vecs_push_i64" && args.len() == 2 {
-            // Kept as a direct extern call: inlining push with a grow branch is
-            // counterproductive when growth is the common case (e.g. vec_growth).
-            // The runtime C function is already hot-path optimised.
+            return compile_vec_push_i64(inst, ctx, args);
         }
         if name == "rt_vecs_len" && args.len() == 1 {
             return compile_vec_len(inst, ctx, args);
@@ -1071,13 +1069,13 @@ fn compile_vec_get_i64(
 }
 
 fn compile_vec_push_i64(
-    inst: &MirInst,
+    _inst: &MirInst,
     ctx: &mut LlvmCtx,
     args: &[MirValue],
 ) -> InstCompile {
     let (vec_s, _) = resolve_typed(&args[0], ctx);
     let (val_s, _) = resolve_typed(&args[1], ctx);
-    let result = tmp_result(ctx, "ptr", inst.result);
+    let result = tmp_result(ctx, "ptr", _inst.result);
 
     let slow_bb = ctx.next_extra;
     ctx.next_extra += 1;
@@ -1130,12 +1128,107 @@ fn compile_vec_push_i64(
     fast_lines.push(format!("store i64 {}, ptr {}", new_len_tmp, vec_s));
     fast_lines.push(format!("br label {}", merge_label));
 
-    // Slow path: need to grow, call the runtime helper.
-    let new_vec_tmp = tmp_extra(ctx, "ptr");
+    // Slow path: inline the grow logic (no extern call overhead).
+    // Layout: hdr[-1] = capacity, hdr[0] = length, hdr[1..] = data
+    // Realloc the header pointer (hdr = vec_s - 1).
+    let old_hdr_tmp = tmp_extra(ctx, "ptr");
+    let old_cap_tmp = tmp_extra(ctx, "i64");
+    let old_len_tmp = tmp_extra(ctx, "i64");
+    let new_cap_tmp = tmp_extra(ctx, "i64");
+    let alloc_size_tmp = tmp_extra(ctx, "i64");
+    let new_hdr_tmp = tmp_extra(ctx, "ptr");
+    let new_data_tmp = tmp_extra(ctx, "ptr");
+    let new_slot_tmp = tmp_extra(ctx, "ptr");
     let mut slow_lines = Vec::new();
+
+    // Load old header (capacity, length) from current vec pointer.
     slow_lines.push(format!(
-        "{} = call ptr @rt_vecs_push_i64(ptr {}, i64 {})",
-        new_vec_tmp, vec_s, val_s
+        "{} = getelementptr ptr, ptr {}, i64 -1",
+        old_hdr_tmp, vec_s
+    ));
+    slow_lines.push(format!("{} = load i64, ptr {}", old_cap_tmp, old_hdr_tmp));
+    slow_lines.push(format!("{} = load i64, ptr {}", old_len_tmp, old_hdr_tmp));
+
+    // Compute new capacity: old_cap + (old_cap >> 1), minimum 4.
+    slow_lines.push(format!(
+        "{} = ashr i64 {}, 1",
+        new_cap_tmp, old_cap_tmp
+    ));
+    slow_lines.push(format!(
+        "{} = add i64 {}, {}",
+        new_cap_tmp, new_cap_tmp, old_cap_tmp
+    ));
+    // Ensure minimum capacity of 4.
+    let final_cap_tmp = tmp_extra(ctx, "i64");
+    let gt4_tmp = tmp_extra(ctx, "i1");
+    slow_lines.push(format!(
+        "{} = icmp sgt i64 {}, 4",
+        gt4_tmp, new_cap_tmp
+    ));
+    slow_lines.push(format!(
+        "{} = select i1 {}, i64 {}, i64 4",
+        final_cap_tmp, gt4_tmp, new_cap_tmp
+    ));
+
+// Compute allocation size: 16 + final_cap * 8
+        let mul_tmp = tmp_extra(ctx, "i64");
+        slow_lines.push(format!(
+            "{} = mul i64 {}, 8",
+            mul_tmp, final_cap_tmp
+        ));
+        slow_lines.push(format!(
+            "{} = add i64 {}, 16",
+            alloc_size_tmp, mul_tmp
+        ));
+
+        // Reallocate: pal_realloc(old_hdr, alloc_size)
+    slow_lines.push(format!(
+        "{} = call ptr @pal_realloc(ptr {}, i64 {})",
+        new_hdr_tmp, old_hdr_tmp, alloc_size_tmp
+    ));
+
+    // Check for null realloc (allocation failure)
+    let null_check_tmp = tmp_extra(ctx, "i1");
+    let fail_label = format!("bb_fail_{}", slow_bb);
+    let cont_label = format!("bb_cont_{}", slow_bb);
+    slow_lines.push(format!(
+        "{} = icmp eq ptr {}, null",
+        null_check_tmp, new_hdr_tmp
+    ));
+    slow_lines.push(format!(
+        "br i1 {}, label {}, label {}",
+        null_check_tmp, fail_label, cont_label
+    ));
+
+    // Failure path: return null
+    slow_lines.push(format!("{}:", fail_label));
+    slow_lines.push(format!("br label {}", merge_label));
+
+    // Continue path: set up new header and write value
+    slow_lines.push(format!("{}:", cont_label));
+    // Set new capacity in header
+    slow_lines.push(format!("store i64 {}, ptr {}", final_cap_tmp, new_hdr_tmp));
+    // Set length (old length unchanged after realloc)
+    slow_lines.push(format!("store i64 {}, ptr {}", old_len_tmp, new_hdr_tmp));
+    // Compute data pointer: new_hdr + 1
+    slow_lines.push(format!(
+        "{} = getelementptr ptr, ptr {}, i64 1",
+        new_data_tmp, new_hdr_tmp
+    ));
+    // Compute slot: data + old_len
+    slow_lines.push(format!(
+        "{} = getelementptr i64, ptr {}, i64 {}",
+        new_slot_tmp, new_data_tmp, old_len_tmp
+    ));
+    // Store value
+    slow_lines.push(format!("store i64 {}, ptr {}", val_s, new_slot_tmp));
+    // Update length: old_len + 1
+    slow_lines.push(format!("{} = add i64 {}, 1", old_len_tmp, old_len_tmp));
+    slow_lines.push(format!("store i64 {}, ptr {}", old_len_tmp, new_hdr_tmp));
+    // Result is new list pointer (new_hdr + 1)
+    slow_lines.push(format!(
+        "{} = getelementptr ptr, ptr {}, i64 1",
+        result, new_hdr_tmp
     ));
     slow_lines.push(format!("br label {}", merge_label));
 
@@ -1143,7 +1236,7 @@ fn compile_vec_push_i64(
     let mut merge_lines = Vec::new();
     merge_lines.push(format!(
         "{} = phi(ptr [ {}, {} ], ptr [ {}, {} ])",
-        result, new_vec_tmp, slow_label, vec_s, fast_label
+        result, result, slow_label, result, fast_label
     ));
 
     InstCompile::Split {

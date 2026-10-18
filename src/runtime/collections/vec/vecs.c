@@ -7,16 +7,18 @@
 // Fast list implementation - inline storage
 // Format: [capacity, length, data...]
 
-// ── Small-block free list for vec allocations (general-purpose) ─────────
+// ── Small-block free list for vec allocations (≤ 256 bytes) ──────────────
 // Reuses freed vec blocks of the same size instead of round-tripping through
 // malloc/free. Benefits any Mire program that creates and destroys vecs of
-// stable sizes, which is the dominant pattern in allocation-heavy code.
-#define NUM_VEC_SIZE_CLASSES 16
-static size_t vec_size_classes[NUM_VEC_SIZE_CLASSES] = {0};
+// stable small sizes, which is the dominant pattern in allocation-heavy code.
+// Larger allocations (> 256 bytes) bypass the free list to avoid lookup
+// overhead for sizes that rarely repeat.
+#define MAX_FREE_LIST_SIZE 256
+#define NUM_VEC_SIZE_CLASSES 7
 static void *vec_free_lists[NUM_VEC_SIZE_CLASSES] = {NULL};
 
 static int vec_size_class_index(size_t total_size) {
-    // Binary search-ish linear scan: size classes grow geometrically.
+    // Size classes for small blocks: 32, 64, 96, 128, 160, 192, 256 bytes.
     if (total_size <= 32) return 0;
     if (total_size <= 64) return 1;
     if (total_size <= 96) return 2;
@@ -24,19 +26,12 @@ static int vec_size_class_index(size_t total_size) {
     if (total_size <= 160) return 4;
     if (total_size <= 192) return 5;
     if (total_size <= 256) return 6;
-    if (total_size <= 320) return 7;
-    if (total_size <= 384) return 8;
-    if (total_size <= 512) return 9;
-    if (total_size <= 640) return 10;
-    if (total_size <= 768) return 11;
-    if (total_size <= 1024) return 12;
-    if (total_size <= 1536) return 13;
-    if (total_size <= 2048) return 14;
-    return 15;
+    return -1; // Too large for free list
 }
 
 static void vec_free_list_add(void *ptr, size_t total_size) {
     int idx = vec_size_class_index(total_size);
+    if (idx < 0) return; // Too large for free list
     // Store size in first 8 bytes, then next pointer.
     size_t *hdr = (size_t *)ptr;
     hdr[0] = total_size;
@@ -46,6 +41,7 @@ static void vec_free_list_add(void *ptr, size_t total_size) {
 
 static void *vec_free_list_find(size_t total_size) {
     int idx = vec_size_class_index(total_size);
+    if (idx < 0) return NULL; // Too large for free list
     void *curr = vec_free_lists[idx];
     void **prev = (void **)&vec_free_lists[idx];
     while (curr) {
