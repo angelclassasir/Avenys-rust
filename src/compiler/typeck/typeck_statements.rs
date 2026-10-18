@@ -85,7 +85,6 @@ impl TypeChecker {
         target: &mut AssignmentTarget,
         value: &mut Expression,
     ) -> Result<()> {
-        eprintln!("[DBG] check_assignment_statement ENTERed\n");
         let value_type = self.check_expression(value)?;
         let (mut target_type, is_target_mutable) =
             self.resolve_assignment_target(target)?.ok_or_else(|| {
@@ -95,10 +94,14 @@ impl TypeChecker {
                 )
             })?;
 
-        eprintln!("[DBG] is_assignable expected={target_type:?} actual={value_type:?}");
-        eprintln!("[DBG] expected={target_type:?} actual={value_type:?}");
-        eprintln!("[DBG2] assign expected={target_type:?} actual={value_type:?} assignable={}", self.is_assignable(&target_type, &value_type));
-        if !self.is_assignable(&target_type, &value_type) {
+        // A store through a pointer (Dereference) has no binding and no declared
+        // target type — the pointee type comes from the pointer expression
+        // itself. Integer narrowing/widening is handled by `emit_convert` at
+        // codegen time, so we skip the is_assignable check here to allow e.g.
+        // `*p = i64_value` when p :&u32.
+        if !matches!(target, AssignmentTarget::Dereference { .. })
+            && !self.is_assignable(&target_type, &value_type)
+        {
             return Err(type_error_at_span(
                 self.current_span,
                 format!(

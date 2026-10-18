@@ -268,6 +268,19 @@ pub fn default_builtin_returns() -> HashMap<String, DataType> {
     builtins.insert("move::".to_string(), DataType::Unknown);
     builtins.insert("drop::".to_string(), DataType::None);
 
+    // Pointer intrinsics: lowered directly to LLVM GEP/Load/Store instead of
+    // runtime calls. rt_ptr_add(p :&i64, delta :i64) :&i64 advances a byte
+    // pointer; rt_read_u32(p :&i64) :i64 loads a u32 as i64;
+    // rt_write_u32(p :&i64, v :i64) stores an i64 as u32.
+    builtins.insert(
+        "rt_ptr_add".to_string(),
+        DataType::Ref {
+            inner: Box::new(DataType::I64),
+        },
+    );
+    builtins.insert("rt_read_u32".to_string(), DataType::I64);
+    builtins.insert("rt_write_u32".to_string(), DataType::None);
+
     builtins
 }
 
@@ -296,6 +309,9 @@ const LOWERED_BUILTINS: &[&str] = &[
     "vec.with.capacity.i64",
     "range",
     "round",
+    "rt_ptr_add",
+    "rt_read_u32",
+    "rt_write_u32",
     "str",
     "time.now.ms",
     "time.now.ns",

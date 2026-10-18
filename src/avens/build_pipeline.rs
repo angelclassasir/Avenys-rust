@@ -733,7 +733,6 @@ fn compile_file_inner(
     let final_ir = if matches!(options.opt_level, OptLevel::O0) {
         ir
     } else {
-        let _ = fs::write("/tmp/opencode/preopt.ll", &ir);
         optimize_ir(&ir, options.opt_level, source_filename)?
     };
     let phase_llvm = build_start.elapsed().as_millis() as u64;

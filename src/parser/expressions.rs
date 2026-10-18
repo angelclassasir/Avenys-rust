@@ -909,9 +909,6 @@ impl Parser {
         if self.check(TokenType::Star) {
             self.advance();
             let target = self.parse_unary()?;
-            if std::env::var("MIRE_DBG_SET").is_ok() {
-                eprintln!("[DBG] parse_assignment_target: Dereference target={target:?}");
-            }
             return Ok(AssignmentTarget::Dereference {
                 target: Box::new(target),
             });

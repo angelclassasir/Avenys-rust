@@ -564,6 +564,78 @@ impl MirLower {
             Expression::Call { name, args, .. } if name == "lists.fold" && args.len() == 3 => {
                 self.lower_lists_fold(args)
             }
+            // Pointer intrinsics: lowered directly to LLVM GEP/Load/Store
+            // instead of runtime calls.
+            // Byte-granular pointer arithmetic. The GEP element type must be
+            // `i8` so that one index step advances exactly one byte; using `ptr`
+            // would stride by the pointer size and silently address the wrong
+            // element.
+            Expression::Call { name, args, .. } if name == "rt_ptr_add" && args.len() == 2 => {
+                let base = self.lower_expression(&args[0]);
+                let delta = self.lower_expression(&args[1]);
+                let result = self.new_temp();
+                let last = self.current_block;
+                self.func.blocks[last].push(
+                    Some(result),
+                    MirOp::Gep(base, vec![delta], "i8".to_string()),
+                    loc,
+                );
+                MirValue::temp(result)
+            }
+            // Load a u32 and widen it to the i64 the builtin is declared to
+            // return, so callers never see a truncated value.
+            Expression::Call { name, args, .. } if name == "rt_read_u32" && args.len() == 1 => {
+                let p = self.lower_expression(&args[0]);
+                let loaded = self.new_temp();
+                let last = self.current_block;
+                self.func.blocks[last].push(
+                    Some(loaded),
+                    MirOp::Load(
+                        p,
+                        MirType {
+                            data_type: DataType::I32,
+                        },
+                    ),
+                    loc,
+                );
+                let result = self.new_temp();
+                self.func.blocks[self.current_block].push(
+                    Some(result),
+                    MirOp::ZExt(
+                        MirValue::temp(loaded),
+                        MirType {
+                            data_type: DataType::I64,
+                        },
+                    ),
+                    loc,
+                );
+                MirValue::temp(result)
+            }
+            // Truncate the i64 value to u32 before storing so an 8-byte store
+            // never spills into the neighbouring element.
+            Expression::Call { name, args, .. } if name == "rt_write_u32" && args.len() == 2 => {
+                let p = self.lower_expression(&args[0]);
+                let v = self.lower_expression(&args[1]);
+                let narrowed = self.new_temp();
+                let last = self.current_block;
+                self.func.blocks[last].push(
+                    Some(narrowed),
+                    MirOp::Trunc(
+                        v,
+                        MirType {
+                            data_type: DataType::I32,
+                        },
+                    ),
+                    loc,
+                );
+                let last = self.current_block;
+                self.func.blocks[last].push(
+                    None,
+                    MirOp::Store(p, MirValue::temp(narrowed)),
+                    loc,
+                );
+                MirValue::Const(MirConst::None)
+            }
             Expression::Call {
                 name,
                 args,

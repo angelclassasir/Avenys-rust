@@ -204,9 +204,6 @@ impl Parser {
     }
 
     fn parse_set_statement(&mut self) -> Result<Statement> {
-        if std::env::var("MIRE_DBG_SET").is_ok() {
-            eprintln!("[DBG] parse_set_statement ENTERed");
-        }
         self.expect(TokenType::Set)?;
 
         let var_token = self.peek();
