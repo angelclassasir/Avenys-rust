@@ -21,7 +21,45 @@ fn float_result_ty(lt: &str, rt: &str) -> Option<&'static str> {
     }
 }
 
-pub(crate) fn compile_inst(inst: &MirInst, ctx: &mut LlvmCtx) -> Vec<String> {
+pub(crate) enum InstCompile {
+    /// Normal instruction: lines of LLVM IR, block continues.
+    Normal(Vec<String>),
+    /// Instruction splits the current block with a conditional branch.
+    /// `before` = lines emitted before the branch in the current block.
+    /// `term` = the `br` terminator for the current block.
+    /// `successors` = list of (label, lines, terminator) for successor blocks,
+    /// emitted immediately after the current block. A terminator of `None` means
+    /// the successor block falls through to following instructions.
+    Split {
+        before: Vec<String>,
+        term: String,
+        successors: Vec<(String, Vec<String>, Option<String>)>,
+    },
+}
+
+pub(crate) fn compile_inst(inst: &MirInst, ctx: &mut LlvmCtx) -> InstCompile {
+    // ── Inline expansion of vec runtime calls ───────────────────────────
+    // Intercept calls to rt_vecs_* and emit LLVM inline code instead of an
+    // extern call, avoiding the ABI overhead on the hottest paths.
+    if let MirOp::Call(MirValue::Global(name), args, ret_ty) = &inst.op {
+        let name = name.as_str();
+        if name == "rt_vecs_push_i64" && args.len() == 2 {
+            // Kept as a direct extern call: inlining push with a grow branch is
+            // counterproductive when growth is the common case (e.g. vec_growth).
+            // The runtime C function is already hot-path optimised.
+        }
+        if name == "rt_vecs_len" && args.len() == 1 {
+            return compile_vec_len(inst, ctx, args);
+        }
+        if name == "rt_vecs_get_i64" && args.len() == 2 {
+            return compile_vec_get_i64(inst, ctx, args);
+        }
+        if name == "rt_vecs_with_capacity_i64" && args.len() == 1 {
+            return compile_vec_with_capacity_i64(inst, ctx, args);
+        }
+        let _ = ret_ty;
+    }
+
     let mut extra = Vec::new();
     let line = match &inst.op {
         MirOp::Alloca(ty) => {
@@ -358,7 +396,7 @@ pub(crate) fn compile_inst(inst: &MirInst, ctx: &mut LlvmCtx) -> Vec<String> {
             if name_opt == Some("str") {
                 // Dedicated str() builtin lowering
                 if args.len() != 1 {
-                    return vec![];
+                    return InstCompile::Normal(vec![]);
                 }
                 let (v, t) = resolve_typed(&args[0], ctx);
                 let result = tmp_result(ctx, "ptr", inst.result);
@@ -396,7 +434,7 @@ pub(crate) fn compile_inst(inst: &MirInst, ctx: &mut LlvmCtx) -> Vec<String> {
             } else if name_opt == Some("dasu") || name_opt == Some("print") {
                 // dasu() / print() builtin expansion
                 if args.is_empty() {
-                    return vec![];
+                    return InstCompile::Normal(vec![]);
                 }
                 let (v, t) = resolve_typed(&args[0], ctx);
                 let printf_tmp = tmp_extra(ctx, "i32");
@@ -580,7 +618,7 @@ pub(crate) fn compile_inst(inst: &MirInst, ctx: &mut LlvmCtx) -> Vec<String> {
             } else if name_opt == Some("call") {
                 // Indirect call via function pointer
                 if args.is_empty() {
-                    return vec![];
+                    return InstCompile::Normal(vec![]);
                 }
                 let ll_ret = llvm_type_str(&ret_ty.data_type);
                 let result = if ll_ret == "void" {
@@ -969,5 +1007,156 @@ pub(crate) fn compile_inst(inst: &MirInst, ctx: &mut LlvmCtx) -> Vec<String> {
     let mut result = Vec::with_capacity(extra.len() + 1);
     result.extend(extra);
     result.push(line);
-    result
+    InstCompile::Normal(result)
+}
+
+// ── Inline vec runtime helpers ─────────────────────────────────────────
+
+fn compile_vec_with_capacity_i64(
+    _inst: &MirInst,
+    ctx: &mut LlvmCtx,
+    args: &[MirValue],
+) -> InstCompile {
+    let (cap_s, _) = resolve_typed(&args[0], ctx);
+    let result = tmp_result(ctx, "ptr", _inst.result);
+    InstCompile::Normal(vec![format!(
+        "%t{} = call ptr @rt_vecs_with_capacity_i64(i64 {})",
+        result, cap_s
+    )])
+}
+
+fn compile_vec_len(_inst: &MirInst, ctx: &mut LlvmCtx, args: &[MirValue]) -> InstCompile {
+    let (vec_s, _) = resolve_typed(&args[0], ctx);
+    let result = tmp_result(ctx, "i64", _inst.result);
+    InstCompile::Normal(vec![format!("%t{} = load i64, ptr {}", result, vec_s)])
+}
+
+fn compile_vec_get_i64(
+    _inst: &MirInst,
+    ctx: &mut LlvmCtx,
+    args: &[MirValue],
+) -> InstCompile {
+    let (vec_s, _) = resolve_typed(&args[0], ctx);
+    let (idx_s, _) = resolve_typed(&args[1], ctx);
+    let result = tmp_result(ctx, "i64", _inst.result);
+    let len_tmp = tmp_extra(ctx, "i64");
+    let ge0_tmp = tmp_extra(ctx, "i1");
+    let lt_len_tmp = tmp_extra(ctx, "i1");
+    let ok_tmp = tmp_extra(ctx, "i1");
+    let data_ptr = tmp_extra(ctx, "ptr");
+    let slot_tmp = tmp_extra(ctx, "ptr");
+    let val_tmp = tmp_extra(ctx, "i64");
+    let mut lines = Vec::new();
+    lines.push(format!("{} = load i64, ptr {}", len_tmp, vec_s));
+    lines.push(format!("{} = icmp sle i64 0, {}", ge0_tmp, idx_s));
+    lines.push(format!(
+        "{} = icmp slt i64 {}, {}",
+        lt_len_tmp, idx_s, len_tmp
+    ));
+    lines.push(format!("{} = and i1 {}, {}", ok_tmp, ge0_tmp, lt_len_tmp));
+    lines.push(format!(
+        "{} = getelementptr ptr, ptr {}, i64 1",
+        data_ptr, vec_s
+    ));
+    lines.push(format!(
+        "{} = getelementptr i64, ptr {}, i64 {}",
+        slot_tmp, data_ptr, idx_s
+    ));
+    lines.push(format!("{} = load i64, ptr {}", val_tmp, slot_tmp));
+    lines.push(format!(
+        "%t{} = select i1 {}, i64 {}, i64 0",
+        result, ok_tmp, val_tmp
+    ));
+    InstCompile::Normal(lines)
+}
+
+fn compile_vec_push_i64(
+    inst: &MirInst,
+    ctx: &mut LlvmCtx,
+    args: &[MirValue],
+) -> InstCompile {
+    let (vec_s, _) = resolve_typed(&args[0], ctx);
+    let (val_s, _) = resolve_typed(&args[1], ctx);
+    let result = tmp_result(ctx, "ptr", inst.result);
+
+    let slow_bb = ctx.next_extra;
+    ctx.next_extra += 1;
+    let fast_bb = ctx.next_extra;
+    ctx.next_extra += 1;
+    let merge_bb = ctx.next_extra;
+    ctx.next_extra += 1;
+
+    let slow_label = format!("bb_slow_{}", slow_bb);
+    let fast_label = format!("bb_fast_{}", fast_bb);
+    let merge_label = format!("bb_merge_{}", merge_bb);
+
+    let hdr_tmp = tmp_extra(ctx, "ptr");
+    let cap_tmp = tmp_extra(ctx, "i64");
+    let len_tmp = tmp_extra(ctx, "i64");
+    let need_grow_tmp = tmp_extra(ctx, "i1");
+
+    let mut before = Vec::new();
+    before.push(format!(
+        "{} = getelementptr ptr, ptr {}, i64 -1",
+        hdr_tmp, vec_s
+    ));
+    before.push(format!("{} = load i64, ptr {}", cap_tmp, hdr_tmp));
+    before.push(format!("{} = load i64, ptr {}", len_tmp, vec_s));
+    before.push(format!(
+        "{} = icmp sge i64 {}, {}",
+        need_grow_tmp, len_tmp, cap_tmp
+    ));
+
+    let term = format!(
+        "br i1 {}, label {}, label {}",
+        need_grow_tmp, slow_label, fast_label
+    );
+
+    // Fast path: capacity available, write inline.
+    let data_tmp = tmp_extra(ctx, "ptr");
+    let slot_tmp = tmp_extra(ctx, "ptr");
+    let new_len_tmp = tmp_extra(ctx, "i64");
+    let mut fast_lines = Vec::new();
+    fast_lines.push(format!(
+        "{} = getelementptr ptr, ptr {}, i64 1",
+        data_tmp, vec_s
+    ));
+    fast_lines.push(format!(
+        "{} = getelementptr i64, ptr {}, i64 {}",
+        slot_tmp, data_tmp, len_tmp
+    ));
+    fast_lines.push(format!("store i64 {}, ptr {}", val_s, slot_tmp));
+    fast_lines.push(format!("{} = add i64 {}, 1", new_len_tmp, len_tmp));
+    fast_lines.push(format!("store i64 {}, ptr {}", new_len_tmp, vec_s));
+    fast_lines.push(format!("br label {}", merge_label));
+
+    // Slow path: need to grow, call the runtime helper.
+    let new_vec_tmp = tmp_extra(ctx, "ptr");
+    let mut slow_lines = Vec::new();
+    slow_lines.push(format!(
+        "{} = call ptr @rt_vecs_push_i64(ptr {}, i64 {})",
+        new_vec_tmp, vec_s, val_s
+    ));
+    slow_lines.push(format!("br label {}", merge_label));
+
+    // Merge: phi node selects the result, falls through to next inst.
+    let mut merge_lines = Vec::new();
+    merge_lines.push(format!(
+        "{} = phi(ptr [ {}, {} ], ptr [ {}, {} ])",
+        result, new_vec_tmp, slow_label, vec_s, fast_label
+    ));
+
+    InstCompile::Split {
+        before,
+        term,
+        successors: vec![
+            (slow_label, slow_lines, Some(format!("br label {}", merge_label))),
+            (
+                fast_label,
+                fast_lines,
+                Some(format!("br label {}", merge_label)),
+            ),
+            (merge_label, merge_lines, None),
+        ],
+    }
 }

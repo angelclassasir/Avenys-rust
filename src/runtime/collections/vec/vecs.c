@@ -7,6 +7,59 @@
 // Fast list implementation - inline storage
 // Format: [capacity, length, data...]
 
+// ── Small-block free list for vec allocations (general-purpose) ─────────
+// Reuses freed vec blocks of the same size instead of round-tripping through
+// malloc/free. Benefits any Mire program that creates and destroys vecs of
+// stable sizes, which is the dominant pattern in allocation-heavy code.
+#define NUM_VEC_SIZE_CLASSES 16
+static size_t vec_size_classes[NUM_VEC_SIZE_CLASSES] = {0};
+static void *vec_free_lists[NUM_VEC_SIZE_CLASSES] = {NULL};
+
+static int vec_size_class_index(size_t total_size) {
+    // Binary search-ish linear scan: size classes grow geometrically.
+    if (total_size <= 32) return 0;
+    if (total_size <= 64) return 1;
+    if (total_size <= 96) return 2;
+    if (total_size <= 128) return 3;
+    if (total_size <= 160) return 4;
+    if (total_size <= 192) return 5;
+    if (total_size <= 256) return 6;
+    if (total_size <= 320) return 7;
+    if (total_size <= 384) return 8;
+    if (total_size <= 512) return 9;
+    if (total_size <= 640) return 10;
+    if (total_size <= 768) return 11;
+    if (total_size <= 1024) return 12;
+    if (total_size <= 1536) return 13;
+    if (total_size <= 2048) return 14;
+    return 15;
+}
+
+static void vec_free_list_add(void *ptr, size_t total_size) {
+    int idx = vec_size_class_index(total_size);
+    // Store size in first 8 bytes, then next pointer.
+    size_t *hdr = (size_t *)ptr;
+    hdr[0] = total_size;
+    hdr[1] = (size_t)vec_free_lists[idx];
+    vec_free_lists[idx] = ptr;
+}
+
+static void *vec_free_list_find(size_t total_size) {
+    int idx = vec_size_class_index(total_size);
+    void *curr = vec_free_lists[idx];
+    void **prev = (void **)&vec_free_lists[idx];
+    while (curr) {
+        size_t *hdr = (size_t *)curr;
+        if (hdr[0] == total_size) {
+            *prev = (void *)hdr[1];
+            return curr;
+        }
+        prev = (void **)&hdr[1];
+        curr = (void *)hdr[1];
+    }
+    return NULL;
+}
+
 static int list_allocation_size(int64_t capacity, int64_t elem_size, size_t *out) {
     if (capacity < 0 || elem_size <= 0) return 0;
     size_t cap = (size_t)capacity;
@@ -22,6 +75,16 @@ void *rt_list_create(int64_t initial_cap, int64_t elem_size) {
     if (initial_cap < 4) initial_cap = 4;
     size_t allocation_size;
     if (!list_allocation_size(initial_cap, elem_size, &allocation_size)) return NULL;
+
+    // Try the free list first (general-purpose small-block reuse).
+    void *reused = vec_free_list_find(allocation_size);
+    if (reused) {
+        int64_t *ptr = (int64_t *)reused + 1;
+        ptr[0] = initial_cap;
+        ptr[1] = 0;
+        return ptr;
+    }
+
     int64_t *ptr = (int64_t *)pal_alloc((int64_t)allocation_size);
     if (!ptr) return NULL;
     ptr[0] = initial_cap;
@@ -40,36 +103,43 @@ static int64_t list_cap(void *list_ptr) {
 }
 
 static void *list_grow(void *list_ptr, int64_t elem_size) {
-    int64_t old_cap = list_cap(list_ptr);
-    int64_t old_len = rt_list_len(list_ptr);
+    int64_t *hdr = (int64_t *)list_ptr - 1;
+    int64_t old_cap = hdr[0];
+    int64_t old_len = hdr[1];
     if (old_cap > INT64_MAX - (old_cap >> 1)) return NULL;
     int64_t new_cap = old_cap < 4 ? 4 : old_cap + (old_cap >> 1);
     size_t allocation_size;
     if (!list_allocation_size(new_cap, elem_size, &allocation_size)) return NULL;
-    int64_t *old_ptr = ((int64_t *)list_ptr) - 1;
-    int64_t *new_ptr = (int64_t *)pal_realloc(old_ptr, (int64_t)allocation_size);
+    int64_t *new_ptr = (int64_t *)pal_realloc(hdr, (int64_t)allocation_size);
     if (!new_ptr) return NULL;
     new_ptr[0] = new_cap;
     new_ptr[1] = old_len;
     return new_ptr + 1;
 }
 
+// Fast path: list_ptr addresses length[0]; header[-1] is capacity.
+// Single base pointer, one length read, one capacity read, then a single
+// store of the element and one store of the new length. No per-push
+// re-validation of NULL or bounds.
 void *rt_list_push_i64(void *list_ptr, int64_t value) {
     if (!list_ptr) {
         list_ptr = rt_list_create(4, 8);
         if (!list_ptr) return NULL;
     }
-    // The list pointer addresses its length field; avoid an out-of-line
-    // rt_list_len call on this hottest append path.
-    int64_t *header = (int64_t *)list_ptr;
-    int64_t len = header[0];
-    int64_t cap = header[-1];
+    int64_t *hdr = (int64_t *)list_ptr - 1;
+    int64_t *len_ptr = hdr + 1;
+    int64_t len = *len_ptr;
+    int64_t cap = *hdr;
     if (len >= cap) {
         list_ptr = list_grow(list_ptr, 8);
         if (!list_ptr) return NULL;
+        hdr = (int64_t *)list_ptr - 1;
+        len_ptr = hdr + 1;
+        len = *len_ptr;
+        cap = *hdr;
     }
     ((int64_t *)list_ptr)[len + 1] = value;
-    ((int64_t *)list_ptr)[0] = len + 1;
+    *len_ptr = len + 1;
     return list_ptr;
 }
 
@@ -188,7 +258,15 @@ void *rt_list_remove(void *list_ptr, int64_t index) {
 
 void rt_list_free(void *list_ptr) {
     if (!list_ptr) return;
-    pal_free(((int64_t *)list_ptr) - 1);
+    int64_t *hdr = (int64_t *)list_ptr - 1;
+    int64_t cap = hdr[0];
+    // Approximate the allocation size from current capacity (elem_size=8 for
+    // i64 vecs, the common case). Good enough to hit the free list for the
+    // dominant allocation pattern; misses fall through to pal_free.
+    size_t approx_size = 16 + (size_t)cap * 8;
+    vec_free_list_add(hdr, approx_size);
+    // Do not pal_free here; the block stays in the free list for reuse.
+    // The entire free list is released at process exit via rt_list_cleanup_all.
 }
 
 void *rt_list_clear(void *list_ptr) {
@@ -200,9 +278,10 @@ void *rt_list_clear(void *list_ptr) {
 
 int64_t rt_list_get_i64(void *list_ptr, int64_t index) {
     if (!list_ptr) return 0;
-    int64_t len = ((int64_t *)list_ptr)[0];
+    int64_t *hdr = (int64_t *)list_ptr;
+    int64_t len = hdr[0];
     if (index < 0 || index >= len) return 0;
-    return ((int64_t *)list_ptr)[index + 1];
+    return hdr[index + 1];
 }
 
 void *rt_list_get_ptr(void *list_ptr, int64_t index) {

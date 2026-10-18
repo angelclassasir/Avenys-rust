@@ -2,7 +2,7 @@ use super::*;
 use crate::canonical_fn_name;
 use std::collections::{HashMap, HashSet};
 
-use self::expr::compile_inst;
+use self::expr::{compile_inst, InstCompile};
 use self::resolve::resolve_typed;
 use self::types::llvm_type_str;
 use self::wrapper::{collect_used_extern_wrappers, generate_extern_wrapper};
@@ -195,16 +195,23 @@ pub(crate) fn compile_function_to_llvm(func: &MirFunction, ctx: &mut LlvmCtx) ->
     for block in &func.blocks {
         for inst in &block.insts {
             if matches!(inst.op, MirOp::Alloca(_)) {
-                for line in compile_inst(inst, ctx) {
-                    if !line.is_empty() {
-                        hoisted_allocas.push(format!("  {}", line));
+                match compile_inst(inst, ctx) {
+                    InstCompile::Normal(lines) => {
+                        for line in lines {
+                            if !line.is_empty() {
+                                hoisted_allocas.push(format!("  {}", line));
+                            }
+                        }
+                    }
+                    InstCompile::Split { .. } => {
+                        // Alloca never splits.
                     }
                 }
             }
         }
     }
 
-    for block in &func.blocks {
+        for block in &func.blocks {
         if block.id > 0 {
             parts.push(String::new());
         }
@@ -214,28 +221,71 @@ pub(crate) fn compile_function_to_llvm(func: &MirFunction, ctx: &mut LlvmCtx) ->
             parts.extend(hoisted_allocas.iter().cloned());
         }
 
+        let mut bb_terminated = false;
         for inst in &block.insts {
             if matches!(inst.op, MirOp::Alloca(_)) {
                 continue;
             }
-            for line in compile_inst(inst, ctx) {
-                if !line.is_empty() {
-                    parts.push(format!("  {}", line));
+            if bb_terminated {
+                // Previous instruction split the block: start a new LLVM basic
+                // block for the remaining MIR instructions of this MIR block.
+                let split_bb = ctx.next_extra;
+                ctx.next_extra += 1;
+                parts.push(String::new());
+                parts.push(format!("bb_split_{}:", split_bb));
+                bb_terminated = false;
+            }
+            match compile_inst(inst, ctx) {
+                InstCompile::Normal(lines) => {
+                    for line in lines {
+                        if !line.is_empty() {
+                            parts.push(format!("  {}", line));
+                        }
+                    }
+                }
+                InstCompile::Split { before, term, successors } => {
+                    // Emit the fast-path checks and the conditional branch in
+                    // the current block.
+                    for line in before {
+                        if !line.is_empty() {
+                            parts.push(format!("  {}", line));
+                        }
+                    }
+                    parts.push(format!("  {}", term));
+                    bb_terminated = true;
+                    // Emit each successor block as its own LLVM basic block.
+                    for (i, (label, lines, succ_term)) in successors.into_iter().enumerate() {
+                        if i > 0 {
+                            parts.push(String::new());
+                        }
+                        parts.push(format!("{}:", label));
+                        for line in lines {
+                            if !line.is_empty() {
+                                parts.push(format!("  {}", line));
+                            }
+                        }
+                        if let Some(t) = succ_term {
+                            parts.push(format!("  {}", t));
+                        }
+                        // If succ_term is None, the block falls through to the
+                        // following MIR instructions (emitted next).
+                    }
                 }
             }
         }
 
         // Any block that is still unreachable after lowering/inlining represents a
         // fall-off-the-end path; emit a default return so control cannot fall through
-        // into later blocks (which the LLVM inliner or our own lowering may append
-        // after the original last block).
-        let term = if matches!(block.terminator, MirTerminator::Unreachable) {
-            default_return_for_type(&ret_type)
-        } else {
-            compile_terminator(&block.terminator, ctx, &ret_type)
-        };
-        if !term.is_empty() {
-            parts.push(format!("  {}", term));
+        // into later blocks.
+        if !bb_terminated {
+            let term = if matches!(block.terminator, MirTerminator::Unreachable) {
+                default_return_for_type(&ret_type)
+            } else {
+                compile_terminator(&block.terminator, ctx, &ret_type)
+            };
+            if !term.is_empty() {
+                parts.push(format!("  {}", term));
+            }
         }
     }
 
