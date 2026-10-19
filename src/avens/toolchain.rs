@@ -311,11 +311,9 @@ pub(super) fn compile_binary_from_ir(
     // are only linked when PAL files are actually compiled.
     if !is_none_tier {
         linker.arg("-lm");
-        if link_crypto_libs {
-            linker.arg("-lssl");
-            linker.arg("-lcrypto");
-            linker.arg("-lsodium");
-        }
+        // The crypto libraries are deliberately absent here; see
+        // link_failed_on_crypto_libs for what happens when they turn out to be
+        // needed.
     }
 
     // Skip C runtime startup files for libraries (shared/static) and when
@@ -425,6 +423,16 @@ pub(super) fn compile_binary_from_ir(
     if link_failed_on_gnu_stack_note(&output) {
         output = retry_link_without_gnu_stack_note(&tcc_path, &link_args, &ir_object)?;
     }
+    // Only now add the crypto libraries, and only if the link without them
+    // failed for want of a crypto symbol. `link_crypto_libs` is the caller's
+    // guess that some PAL object might need them; a link that succeeds
+    // without them has proved the guess wrong.
+    if link_crypto_libs && link_failed_on_crypto_libs(&output) {
+        let needed = crypto_libs_for(&String::from_utf8_lossy(&output.stderr));
+        let mut with_crypto = link_args.clone();
+        with_crypto.extend(needed.iter().map(|lib| std::ffi::OsString::from(*lib)));
+        output = run_tcc_link(&tcc_path, &with_crypto)?;
+    }
 
     let _ = std::fs::remove_file(&ir_object);
     if !output.status.success() {
@@ -468,6 +476,49 @@ fn run_tcc_link(tcc_path: &str, args: &[std::ffi::OsString]) -> Result<std::proc
                 message: format!("Failed to run tcc: {}", err),
             })
         })
+}
+
+/// Which libraries the crypto PAL ends up needing, and how to recognise each.
+///
+/// Split rather than "add all three" because the cost is very uneven.
+/// libsodium depends on nothing but libc; libcrypto pulls in libz, libzstd and
+/// four brotli objects, and every one of those has to be mapped and relocated
+/// before `main` runs. Linking -lcrypto for a program whose only undefined
+/// crypto symbol is `sodium_init` costs about 2 ms of start-up for nothing.
+///
+/// `crypto_` is deliberately not a marker: libsodium exports `crypto_hash_*`
+/// and `crypto_sign_*` alongside the `sodium_*` names.
+fn crypto_libs_for(link_error: &str) -> Vec<&'static str> {
+    let mut libs = Vec::new();
+    if ["sodium_", "randombytes_", "argon2_"]
+        .iter()
+        .any(|marker| link_error.contains(marker))
+    {
+        libs.push("-lsodium");
+    }
+    if ["SSL_", "EVP_", "OPENSSL_", "X509_", "BN_"]
+        .iter()
+        .any(|marker| link_error.contains(marker))
+    {
+        libs.push("-lssl");
+        libs.push("-lcrypto");
+    }
+    libs
+}
+
+/// Whether a failed link was only missing one of the crypto libraries.
+///
+/// The dynamic loader maps and relocates every `-l` on the command line, and
+/// the C runtime reference in these benchmarks assumes that cost is not paid
+/// by a program that prints an integer. So the first link leaves the crypto
+/// libraries out and this decides whether the failure is that or a real one;
+/// a real failure is reported untouched.
+fn link_failed_on_crypto_libs(output: &std::process::Output) -> bool {
+    if output.status.success() {
+        return false;
+    }
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    stderr.contains("undefined symbol") && !crypto_libs_for(&stderr).is_empty()
 }
 
 fn link_failed_on_gnu_stack_note(output: &std::process::Output) -> bool {
