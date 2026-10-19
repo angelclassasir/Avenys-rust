@@ -32,10 +32,13 @@ static int vec_size_class_index(size_t total_size) {
 static void vec_free_list_add(void *ptr, size_t total_size) {
     int idx = vec_size_class_index(total_size);
     if (idx < 0) return; // Too large for free list
-    // Store size in first 8 bytes, then next pointer.
-    size_t *hdr = (size_t *)ptr;
-    hdr[0] = total_size;
-    hdr[1] = (size_t)vec_free_lists[idx];
+    // Store free list metadata in the data area (after capacity/length header)
+    // Layout: [capacity][length][data0][data1]...
+    // We store: data[0] = total_size, data[1] = next_ptr
+    int64_t *hdr = (int64_t *)ptr;
+    int64_t *data = hdr + 2;  // data starts after capacity and length
+    data[0] = (int64_t)total_size;
+    data[1] = (int64_t)vec_free_lists[idx];
     vec_free_lists[idx] = ptr;
 }
 
@@ -45,13 +48,14 @@ static void *vec_free_list_find(size_t total_size) {
     void *curr = vec_free_lists[idx];
     void **prev = (void **)&vec_free_lists[idx];
     while (curr) {
-        size_t *hdr = (size_t *)curr;
-        if (hdr[0] == total_size) {
-            *prev = (void *)hdr[1];
+        int64_t *hdr = (int64_t *)curr;
+        int64_t *data = (int64_t *)curr + 2;  // metadata in data area
+        if ((size_t)data[0] == total_size) {
+            *prev = (void *)data[1];
             return curr;
         }
-        prev = (void **)&hdr[1];
-        curr = (void *)hdr[1];
+        prev = (void **)&((int64_t *)curr + 2)[1];
+        curr = (void *)data[1];
     }
     return NULL;
 }
@@ -73,14 +77,25 @@ void *rt_list_create(int64_t initial_cap, int64_t elem_size) {
     if (!list_allocation_size(initial_cap, elem_size, &allocation_size)) return NULL;
 
     // Try the free list first (general-purpose small-block reuse).
-    // Temporarily disabled for debugging alloc_pressure verify mode.
-    // void *reused = vec_free_list_find(allocation_size);
-    // if (reused) {
-    //     int64_t *ptr = (int64_t *)reused + 1;
-    //     ptr[0] = initial_cap;
-    //     ptr[1] = 0;
-    //     return ptr;
-    // }
+    void *reused = vec_free_list_find(allocation_size);
+    if (reused) {
+        int64_t *hdr = (int64_t *)reused;
+        int64_t *data = hdr + 2;  // metadata stored in data area
+        int64_t next = data[1];   // save next pointer
+        // Restore free list link
+        int idx = vec_size_class_index(allocation_size);
+        if (idx >= 0) {
+            int64_t *free_list_head = (int64_t *)vec_free_lists[vec_size_class_index(allocation_size)];
+            if (free_list_head) {
+                int64_t *fl_data = free_list_head + 2;
+                fl_data[1] = next;  // restore next pointer in free list head
+            }
+        }
+        // Reinitialize as new vec
+        hdr[0] = initial_cap;
+        hdr[1] = 0;
+        return hdr + 1;
+    }
 
     int64_t *ptr = (int64_t *)pal_alloc((int64_t)allocation_size);
     if (!ptr) return NULL;
