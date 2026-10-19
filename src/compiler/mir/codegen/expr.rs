@@ -1274,13 +1274,55 @@ fn compile_vec_push_i64(
         ));
         slow_lines.push(format!("br label {}", format!("bb_after_alloc_{}", ctx.next_extra - 1)));
         
-        // Slow path: arena exhausted (should be extremely rare with 64MB)
-        // Use inline abort rather than external call - this should be extremely rare
+        // Slow path: arena exhausted - use segregated free list instead of external call
         slow_lines.push(format!("{}:", format!("bb_malloc_slow_{}", ctx.next_extra - 1)));
+        
+        // Check free list for a block of sufficient size
+        let fl_idx = tmp_extra(ctx, "i64");
         slow_lines.push(format!(
-            "call void @pal_panic_loc(ptr getelementptr inbounds ([34 x i8], ptr @.str.bump_exhausted, i64 0, i64 0), i64 0, i64 0, ptr null)"
+            "{} = call i64 @bump_free_list_find(i64 {})",
+            fl_idx, alloc_size_tmp
         ));
-        slow_lines.push(format!("unreachable"));
+        
+        // Check if free list has a block
+        let fl_result = tmp_extra(ctx, "ptr");
+        slow_lines.push(format!(
+            "{} = call ptr @bump_free_list_pop(i64 {})",
+            fl_result, fl_idx
+        ));
+        
+        // Check if free list had a block
+        let fl_null = tmp_extra(ctx, "i1");
+        slow_lines.push(format!(
+            "{} = icmp eq ptr {}, null",
+            fl_null, fl_result
+        ));
+        
+        let fl_slow_label = format!("bb_malloc_very_slow_{}", ctx.next_extra);
+        ctx.next_extra += 1;
+        let fl_cont_label = format!("bb_malloc_fl_cont_{}", ctx.next_extra);
+        ctx.next_extra += 1;
+        
+        slow_lines.push(format!(
+            "br i1 {}, label {}, label {}",
+            fl_null, format!("bb_malloc_very_slow_{}", ctx.next_extra - 1), format!("bb_malloc_fl_cont_{}", ctx.next_extra - 1)
+        ));
+        
+        // Fast path: got block from free list
+        slow_lines.push(format!("{}:", format!("bb_bump_fast_fl_{}", ctx.next_extra - 1)));
+        slow_lines.push(format!("br label {}", format!("bb_after_alloc_fl_{}", ctx.next_extra - 1)));
+        
+        // Slow path: arena exhausted, request new arena from OS (rare)
+        slow_lines.push(format!("{}:", format!("bb_malloc_very_slow_{}", ctx.next_extra - 1)));
+        slow_lines.push(format!(
+            "{} = call ptr @pal_memory_alloc(i64 {})",
+            new_hdr_tmp, alloc_size_tmp
+        ));
+        slow_lines.push(format!("br label {}", format!("bb_after_alloc_fl_{}", ctx.next_extra - 1)));
+        
+        // After allocation (merge point for free list hit/miss)
+        slow_lines.push(format!("{}:", format!("bb_after_alloc_fl_{}", ctx.next_extra - 1)));
+        slow_lines.push(format!("br label {}", format!("bb_cont_{}", slow_bb)));
         
         // After allocation (merge point)
         slow_lines.push(format!("{}:", after_alloc_label));
@@ -1332,9 +1374,26 @@ fn compile_vec_push_i64(
             ));
         }
         
-        // Free old memory using bump deallocator (no-op for bump allocator)
-        // For bump allocator, we don't actually free individual blocks
-        // The entire arena is freed at program exit
+        // Return old block to free list for reuse
+        // Compute size class: 16 + old_cap * 8
+        let old_size_tmp = tmp_extra(ctx, "i64");
+        let size_class_tmp = tmp_extra(ctx, "i64");
+        slow_lines.push(format!(
+            "{} = mul i64 {}, 8",
+            tmp_extra(ctx, "i64"), old_cap_tmp
+        ));
+        slow_lines.push(format!(
+            "{} = add i64 {}, 16",
+            tmp_extra(ctx, "i64"), tmp_extra(ctx, "i64")
+        ));
+        slow_lines.push(format!(
+            "{} = call i64 @bump_size_class_index(i64 {})",
+            size_class_tmp, tmp_extra(ctx, "i64")
+        ));
+        slow_lines.push(format!(
+            "call void @bump_free_list_push(ptr {}, i64 {})",
+            old_hdr_tmp, size_class_tmp
+        ));
         
         // Set new capacity in header
         slow_lines.push(format!("store i64 {}, ptr {}", final_cap_tmp, new_hdr_tmp));

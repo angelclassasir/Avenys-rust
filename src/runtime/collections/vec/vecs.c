@@ -681,3 +681,66 @@ int64_t rt_vecs_binary_search(void *vec, int64_t value) {
     }
     return -1;
 }
+
+// ── Bump allocator free list ───────────────────────────────────────────────
+// Provides segregated free list for bump allocator blocks.
+// Blocks are returned to the free list when vecs are freed, allowing reuse
+// without calling the OS allocator. This is crucial for vec_growth performance.
+
+// Size classes for bump allocator free list (same as vec free list)
+#define NUM_BUMP_SIZE_CLASSES 16
+static void *bump_free_lists[NUM_BUMP_SIZE_CLASSES] = {NULL};
+
+static int bump_size_class_index(size_t total_size) {
+    if (total_size <= 32) return 0;
+    if (total_size <= 64) return 1;
+    if (total_size <= 96) return 2;
+    if (total_size <= 128) return 3;
+    if (total_size <= 160) return 4;
+    if (total_size <= 192) return 5;
+    if (total_size <= 256) return 6;
+    if (total_size <= 384) return 7;
+    if (total_size <= 512) return 7;
+    if (total_size <= 1024) return 8;
+    if (total_size <= 2048) return 9;
+    if (total_size <= 4096) return 10;
+    if (total_size <= 8192) return 11;
+    if (total_size <= 16384) return 12;
+    if (total_size <= 32768) return 13;
+    if (total_size <= 65536) return 14;
+    if (total_size <= 131072) return 15;
+    return -1; // Too large for free list
+}
+
+int64_t bump_free_list_find(int64_t size) {
+    int idx = bump_size_class_index((size_t)size);
+    if (idx < 0) return -1;
+    if (bump_free_lists[idx]) return idx;
+    return -1;
+}
+
+void *bump_free_list_pop(int64_t size_class) {
+    if (size_class < 0 || size_class >= NUM_BUMP_SIZE_CLASSES) return NULL;
+    void *curr = bump_free_lists[size_class];
+    if (!curr) return NULL;
+    int64_t *hdr = (int64_t *)curr;
+    int64_t *data = (int64_t *)curr + 2;  // metadata in data area
+    void *next = (void *)data[1];
+    bump_free_lists[size_class] = next;
+    return curr;
+}
+
+void bump_free_list_push(void *ptr, int64_t size_class) {
+    if (size_class < 0 || size_class >= NUM_BUMP_SIZE_CLASSES) return;
+    int64_t *hdr = (int64_t *)ptr;
+    int64_t *data = hdr + 2;  // data area after capacity/length
+    data[0] = bump_free_lists[size_class] ? (int64_t)bump_free_lists[size_class] : 0;
+    data[1] = 0;
+    bump_free_lists[size_class] = ptr;
+}
+
+void bump_free_list_init(void) {
+    for (int i = 0; i < NUM_BUMP_SIZE_CLASSES; i++) {
+        bump_free_lists[i] = NULL;
+    }
+}
