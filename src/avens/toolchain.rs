@@ -310,10 +310,12 @@ pub(super) fn compile_binary_from_ir(
     // standard runtime dependencies.  Crypto libs (libssl/libcrypto/libsodium)
     // are only linked when PAL files are actually compiled.
     if !is_none_tier {
-        linker.arg("-lm");
-        // The crypto libraries are deliberately absent here; see
-        // link_failed_on_crypto_libs for what happens when they turn out to be
-        // needed.
+        // Neither -lm nor the crypto libraries go on the first attempt. Each
+        // one costs start-up time in the dynamic loader -- mapping and
+        // relocating libm, libmvec, libsodium, libssl and libcrypto, plus
+        // whatever libcrypto drags in -- and a program that prints an integer
+        // needs none of them. Both are added back only if the link says a
+        // symbol is missing.
     }
 
     // Skip C runtime startup files for libraries (shared/static) and when
@@ -427,11 +429,25 @@ pub(super) fn compile_binary_from_ir(
     // failed for want of a crypto symbol. `link_crypto_libs` is the caller's
     // guess that some PAL object might need them; a link that succeeds
     // without them has proved the guess wrong.
-    if link_crypto_libs && link_failed_on_crypto_libs(&output) {
-        let needed = crypto_libs_for(&String::from_utf8_lossy(&output.stderr));
-        let mut with_crypto = link_args.clone();
-        with_crypto.extend(needed.iter().map(|lib| std::ffi::OsString::from(*lib)));
-        output = run_tcc_link(&tcc_path, &with_crypto)?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let mut extra: Vec<&str> = Vec::new();
+        if stderr.contains("undefined symbol") {
+            // Ask which library could define what is missing rather than
+            // guessing: a real error leaves both lists empty and is reported
+            // unchanged below.
+            if missing_symbols_resolve_to_libm(&stderr) {
+                extra.push("-lm");
+            }
+            if link_crypto_libs {
+                extra.extend(crypto_libs_for(&stderr));
+            }
+        }
+        if !extra.is_empty() {
+            let mut retry = link_args.clone();
+            retry.extend(extra.iter().map(|lib| std::ffi::OsString::from(*lib)));
+            output = run_tcc_link(&tcc_path, &retry)?;
+        }
     }
 
     let _ = std::fs::remove_file(&ir_object);
@@ -478,6 +494,30 @@ fn run_tcc_link(tcc_path: &str, args: &[std::ffi::OsString]) -> Result<std::proc
         })
 }
 
+/// Version tags that glibc's libm stamps onto the symbols it provides.
+///
+/// Matching on the tag rather than on symbol names is what separates "needs
+/// libm" from "some other library is missing": an undefined `sqrt` says
+/// nothing about which library should define it, but `@GLIBC_2.29` does,
+/// because every versioned symbol at or above 2.29 lives in libm/libmvec and
+/// the base 2.2.5 set is plain libc.
+fn missing_symbols_resolve_to_libm(link_error: &str) -> bool {
+    if !link_error.contains("undefined symbol") {
+        return false;
+    }
+    link_error
+        .lines()
+        .filter(|line| line.contains("undefined symbol"))
+        .any(|line| libm_version_tags().any(|tag| line.contains(tag)))
+}
+
+fn libm_version_tags() -> impl Iterator<Item = &'static str> {
+    // libm gained versioned symbols across these releases; the first is
+    // libmvec, the last covers everything since.
+    ["@GLIBC_2.35", "@GLIBC_2.34", "@GLIBC_2.32", "@GLIBC_2.29"]
+        .into_iter()
+}
+
 /// Which libraries the crypto PAL ends up needing, and how to recognise each.
 ///
 /// Split rather than "add all three" because the cost is very uneven.
@@ -504,21 +544,6 @@ fn crypto_libs_for(link_error: &str) -> Vec<&'static str> {
         libs.push("-lcrypto");
     }
     libs
-}
-
-/// Whether a failed link was only missing one of the crypto libraries.
-///
-/// The dynamic loader maps and relocates every `-l` on the command line, and
-/// the C runtime reference in these benchmarks assumes that cost is not paid
-/// by a program that prints an integer. So the first link leaves the crypto
-/// libraries out and this decides whether the failure is that or a real one;
-/// a real failure is reported untouched.
-fn link_failed_on_crypto_libs(output: &std::process::Output) -> bool {
-    if output.status.success() {
-        return false;
-    }
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    stderr.contains("undefined symbol") && !crypto_libs_for(&stderr).is_empty()
 }
 
 fn link_failed_on_gnu_stack_note(output: &std::process::Output) -> bool {
