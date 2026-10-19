@@ -34,9 +34,18 @@
 
 #if MIRE_HAVE_TLS
 #define MIRE_TLS __thread
-// `tls_model` only affects the ELF dynamic model for shared objects. It is
-// kept on the TLS path because clang and the mob tcc both accept it.
-#define MIRE_TLS_MODEL __attribute__((tls_model("global-dynamic")))
+// The ELF dynamic TLS model, and it has to match how the object is linked.
+// "global-dynamic" asks the dynamic loader for the thread's block on every
+// access; a binary that does it has to carry a PT_NOTE-free but correctly
+// sized TLS setup that tcc's linker does not produce. The build decides which
+// model to ask for (see MIRE_TLS_LOCAL_EXEC below) and this just spells it.
+#ifndef MIRE_TLS_MODEL
+#ifdef MIRE_TLS_LOCAL_EXEC
+#define MIRE_TLS_MODEL __attribute__((tls_model("local-exec")))
+#else
+#define MIRE_TLS_MODEL __attribute__((tls_model("initial-exec")))
+#endif
+#endif
 #else
 #define MIRE_TLS
 #define MIRE_TLS_MODEL

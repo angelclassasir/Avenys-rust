@@ -94,7 +94,11 @@ pub(super) fn optimize_ir(ir: &str, opt_level: OptLevel, source_filename: &str) 
         })
         .with_filename(source_filename.to_string()));
     }
-    Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+    let optimized = String::from_utf8_lossy(&output.stdout).into_owned();
+    if let Ok(path) = std::env::var("MIRE_DUMP_OPT_IR_OUT") {
+        let _ = std::fs::write(&path, optimized.as_bytes());
+    }
+    Ok(optimized)
 }
 
 pub(super) fn compile_binary_from_ir(
