@@ -101,18 +101,18 @@ pub fn mir_to_llvm_with_filename(
         bump_init_done: true,
     };
     
-    // Initialize bump allocator: 64MB arena as global variables
+    // Initialize bump allocator: 2GB arena as global variables
     ctx.strings.push(format!(
         "@bump_arena = private unnamed_addr global [{} x i8] zeroinitializer, align 16",
-        64 * 1024 * 1024
+        2u64 * 1024 * 1024 * 1024
     ));
     ctx.strings.push(format!(
         "@bump_ptr = global ptr getelementptr ([{} x i8], ptr @bump_arena, i64 0, i64 0)",
-        64 * 1024 * 1024
+        2u64 * 1024 * 1024 * 1024
     ));
     ctx.strings.push(format!(
         "@bump_end = global ptr getelementptr ([{} x i8], ptr @bump_arena, i64 0, i64 {})",
-        64 * 1024 * 1024, 64 * 1024 * 1024
+        2u64 * 1024 * 1024 * 1024, 2u64 * 1024 * 1024 * 1024
     ));
     
     for func in &program.functions {
@@ -157,6 +157,11 @@ pub fn mir_to_llvm_with_filename(
     out.push(String::new());
     out.extend(strings);
     out.extend(function_irs);
+
+    // Add string constants for bump allocator
+    out.push(String::new());
+    out.push("@.str.bump_exhausted = private unnamed_addr constant [25 x i8] c\"Bump allocator exhausted\\00\"".to_string());
+    out.push(String::new());
 
     (out.join("\n"), program.extern_libs.clone())
 }

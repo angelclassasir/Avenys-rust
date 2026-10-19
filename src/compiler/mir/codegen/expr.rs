@@ -1274,13 +1274,13 @@ fn compile_vec_push_i64(
         ));
         slow_lines.push(format!("br label {}", format!("bb_after_alloc_{}", ctx.next_extra - 1)));
         
-        // Fallback slow path: actually call pal_memory_alloc (should be very rare)
+        // Slow path: arena exhausted (should be extremely rare with 64MB)
+        // Use inline abort rather than external call - this should be extremely rare
         slow_lines.push(format!("{}:", format!("bb_malloc_slow_{}", ctx.next_extra - 1)));
         slow_lines.push(format!(
-            "{} = call ptr @pal_memory_alloc(i64 {})",
-            new_hdr_tmp, alloc_size_tmp
+            "call void @pal_panic_loc(ptr getelementptr inbounds ([34 x i8], ptr @.str.bump_exhausted, i64 0, i64 0), i64 0, i64 0, ptr null)"
         ));
-        slow_lines.push(format!("br label {}", format!("bb_after_alloc_{}", ctx.next_extra - 1)));
+        slow_lines.push(format!("unreachable"));
         
         // After allocation (merge point)
         slow_lines.push(format!("{}:", after_alloc_label));
