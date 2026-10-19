@@ -245,25 +245,89 @@ const char *pal_last_error_message(void);
 // change (`*_owned`, `*_borrowed`); stable ABI functions document it here.
 
 // ── Memory (PAL-owned) ─────────────────────────────────────
-
-/// Install the host backend's ops table into the PAL dispatcher. Idempotent:
-/// the backends implement this by storing a static table, so calling it again
-/// after the backend's own constructor already ran is harmless. Exposed
-/// because a C compiler may drop the backend's `.init_array` section, which
-/// would otherwise leave the dispatcher with no backend and every `pal_*`
-/// call silently returning its fallback value.
-int pal_backend_register(void);
-
-void *pal_alloc(int64_t size);
-void pal_free(void *ptr);
-void *pal_realloc(void *ptr, int64_t new_size);
-/// Reserve a stable virtual-memory region without eagerly committing its pages.
-/// Returns NULL when the host does not provide this capability.
-void *pal_memory_reserve(int64_t size);
-/// Release a region previously returned by pal_memory_reserve. Returns false on failure.
-bool pal_memory_release(void *region, int64_t size);
-void *pal_secure_alloc(int64_t size);
-void pal_secure_free(void *ptr);
+ 
+ /// Install the host backend's ops table into the PAL dispatcher. Idempotent:
+ /// the backends implement this by storing a static table, so calling it again
+ /// after the backend's own constructor already ran is harmless. Exposed
+ /// because a C compiler may drop the backend's `.init_array` section, which
+ /// would otherwise leave the dispatcher with no backend and every `pal_*`
+ /// call silently returning its fallback value.
+ int pal_backend_register(void);
+ 
+ void *pal_alloc(int64_t size);
+ void pal_free(void *ptr);
+ void *pal_realloc(void *ptr, int64_t new_size);
+ /// Reserve a stable virtual-memory region without eagerly committing its pages.
+ /// Returns NULL when the host does not provide this capability.
+ void *pal_memory_reserve(int64_t size);
+ /// Release a region previously returned by pal_memory_reserve. Returns false on failure.
+ bool pal_memory_release(void *region, int64_t size);
+ void *pal_secure_alloc(int64_t size);
+ void pal_secure_free(void *ptr);
+ 
+// ── Bump Allocator (Fast Path) ────────────────────────────────────────────
+ 
+ // Initialize bump allocator with per-thread arenas.
+ void bump_init(void);
+ 
+ /// Allocate from bump allocator. Returns null on failure.
+ void *bump_alloc(int64_t size);
+ 
+ // Free memory allocated by bump_alloc (no-op for bump allocator, kept for compatibility).
+ void bump_free(void *ptr);
+ 
+ // Get current bump pointer position.
+ void *bump_ptr_get(void);
+ 
+ // Reset bump pointer to arena start (for arena reuse).
+ void bump_reset(void);
+ 
+ // Get current bump pointer position.
+ void *bump_ptr_get(void);
+ 
+ // Get bump allocator end pointer.
+ void *bump_end_get(void);
+ 
+ // Initialize bump allocator with per-thread arenas.
+ void bump_init(void);
+ 
+ /// Reset bump allocator for new iteration (fast path).
+ void bump_reset_iter(void);
+ 
+ /// Allocate new arena when current exhausted.
+ void *bump_arena_new(int64_t size);
+ 
+ /// Allocate from bump allocator with explicit size class.
+ void *bump_alloc_class(int64_t size, int64_t class);
+ 
+ /// Reallocate using bump allocator (inline fast path).
+ void *bump_realloc(void *ptr, int64_t old_size, int64_t new_size);
+ 
+ // Free list operations for bump allocator.
+ void bump_free_list_push(void *ptr, int64_t class);
+ void *bump_free_list_pop(int64_t class);
+ int64_t bump_free_list_find(int64_t size);
+ 
+ // ── Memory (PAL-owned) ─────────────────────────────────────
+ 
+ /// Install the host backend's ops table into the PAL dispatcher. Idempotent:
+ /// the backends implement this by storing a static table, so calling it again
+ /// after the backend's own constructor already ran is harmless. Exposed
+ /// because a C compiler may drop the backend's `.init_array` section, which
+ /// would otherwise leave the dispatcher with no backend and every `pal_*`
+ /// call silently returning its fallback value.
+ int pal_backend_register(void);
+ 
+ void *pal_alloc(int64_t size);
+ void pal_free(void *ptr);
+ void *pal_realloc(void *ptr, int64_t new_size);
+ /// Reserve a stable virtual-memory region without eagerly committing its pages.
+ /// Returns NULL when the host does not provide this capability.
+ void *pal_memory_reserve(int64_t size);
+ /// Release a region previously returned by pal_memory_reserve. Returns false on failure.
+ bool pal_memory_release(void *region, int64_t size);
+ void *pal_secure_alloc(int64_t size);
+ void pal_secure_free(void *ptr);
 
 // ── Filesystem ──────────────────────────────────────────────
 

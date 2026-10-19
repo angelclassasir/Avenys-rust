@@ -7,6 +7,10 @@
 // Fast list implementation - inline storage
 // Format: [capacity, length, data...]
 
+// ── Fast bump allocator for vec allocations ───────────────────────────────
+// Uses the bump allocator for fast small-block allocations.
+// Larger allocations (> 256 bytes) bypass the fast path.
+
 // ── Small-block free list for vec allocations (≤ 256 bytes) ──────────────
 // Reuses freed vec blocks of the same size instead of round-tripping through
 // malloc/free. Benefits any Mire program that creates and destroys vecs of
@@ -18,7 +22,7 @@
 static void *vec_free_lists[NUM_VEC_SIZE_CLASSES] = {NULL};
 
 static int vec_size_class_index(size_t total_size) {
-    // Size classes for small blocks: 32, 64, 96, 128, 160, 192, 256 bytes.
+    // Size classes for small blocks: 32, 64, 96, 128, 256 bytes.
     if (total_size <= 32) return 0;
     if (total_size <= 64) return 1;
     if (total_size <= 96) return 2;
@@ -92,12 +96,13 @@ void *rt_list_create(int64_t initial_cap, int64_t elem_size) {
             }
         }
         // Reinitialize as new vec
+        int64_t *hdr = (int64_t *)reused;
         hdr[0] = initial_cap;
         hdr[1] = 0;
         return hdr + 1;
     }
 
-    int64_t *ptr = (int64_t *)pal_alloc((int64_t)allocation_size);
+    int64_t *ptr = (int64_t *)bump_alloc((int64_t)allocation_size);
     if (!ptr) return NULL;
     ptr[0] = initial_cap;
     ptr[1] = 0;
@@ -123,7 +128,7 @@ static void *list_grow(void *list_ptr, int64_t elem_size) {
     int64_t new_cap = old_cap < 4 ? 4 : old_cap * 2;
     size_t allocation_size;
     if (!list_allocation_size(new_cap, elem_size, &allocation_size)) return NULL;
-    int64_t *new_ptr = (int64_t *)pal_realloc(hdr, (int64_t)allocation_size);
+    int64_t *new_ptr = (int64_t *)bump_realloc(hdr, (int64_t)(16 + old_cap * 8), (int64_t)allocation_size);
     if (!new_ptr) return NULL;
     new_ptr[0] = new_cap;
     new_ptr[1] = old_len;

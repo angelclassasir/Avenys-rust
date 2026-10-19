@@ -287,6 +287,36 @@ int64_t     rt_proc_shell_status(void);
 // Safe channel receive into a caller-owned buffer (no PAL bytes handoff).
 int64_t rt_channel_recv_into(int64_t ch_handle, char *buf, int64_t capacity);
 
+//
+// ── Bump Allocator (Fast Path) ───────────────────────────────────────────────
+// Thread-local bump allocator with size-class arenas. Allocations are O(1).
+// Memory is reclaimed on bump_reset() or program exit. No individual free().
+void   *bump_alloc(int64_t size);
+void    bump_free(void *ptr);             // no-op, kept for compatibility
+void   *bump_alloc_class(int64_t size, int64_t class_idx);
+void   *bump_realloc(void *ptr, int64_t old_size, int64_t new_size);
+void    bump_free(void *ptr);             // no-op, kept for compatibility
+void   *bump_alloc_class(int64_t size, int64_t class_idx);
+void    bump_free_list_push(void *ptr, int64_t class);
+void   *bump_free_list_pop(int64_t class);
+int64_t bump_free_list_find(int64_t size);
+void   *bump_realloc(void *ptr, int64_t old_size, int64_t new_size);
+
+// Bump allocator initialization and control
+void   bump_init(void);
+void    bump_reset(void);               // reset bump pointer to arena start
+void   *bump_ptr_get(void);             // get current bump pointer
+void   *bump_end_get(void);             // get bump allocator end pointer
+void    bump_init(void);                // initialize bump allocator (idempotent)
+void   *bump_arena_new(int64_t size);   // allocate new arena
+void   *bump_alloc_class(int64_t size, int64_t class_idx); // allocate with class
+void    bump_free(void *ptr);           // no-op, kept for compatibility
+void   *bump_alloc_class(int64_t size, int64_t class_idx);
+void    bump_free_list_push(void *ptr, int64_t class);
+void   *bump_free_list_pop(int64_t class);
+int64_t bump_free_list_find(int64_t size);
+void   *bump_realloc(void *ptr, int64_t old_size, int64_t new_size);
+
 // ── Raw buffer allocation ──────────────────────────────────────────
 // Unmanaged malloc/free for opaque FFI buffers (SDL_Event, pixels, ...).
 void   *rt_alloc_raw(int64_t size);
