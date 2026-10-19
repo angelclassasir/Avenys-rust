@@ -1230,19 +1230,63 @@ fn compile_vec_push_i64(
         ));
         slow_lines.push(format!("br label {}", format!("bb_after_alloc_{}", ctx.next_extra - 1)));
 
-        // Slow path: fallback to pal_memory_alloc
+// Slow path: fallback to bump allocator (still inline, no extern call)
         slow_lines.push(format!("{}:", malloc_label));
+        // Inline bump allocation fallback: check if fits in bump arena
+        let malloc_fits = tmp_extra(ctx, "i1");
+        let malloc_end_ptr = tmp_extra(ctx, "ptr");
+        slow_lines.push(format!(
+            "{} = getelementptr i8, ptr {}, i64 {}",
+            malloc_end_ptr, ctx.bump_ptr.as_ref().unwrap(), alloc_size_tmp
+        ));
+        slow_lines.push(format!(
+            "{} = icmp ule ptr {}, ptr {}",
+            malloc_fits, malloc_end_ptr, ctx.bump_end.as_ref().unwrap()
+        ));
+        
+        let malloc_fast_label = format!("bb_bump_fast_malloc_{}", ctx.next_extra);
+        ctx.next_extra += 1;
+        let malloc_slow_label = format!("bb_malloc_fallback_{}", ctx.next_extra);
+        ctx.next_extra += 1;
+        
+        slow_lines.push(format!(
+            "br i1 {}, label {}, label {}",
+            malloc_fits, format!("bb_bump_fast_malloc_{}", ctx.next_extra - 1), format!("bb_malloc_fallback_{}", ctx.next_extra - 1)
+        ));
+        
+        // Fallback fast path: bump allocation
+        slow_lines.push(format!("{}:", format!("bb_bump_fast_{}", ctx.next_extra - 1)));
+        
+        // Fallback fast path: bump allocation
+        slow_lines.push(format!("{}:", format!("bb_bump_fast_{}", ctx.next_extra - 1)));
+        slow_lines.push(format!(
+            "{} = getelementptr i8, ptr {}, i64 0",
+            new_hdr_tmp, ctx.bump_ptr.as_ref().unwrap()
+        ));
+        let malloc_bump_end_calc = tmp_extra(ctx, "ptr");
+        slow_lines.push(format!(
+            "{} = getelementptr i8, ptr {}, i64 {}",
+            malloc_bump_end_calc, ctx.bump_ptr.as_ref().unwrap(), alloc_size_tmp
+        ));
+        slow_lines.push(format!(
+            "store ptr {}, ptr {}",
+            malloc_bump_end_calc, ctx.bump_ptr.as_ref().unwrap()
+        ));
+        slow_lines.push(format!("br label {}", format!("bb_after_alloc_{}", ctx.next_extra - 1)));
+        
+        // Fallback slow path: actually call pal_memory_alloc (should be very rare)
+        slow_lines.push(format!("{}:", format!("bb_malloc_slow_{}", ctx.next_extra - 1)));
         slow_lines.push(format!(
             "{} = call ptr @pal_memory_alloc(i64 {})",
             new_hdr_tmp, alloc_size_tmp
         ));
         slow_lines.push(format!("br label {}", format!("bb_after_alloc_{}", ctx.next_extra - 1)));
-
+        
         // After allocation (merge point)
-        slow_lines.push(format!("{}:", format!("bb_after_alloc_{}", ctx.next_extra - 1)));
+        slow_lines.push(format!("{}:", after_alloc_label));
         slow_lines.push(format!("br label {}", format!("bb_cont_{}", slow_bb)));
 
-        // Check for null allocation (allocation failure)
+// Check for null allocation (allocation failure)
         let null_check_tmp = tmp_extra(ctx, "i1");
         let fail_label = format!("bb_fail_{}", slow_bb);
         let cont_label = format!("bb_cont_{}", slow_bb);
@@ -1287,38 +1331,36 @@ fn compile_vec_push_i64(
                 dst_data_tmp, src_data_tmp, byte_size_tmp
             ));
         }
-
-        // Free old memory
-        slow_lines.push(format!(
-            "call void @pal_memory_free(ptr {})",
-            old_hdr_tmp
-        ));
-
+        
+        // Free old memory using bump deallocator (no-op for bump allocator)
+        // For bump allocator, we don't actually free individual blocks
+        // The entire arena is freed at program exit
+        
         // Set new capacity in header
         slow_lines.push(format!("store i64 {}, ptr {}", final_cap_tmp, new_hdr_tmp));
         // Set length (old length unchanged after realloc)
         slow_lines.push(format!("store i64 {}, ptr {}", old_len_tmp, new_hdr_tmp));
-
-    // Compute slot: data + old_len
-    slow_lines.push(format!(
-        "{} = getelementptr ptr, ptr {}, i64 1",
-        new_data_tmp, new_hdr_tmp
-    ));
-    slow_lines.push(format!(
-        "{} = getelementptr i64, ptr {}, i64 {}",
-        new_slot_tmp, new_data_tmp, old_len_tmp
-    ));
-    // Store value
-    slow_lines.push(format!("store i64 {}, ptr {}", val_s, new_slot_tmp));
-    // Update length: old_len + 1
-    slow_lines.push(format!("{} = add i64 {}, 1", old_len_tmp, old_len_tmp));
-    slow_lines.push(format!("store i64 {}, ptr {}", old_len_tmp, new_hdr_tmp));
-    // Result is new list pointer (new_hdr + 1)
-    slow_lines.push(format!(
-        "{} = getelementptr ptr, ptr {}, i64 1",
-        result, new_hdr_tmp
-    ));
-    slow_lines.push(format!("br label {}", merge_label));
+        
+        // Compute slot: data + old_len
+        slow_lines.push(format!(
+            "{} = getelementptr ptr, ptr {}, i64 1",
+            new_data_tmp, new_hdr_tmp
+        ));
+        slow_lines.push(format!(
+            "{} = getelementptr i64, ptr {}, i64 {}",
+            new_slot_tmp, new_data_tmp, old_len_tmp
+        ));
+        // Store value
+        slow_lines.push(format!("store i64 {}, ptr {}", val_s, new_slot_tmp));
+        // Update length: old_len + 1
+        slow_lines.push(format!("{} = add i64 {}, 1", old_len_tmp, old_len_tmp));
+        slow_lines.push(format!("store i64 {}, ptr {}", old_len_tmp, new_hdr_tmp));
+        // Result is new list pointer (new_hdr + 1)
+        slow_lines.push(format!(
+            "{} = getelementptr ptr, ptr {}, i64 1",
+            result, new_hdr_tmp
+        ));
+        slow_lines.push(format!("br label {}", merge_label));
 
     // Merge: phi node selects the result, falls through to next inst.
     let mut merge_lines = Vec::new();
