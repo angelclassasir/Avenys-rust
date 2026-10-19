@@ -201,6 +201,11 @@ void *rt_vecs_with_capacity_i64(int64_t capacity);
 int64_t rt_vecs_get_i64(void *vec, int64_t index);
 void   *rt_vecs_get_ptr(void *vec, int64_t index);
 void   *rt_vecs_push_i64(void *vec, int64_t value);
+/// Slow path of the inlined `vec::push` codegen: grow the vector by one
+/// element and append `value`, returning the (possibly moved) list pointer.
+/// Emitted as a real call because the capacity branch is taken once per
+/// reallocation, not once per push.
+void   *rt_vecs_grow_push_i64(void *vec, int64_t value);
 void   *rt_vecs_push_ptr(void *vec, void *value);
 void    rt_vecs_set_i64(void *vec, int64_t index, int64_t value);
 int64_t rt_vecs_pop(void *vec);
@@ -288,35 +293,6 @@ int64_t     rt_proc_shell_status(void);
 int64_t rt_channel_recv_into(int64_t ch_handle, char *buf, int64_t capacity);
 
 //
-// ── Bump Allocator (Fast Path) ───────────────────────────────────────────────
-// Thread-local bump allocator with size-class arenas. Allocations are O(1).
-// Memory is reclaimed on bump_reset() or program exit. No individual free().
-void   *bump_alloc(int64_t size);
-void    bump_free(void *ptr);             // no-op, kept for compatibility
-void   *bump_alloc_class(int64_t size, int64_t class_idx);
-void   *bump_realloc(void *ptr, int64_t old_size, int64_t new_size);
-void    bump_free(void *ptr);             // no-op, kept for compatibility
-void   *bump_alloc_class(int64_t size, int64_t class_idx);
-void    bump_free_list_push(void *ptr, int64_t class);
-void   *bump_free_list_pop(int64_t class);
-int64_t bump_free_list_find(int64_t size);
-void   *bump_realloc(void *ptr, int64_t old_size, int64_t new_size);
-
-// Bump allocator initialization and control
-void   bump_init(void);
-void    bump_reset(void);               // reset bump pointer to arena start
-void   *bump_ptr_get(void);             // get current bump pointer
-void   *bump_end_get(void);             // get bump allocator end pointer
-void    bump_init(void);                // initialize bump allocator (idempotent)
-void   *bump_arena_new(int64_t size);   // allocate new arena
-void   *bump_alloc_class(int64_t size, int64_t class_idx); // allocate with class
-void    bump_free(void *ptr);           // no-op, kept for compatibility
-void   *bump_alloc_class(int64_t size, int64_t class_idx);
-void    bump_free_list_push(void *ptr, int64_t class);
-void   *bump_free_list_pop(int64_t class);
-int64_t bump_free_list_find(int64_t size);
-void   *bump_realloc(void *ptr, int64_t old_size, int64_t new_size);
-
 // ── Raw buffer allocation ──────────────────────────────────────────
 // Unmanaged malloc/free for opaque FFI buffers (SDL_Event, pixels, ...).
 void   *rt_alloc_raw(int64_t size);

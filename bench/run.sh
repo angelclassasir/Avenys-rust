@@ -98,6 +98,11 @@ build_one() {
   fi
 
   local d="$WORK/$k.$mode.$opt"
+  # Wipe the previous build before compiling. Without this a failed compile
+  # leaves the previous binary in place, the `-x` check below passes, and the
+  # script silently reports timings for code that is no longer the current
+  # source. That is worse than no measurement at all: it looks like data.
+  rm -rf "$d/code/bin"
   mkdir -p "$d/code"
   printf '[security]\nexterns = []\n' > "$d/cfg.toml"
 
@@ -121,7 +126,7 @@ PY
   ( cd "$d" && timeout 900 "$MIRE" build code/main.mire --config cfg.toml --release \
       -O "$opt" --lib-dir "$MIRE_LIB_DIR" ) > "$WORK/logs/mire_$k.log" 2>&1
   if [[ ! -x "$d/code/bin/release/main" ]]; then
-    print -r -- "  $k: Mire failed -> $(grep -oE '╰─ .*|llc: error: .*' "$WORK/logs/mire_$k.log" | head -1 | cut -c1-60)"
+    print -r -- "  $k: Mire failed -> $(grep -oE '╰─ .*|llc: error: .*|error: .*' "$WORK/logs/mire_$k.log" | head -1 | cut -c1-70)"
     return 1
   fi
   return 0
@@ -176,11 +181,15 @@ cmd_measure() {
   print -r -- ""
   printf "  %-19s %-9s %10s %10s %10s %10s %10s\n" KERNEL WORKLOAD "Rust -O3" "C -O3" "Mire -O3" "Mire/C" "Mire/Rust"
   printf "  %-19s %-9s %10s %10s %10s %10s %10s\n" "-------------------" "---------" "----------" "----------" "----------" "--------" "---------"
-  local k d r m c mr mc ratio_c ratio_r flag
+  local k d r m c mr mc ratio_c ratio_r flag failed=0
   for k in $(kernels); do
     [[ "$k" == "noop" ]] && continue
     [[ -n "$only" && "$k" != "$only" ]] && continue
-    build_one "$k" measure || continue
+    if ! build_one "$k" measure; then
+      printf "  %-19s %-9s %s\n" "$k" "$(difficulty "$k")" "BUILD FAILED - not measured"
+      failed=1
+      continue
+    fi
     d="$WORK/$k.measure.3"
     r=$(time_ms "$WORK/bin/rust_$k")
     m=$(time_ms "$d/code/bin/release/main")
@@ -198,6 +207,8 @@ cmd_measure() {
   done
   print -r -- ""
   print -r -- "  (noise = below ${NOISE_FLOOR_MS} ms; startup dominates)"
+  (( failed )) && print -r -- "  ** some kernels failed to build and are missing from this table **"
+  return $failed
 }
 
 cmd_curve() {
