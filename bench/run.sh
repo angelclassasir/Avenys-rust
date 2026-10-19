@@ -41,7 +41,7 @@ if [[ ! -d "$MIRE_LIB_DIR" ]]; then
   print -u2 -- "bench: install the packages (owl install) or point MIRE_LIB_DIR at one."
   exit 1
 fi
-MSSEC=5
+MSSEC=7
 # Store options in an array: zsh does not split an unquoted scalar into words,
 # so a string would pass `-C opt-level=3` as one argument.
 RUST_OPT=(-C opt-level=3)
@@ -158,6 +158,53 @@ time_ms() {
   print -r -- "$best"
 }
 
+# Time several programs against each other, interleaved.
+#
+# Measuring one leg to completion and then the next compares samples taken
+# minutes apart, and on a shared machine that is the difference between a real
+# regression and someone else's build. Round-robin keeps every leg looking at
+# the same machine state, and the minimum over the rounds is the least
+# contended sample of each.
+#
+# Programs are passed as alternating name/path pairs; the result is a
+# name -> milliseconds mapping printed one `name<TAB>ms` per line.
+time_ms_together() {
+  local round ms s e
+  local -A best
+  local -a names=() paths=()
+  local all=("$@")
+  local i
+  i=1
+  while (( i <= ${#all[@]} )); do
+    names+=("${all[i]}")
+    paths+=("${all[i+1]}")
+    i=$(( i + 2 ))
+  done
+  i=1
+  while (( i <= ${#names[@]} )); do
+    best[${names[i]}]=99999999
+    i=$(( i + 1 ))
+  done
+  for round in $(seq 1 $MSSEC); do
+    i=1
+    while (( i <= ${#names[@]} )); do
+      s=$(date +%s%N)
+      "${paths[i]}" >/dev/null 2>&1
+      e=$(date +%s%N)
+      ms=$(( (e - s) / 1000000 ))
+      if (( ms < ${best[${names[i]}]} )); then
+        best[${names[i]}]=$ms
+      fi
+      i=$(( i + 1 ))
+    done
+  done
+  i=1
+  while (( i <= ${#names[@]} )); do
+    print -r -- "${names[i]}"$'\t'"${best[${names[i]}]}"
+    i=$(( i + 1 ))
+  done
+}
+
 cmd_verify() {
   print -r -- "Checking that Rust and Mire perform the same calculation..."
   local k fail=0 d mo ro
@@ -190,6 +237,8 @@ cmd_measure() {
   printf "  %-19s %-9s %10s %10s %10s %10s %10s\n" KERNEL WORKLOAD "Rust -O3" "C -O3" "Mire -O3" "Mire/C" "Mire/Rust"
   printf "  %-19s %-9s %10s %10s %10s %10s %10s\n" "-------------------" "---------" "----------" "----------" "----------" "--------" "---------"
   local k d r m c mr mc ratio_c ratio_r flag failed=0
+  local q j value
+  local -a leg_names leg_paths leg_args timings
   for k in $(kernels); do
     [[ "$k" == "noop" ]] && continue
     [[ -n "$only" && "$k" != "$only" ]] && continue
@@ -199,10 +248,30 @@ cmd_measure() {
       continue
     fi
     d="$WORK/$k.measure.3"
-    r=$(time_ms "$WORK/bin/rust_$k")
-    m=$(time_ms "$d/code/bin/release/main")
-    c="-"
-    [[ -x "$WORK/bin/c_$k" ]] && c=$(time_ms "$WORK/bin/c_$k")
+    # Interleaved: one sample of each leg, then the next round. See
+    # time_ms_together for why the legs are not timed one after another.
+    leg_names=(rust mire)
+    leg_paths=("$WORK/bin/rust_$k" "$d/code/bin/release/main")
+    [[ -x "$WORK/bin/c_$k" ]] && leg_names+=(c) && leg_paths+=("$WORK/bin/c_$k")
+    # time_ms_together wants name/path pairs, not two parallel lists.
+    leg_args=()
+    q=1
+    while (( q <= ${#leg_names[@]} )); do
+      leg_args+=("${leg_names[q]}" "${leg_paths[q]}")
+      q=$(( q + 1 ))
+    done
+    timings=("${(@f)$(time_ms_together "${leg_args[@]}")}")
+    r="-"; m="-"; c="-"
+    j=1
+    while (( j <= ${#leg_names[@]} )); do
+      value="${timings[j]##*$'\t'}"
+      case "${leg_names[j]}" in
+        rust) r="$value" ;;
+        mire) m="$value" ;;
+        c)    c="$value" ;;
+      esac
+      j=$(( j + 1 ))
+    done
     if [[ "$c" == "-" ]]; then
       ratio_c="-"
     else
