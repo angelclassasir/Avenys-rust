@@ -82,7 +82,7 @@ pub(crate) fn compile_inst(inst: &MirInst, ctx: &mut LlvmCtx) -> InstCompile {
             return compile_vec_with_capacity_i64(inst, ctx, args);
         }
         if name == "rt_list_free" && args.len() == 1 {
-            return compile_vec_free(inst, ctx, args);
+            return compile_vec_free(ctx, args);
         }
         let _ = ret_ty;
     }
@@ -1129,11 +1129,7 @@ fn compile_vec_get_i64(
 //
 // Lowering to a guarded `free` keeps the null check in the module, so a null
 // release costs a compare and nothing else.
-fn compile_vec_free(
-    inst: &MirInst,
-    ctx: &mut LlvmCtx,
-    args: &[MirValue],
-) -> InstCompile {
+fn compile_vec_free(ctx: &mut LlvmCtx, args: &[MirValue]) -> InstCompile {
     let (vec_s, _) = resolve_typed(&args[0], ctx);
 
     let null_bb = ctx.next_extra;
@@ -1148,7 +1144,7 @@ fn compile_vec_free(
     let done_label = format!("bb_free_done_{}", done_bb);
 
     let is_null = tmp_extra(ctx, "i1");
-    let mut before = vec![format!(
+    let before = vec![format!(
         "{} = icmp eq ptr {}, null",
         is_null, vec_s
     )];
