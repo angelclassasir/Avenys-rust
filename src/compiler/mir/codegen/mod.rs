@@ -39,6 +39,9 @@ pub fn mir_to_llvm(program: &MirProgram) -> (String, Vec<(String, String)>) {
     mir_to_llvm_with_filename(program, "", RuntimeTier::Minimal)
 }
 
+/// Reallocation helper called by the inlined `vec::push` lowering.
+pub(crate) const VEC_GROW_PUSH_I64: &str = "rt_vecs_grow_push_i64";
+
 pub fn mir_to_llvm_with_filename(
     program: &MirProgram,
     source_filename: &str,
@@ -58,6 +61,17 @@ pub fn mir_to_llvm_with_filename(
         let params: Vec<String> = ext.params.iter().map(llvm_type_str).collect();
         let sig = params.join(", ");
         extern_decls.push(format!("declare {} @{}({})", ret, ext.name, sig));
+    }
+    // `vec::push` is lowered inline, so nothing in the program's extern list
+    // mentions the reallocation helper it calls. Declare it here; without this
+    // the module fails to parse with "use of undefined value" the first time
+    // a program pushes into a vector.
+    if !declared.contains(VEC_GROW_PUSH_I64) {
+        declared.insert(VEC_GROW_PUSH_I64.to_string());
+        extern_decls.push(format!(
+            "declare ptr @{}(ptr, i64)",
+            VEC_GROW_PUSH_I64
+        ));
     }
 
     let mut function_irs = Vec::new();
@@ -253,7 +267,6 @@ pub(crate) fn compile_function_to_llvm(func: &MirFunction, ctx: &mut LlvmCtx) ->
                         }
                     }
                     parts.push(format!("  {}", term));
-                    bb_terminated = true;
                     // Emit each successor block as its own LLVM basic block.
                     for (i, (label, lines, succ_term)) in successors.into_iter().enumerate() {
                         if i > 0 {
@@ -265,11 +278,18 @@ pub(crate) fn compile_function_to_llvm(func: &MirFunction, ctx: &mut LlvmCtx) ->
                                 parts.push(format!("  {}", line));
                             }
                         }
+                        // A successor with no terminator falls through to the
+                        // following MIR instructions, so the current LLVM block
+                        // is still open. Marking it terminated unconditionally
+                        // used to swallow the MIR block terminator whenever the
+                        // split instruction was the last one in the block, which
+                        // emitted a function body with no `ret` and left the
+                        // whole module unparseable.
+                        let falls_through = succ_term.is_none();
                         if let Some(t) = succ_term {
                             parts.push(format!("  {}", t));
                         }
-                        // If succ_term is None, the block falls through to the
-                        // following MIR instructions (emitted next).
+                        bb_terminated = !falls_through;
                     }
                 }
             }

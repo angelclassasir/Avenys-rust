@@ -72,6 +72,9 @@ pub(super) fn optimize_ir(ir: &str, opt_level: OptLevel, source_filename: &str) 
             .with_filename(source_filename.to_string())
         })?;
     }
+    if let Ok(path) = std::env::var("AVENYS_DUMP_IR") {
+        let _ = std::fs::write(&path, ir.as_bytes());
+    }
     let output = child.wait_with_output().map_err(|err| {
         MireError::new(ErrorKind::Runtime {
             span: crate::error::Span::unknown(),

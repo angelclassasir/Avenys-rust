@@ -1,7 +1,7 @@
 use super::builtins::{builtin_to_pal, compile_pal_builtin};
 use super::resolve::{coerce_to, coerce_to_bool, resolve_named_call, resolve_typed};
 use super::types::{llvm_type_str, render_struct_llvm_type};
-use super::{LlvmCtx, sanitize_fn_name, tmp_extra, tmp_result};
+use super::{LlvmCtx, VEC_GROW_PUSH_I64, sanitize_fn_name, tmp_extra, tmp_result};
 use crate::compiler::mir::{DataType, MirCmp, MirConst, MirInst, MirOp, MirValue, Ownership};
 
 /// Resolves the common floating-point result type for a binary operation.
@@ -37,12 +37,38 @@ pub(crate) enum InstCompile {
     },
 }
 
+/// The statically known name of a call target, if it has one.
+///
+/// Both callee spellings have to be accepted: a `Global` is a direct reference
+/// to a runtime entry point, while a `FunctionRef` carries the same name plus
+/// the environment pointer a Mire function needs. Matching on one variant alone
+/// drops every call that arrived through the other.
+fn call_target_name(callee: &MirValue) -> Option<&str> {
+    match callee {
+        MirValue::Global(name) => Some(name.as_str()),
+        MirValue::FunctionRef { name, .. } => Some(name.as_str()),
+        _ => None,
+    }
+}
+
 pub(crate) fn compile_inst(inst: &MirInst, ctx: &mut LlvmCtx) -> InstCompile {
     // ── Inline expansion of vec runtime calls ───────────────────────────
     // Intercept calls to rt_vecs_* and emit LLVM inline code instead of an
     // extern call, avoiding the ABI overhead on the hottest paths.
-    if let MirOp::Call(MirValue::Global(name), args, ret_ty) = &inst.op {
-        let name = name.as_str();
+    //
+    // The callee has to be matched through `call_target_name`, not through a
+    // `MirValue::Global` pattern. A call that reaches codegen through an
+    // imported module -- which is what every `vec::push` in a program that
+    // does `load mire::vec` is -- carries a `MirValue::FunctionRef` instead,
+    // and matching only `Global` silently skipped every one of them: the
+    // lowering below existed, ran zero times, and each push stayed an
+    // out-of-line call into a runtime translation unit with no LTO.
+    if let MirOp::Call(callee, args, ret_ty) = &inst.op {
+        let name = call_target_name(callee);
+        let name = match name {
+            Some(n) => n,
+            None => "",
+        };
         if name == "rt_vecs_push_i64" && args.len() == 2 {
             return compile_vec_push_i64(inst, ctx, args);
         }
@@ -1026,7 +1052,18 @@ fn compile_vec_with_capacity_i64(
 fn compile_vec_len(_inst: &MirInst, ctx: &mut LlvmCtx, args: &[MirValue]) -> InstCompile {
     let (vec_s, _) = resolve_typed(&args[0], ctx);
     let result = tmp_result(ctx, "i64", _inst.result);
-    InstCompile::Normal(vec![format!("%t{} = load i64, ptr {}", result, vec_s)])
+    // rt_vecs_len answers 0 for a null vector; inlining the load alone would
+    // fault on one, so keep the guard as a select rather than a branch.
+    let is_null = tmp_extra(ctx, "i1");
+    let len_tmp = tmp_extra(ctx, "i64");
+    InstCompile::Normal(vec![
+        format!("{} = icmp eq ptr {}, null", is_null, vec_s),
+        format!("{} = load i64, ptr {}", len_tmp, vec_s),
+        format!(
+            "%t{} = select i1 {}, i64 0, i64 {}",
+            result, is_null, len_tmp
+        ),
+    ])
 }
 
 fn compile_vec_get_i64(
@@ -1092,7 +1129,7 @@ fn compile_vec_push_i64(
 ) -> InstCompile {
     let (vec_s, _) = resolve_typed(&args[0], ctx);
     let (val_s, _) = resolve_typed(&args[1], ctx);
-    let result = tmp_result(ctx, "ptr", inst.result);
+    let result = format!("%t{}", tmp_result(ctx, "ptr", inst.result));
 
     let slow_bb = ctx.next_extra;
     ctx.next_extra += 1;
@@ -1101,9 +1138,16 @@ fn compile_vec_push_i64(
     let merge_bb = ctx.next_extra;
     ctx.next_extra += 1;
 
+    // A basic block is *defined* by an unquoted name (`bb_push_slow_0:`) but
+    // *referenced* with a leading `%` (`br label %bb_push_slow_0`). Emitting
+    // the bare name in a branch makes `opt` reject the module with
+    // "expected value token", so the two spellings are kept apart here.
     let slow_label = format!("bb_push_slow_{}", slow_bb);
     let fast_label = format!("bb_push_fast_{}", fast_bb);
     let merge_label = format!("bb_push_merge_{}", merge_bb);
+    let slow_ref = format!("%{}", slow_label);
+    let fast_ref = format!("%{}", fast_label);
+    let merge_ref = format!("%{}", merge_label);
 
     let hdr_tmp = tmp_extra(ctx, "ptr");
     let cap_tmp = tmp_extra(ctx, "i64");
@@ -1124,7 +1168,7 @@ fn compile_vec_push_i64(
 
     let term = format!(
         "br i1 {}, label {}, label {}",
-        full_tmp, slow_label, fast_label
+        full_tmp, slow_ref, fast_ref
     );
 
     // Fast path: capacity available. Append and return the same pointer.
@@ -1148,8 +1192,8 @@ fn compile_vec_push_i64(
     let grown_tmp = tmp_extra(ctx, "ptr");
     let mut slow_lines = Vec::new();
     slow_lines.push(format!(
-        "{} = call ptr @rt_vecs_grow_push_i64(ptr {}, i64 {})",
-        grown_tmp, vec_s, val_s
+        "{} = call ptr @{}(ptr {}, i64 {})",
+        grown_tmp, VEC_GROW_PUSH_I64, vec_s, val_s
     ));
 
     // Merge: the fast path keeps the incoming pointer, the slow path returns
@@ -1157,7 +1201,7 @@ fn compile_vec_push_i64(
     let mut merge_lines = Vec::new();
     merge_lines.push(format!(
         "{} = phi ptr [ {}, {} ], [ {}, {} ]",
-        result, vec_s, fast_label, grown_tmp, slow_label
+        result, vec_s, fast_ref, grown_tmp, slow_ref
     ));
 
     InstCompile::Split {
@@ -1167,12 +1211,12 @@ fn compile_vec_push_i64(
             (
                 fast_label,
                 fast_lines,
-                Some(format!("br label {}", merge_label)),
+                Some(format!("br label {}", merge_ref)),
             ),
             (
                 slow_label,
                 slow_lines,
-                Some(format!("br label {}", merge_label)),
+                Some(format!("br label {}", merge_ref)),
             ),
             (merge_label, merge_lines, None),
         ],
