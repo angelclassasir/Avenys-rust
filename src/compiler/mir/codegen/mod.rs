@@ -33,6 +33,10 @@ pub(crate) struct LlvmCtx<'a> {
     extern_wrapper_names: HashMap<String, String>,
     struct_types: &'a HashMap<String, Vec<(String, DataType)>>,
     pub(crate) _source_filename: String,
+    // Bump allocator state for inline allocations
+    bump_ptr: Option<String>,
+    bump_end: Option<String>,
+    bump_init_done: bool,
 }
 
 pub fn mir_to_llvm(program: &MirProgram) -> (String, Vec<(String, String)>) {
@@ -92,7 +96,25 @@ pub fn mir_to_llvm_with_filename(
         extern_wrapper_names,
         struct_types: &program.struct_types,
         _source_filename: source_filename.to_string(),
+        bump_ptr: Some("@bump_ptr".to_string()),
+        bump_end: Some("@bump_end".to_string()),
+        bump_init_done: true,
     };
+    
+    // Initialize bump allocator: 64MB arena as global variables
+    ctx.strings.push(format!(
+        "@bump_arena = private unnamed_addr global [{} x i8] zeroinitializer, align 16",
+        64 * 1024 * 1024
+    ));
+    ctx.strings.push(format!(
+        "@bump_ptr = global ptr getelementptr ([{} x i8], ptr @bump_arena, i64 0, i64 0)",
+        64 * 1024 * 1024
+    ));
+    ctx.strings.push(format!(
+        "@bump_end = global ptr getelementptr ([{} x i8], ptr @bump_arena, i64 0, i64 {})",
+        64 * 1024 * 1024, 64 * 1024 * 1024
+    ));
+    
     for func in &program.functions {
         let func_ir = compile_function_to_llvm(func, &mut ctx);
         function_irs.push(func_ir);

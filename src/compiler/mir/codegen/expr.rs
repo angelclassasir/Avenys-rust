@@ -1069,13 +1069,13 @@ fn compile_vec_get_i64(
 }
 
 fn compile_vec_push_i64(
-    _inst: &MirInst,
+    inst: &MirInst,
     ctx: &mut LlvmCtx,
     args: &[MirValue],
 ) -> InstCompile {
     let (vec_s, _) = resolve_typed(&args[0], ctx);
     let (val_s, _) = resolve_typed(&args[1], ctx);
-    let result = tmp_result(ctx, "ptr", _inst.result);
+    let result = tmp_result(ctx, "ptr", inst.result);
 
     let slow_bb = ctx.next_extra;
     ctx.next_extra += 1;
@@ -1181,66 +1181,123 @@ fn compile_vec_push_i64(
             alloc_size_tmp, mul_tmp
         ));
 
-// Reallocate: pal_realloc(old_hdr, alloc_size)
-    slow_lines.push(format!(
-        "{} = call ptr @pal_realloc(ptr {}, i64 {})",
-        new_hdr_tmp, old_hdr_tmp, alloc_size_tmp
-    ));
+// Inline reallocation: allocate new memory using bump allocator, copy data, free old memory
+        // 1. Allocate new memory using bump allocator (fast path) or fallback to pal_memory_alloc
+        let new_hdr_tmp = tmp_result(ctx, "ptr", inst.result); // result temp
+        let fits_tmp = tmp_extra(ctx, "i1");
+        let end_ptr = tmp_extra(ctx, "ptr");
+        let fits_label = format!("bb_fits_{}", ctx.next_extra);
+        ctx.next_extra += 1;
+        let malloc_label = format!("bb_malloc_{}", ctx.next_extra);
+        ctx.next_extra += 1;
+        let malloc_cont_label = format!("bb_malloc_cont_{}", ctx.next_extra);
+        ctx.next_extra += 1;
 
-    // Check for null realloc (allocation failure)
-    let null_check_tmp = tmp_extra(ctx, "i1");
-    let fail_label = format!("bb_fail_{}", slow_bb);
-    let cont_label = format!("bb_cont_{}", slow_bb);
-    slow_lines.push(format!(
-        "{} = icmp eq ptr {}, null",
-        null_check_tmp, new_hdr_tmp
-    ));
-    slow_lines.push(format!(
-        "br i1 {}, label {}, label {}",
-        null_check_tmp, fail_label, cont_label
-    ));
+        // Check if allocation fits in bump arena: bump_ptr + alloc_size <= bump_end
+        slow_lines.push(format!(
+            "{} = getelementptr i8, ptr {}, i64 {}",
+            end_ptr, ctx.bump_ptr.as_ref().unwrap(), alloc_size_tmp
+        ));
+        slow_lines.push(format!(
+            "{} = icmp ule ptr {}, ptr {}",
+            fits_tmp, end_ptr, ctx.bump_end.as_ref().unwrap()
+        ));
+        slow_lines.push(format!(
+            "br i1 {}, label {}, label {}",
+            fits_tmp, format!("bb_bump_fast_{}", ctx.next_extra - 2), format!("bb_malloc_{}", ctx.next_extra - 1)
+        ));
 
-    // Failure path: return null
-    slow_lines.push(format!("{}:", fail_label));
-    slow_lines.push(format!("br label {}", merge_label));
+        // Fast path: allocate from bump arena
+        let fast_bump_label = format!("bb_bump_fast_{}", ctx.next_extra - 2);
+        let malloc_label = format!("bb_malloc_{}", ctx.next_extra - 2);
+        let after_alloc_label = format!("bb_after_alloc_{}", ctx.next_extra);
+        ctx.next_extra += 1;
 
-    // Continue path: set up new header and write value
-    slow_lines.push(format!("{}:", cont_label));
-    // Set new capacity in header
-    slow_lines.push(format!("store i64 {}, ptr {}", final_cap_tmp, new_hdr_tmp));
-    // Set length (old length unchanged after realloc)
-    slow_lines.push(format!("store i64 {}, ptr {}", old_len_tmp, new_hdr_tmp));
-    // Compute data pointer: new_hdr + 1
-    slow_lines.push(format!(
-        "{} = getelementptr ptr, ptr {}, i64 1",
-        new_data_tmp, new_hdr_tmp
-    ));
-    
-    // Inline memcpy: copy old_len elements from old data to new data
-    // Use llvm.memcpy for efficient copy (LLVM will optimize to vectorized instructions)
-    if old_len_tmp != "0" {
-        let src_data_tmp = tmp_extra(ctx, "ptr");
-        let dst_data_tmp = tmp_extra(ctx, "ptr");
-        let byte_size_tmp = tmp_extra(ctx, "i64");
+        // Fast path: allocate from bump arena
+        slow_lines.push(format!("{}:", format!("bb_bump_fast_{}", ctx.next_extra - 2)));
+        slow_lines.push(format!(
+            "{} = getelementptr i8, ptr {}, i64 0",
+            new_hdr_tmp, ctx.bump_ptr.as_ref().unwrap()
+        ));
+        let bump_end_calc = tmp_extra(ctx, "ptr");
+        slow_lines.push(format!(
+            "{} = getelementptr i8, ptr {}, i64 {}",
+            bump_end_calc, ctx.bump_ptr.as_ref().unwrap(), alloc_size_tmp
+        ));
+        slow_lines.push(format!(
+            "store ptr {}, ptr {}",
+            bump_end_calc, ctx.bump_ptr.as_ref().unwrap()
+        ));
+        slow_lines.push(format!("br label {}", format!("bb_after_alloc_{}", ctx.next_extra - 1)));
+
+        // Slow path: fallback to pal_memory_alloc
+        slow_lines.push(format!("{}:", malloc_label));
+        slow_lines.push(format!(
+            "{} = call ptr @pal_memory_alloc(i64 {})",
+            new_hdr_tmp, alloc_size_tmp
+        ));
+        slow_lines.push(format!("br label {}", format!("bb_after_alloc_{}", ctx.next_extra - 1)));
+
+        // After allocation (merge point)
+        slow_lines.push(format!("{}:", format!("bb_after_alloc_{}", ctx.next_extra - 1)));
+        slow_lines.push(format!("br label {}", format!("bb_cont_{}", slow_bb)));
+
+        // Check for null allocation (allocation failure)
+        let null_check_tmp = tmp_extra(ctx, "i1");
+        let fail_label = format!("bb_fail_{}", slow_bb);
+        let cont_label = format!("bb_cont_{}", slow_bb);
+        slow_lines.push(format!(
+            "{} = icmp eq ptr {}, null",
+            null_check_tmp, new_hdr_tmp
+        ));
+        slow_lines.push(format!(
+            "br i1 {}, label {}, label {}",
+            null_check_tmp, fail_label, cont_label
+        ));
+
+        // Failure path: return null
+        slow_lines.push(format!("{}:", fail_label));
+        slow_lines.push(format!("br label {}", merge_label));
+
+        // Continue path: copy data, free old memory, set up new header
+        slow_lines.push(format!("{}:", cont_label));
         
+        // Inline memcpy: copy old_len elements from old data to new data
+        // Use llvm.memcpy for efficient copy (LLVM will optimize to vectorized instructions)
+        if old_len_tmp != "0" {
+            let src_data_tmp = tmp_extra(ctx, "ptr");
+            let dst_data_tmp = tmp_extra(ctx, "ptr");
+            let byte_size_tmp = tmp_extra(ctx, "i64");
+            
+            slow_lines.push(format!(
+                "{} = getelementptr ptr, ptr {}, i64 1",
+                src_data_tmp, old_hdr_tmp
+            ));
+            slow_lines.push(format!(
+                "{} = getelementptr ptr, ptr {}, i64 1",
+                dst_data_tmp, new_hdr_tmp
+            ));
+            slow_lines.push(format!(
+                "{} = mul i64 {}, 8",
+                byte_size_tmp, old_len_tmp
+            ));
+            // llvm.memcpy(dst, src, size, align)
+            slow_lines.push(format!(
+                "call void @llvm.memcpy.p0.p0.i64(ptr {}, ptr {}, i64 {}, i1 false)",
+                dst_data_tmp, src_data_tmp, byte_size_tmp
+            ));
+        }
+
+        // Free old memory
         slow_lines.push(format!(
-            "{} = getelementptr ptr, ptr {}, i64 1",
-            src_data_tmp, old_hdr_tmp
+            "call void @pal_memory_free(ptr {})",
+            old_hdr_tmp
         ));
-        slow_lines.push(format!(
-            "{} = getelementptr ptr, ptr {}, i64 1",
-            dst_data_tmp, new_hdr_tmp
-        ));
-        slow_lines.push(format!(
-            "{} = mul i64 {}, 8",
-            byte_size_tmp, old_len_tmp
-        ));
-        // llvm.memcpy(dst, src, size, align)
-        slow_lines.push(format!(
-            "call void @llvm.memcpy.p0.p0.i64(ptr {}, ptr {}, i64 {}, i1 false)",
-            dst_data_tmp, src_data_tmp, byte_size_tmp
-        ));
-    }
+
+        // Set new capacity in header
+        slow_lines.push(format!("store i64 {}, ptr {}", final_cap_tmp, new_hdr_tmp));
+        // Set length (old length unchanged after realloc)
+        slow_lines.push(format!("store i64 {}, ptr {}", old_len_tmp, new_hdr_tmp));
 
     // Compute slot: data + old_len
     slow_lines.push(format!(
@@ -1283,4 +1340,16 @@ fn compile_vec_push_i64(
             (merge_label, merge_lines, None),
         ],
     }
+}
+
+// For now, use pal_memory_alloc directly since full bump allocator 
+// requires complex control flow that's better handled in the compiler pipeline.
+// This is a placeholder for future optimization.
+fn emit_bump_alloc(ctx: &mut LlvmCtx, size_expr: &str, _result_tmp: usize) -> Vec<String> {
+    let result = format!("%t{}", ctx.next_extra);
+    ctx.next_extra += 1;
+    vec![format!(
+        "{} = call ptr @pal_memory_alloc(i64 {})",
+        result, size_expr
+    )]
 }
