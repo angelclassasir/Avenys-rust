@@ -81,6 +81,9 @@ pub(crate) fn compile_inst(inst: &MirInst, ctx: &mut LlvmCtx) -> InstCompile {
         if name == "rt_vecs_with_capacity_i64" && args.len() == 1 {
             return compile_vec_with_capacity_i64(inst, ctx, args);
         }
+        if name == "rt_list_free" && args.len() == 1 {
+            return compile_vec_free(inst, ctx, args);
+        }
         let _ = ret_ty;
     }
 
@@ -127,6 +130,16 @@ pub(crate) fn compile_inst(inst: &MirInst, ctx: &mut LlvmCtx) -> InstCompile {
                 };
                 extra.push(format!("store ptr {env_casted}, ptr {env_gep}"));
                 String::new()
+            }
+            // `none` defaults to i64 when nothing else says otherwise, which
+            // is right for an integer slot and wrong for a pointer one:
+            // `store i64 0, ptr %slot` is type-confused IR that LLVM has to
+            // keep reloading through. Owned locals are initialised with `none`
+            // and released later, so this is the shape that decides whether
+            // the optimizer can see the slot as null.
+            MirValue::Const(MirConst::None) => {
+                let (dst_s, _) = resolve_typed(dst, ctx);
+                format!("store ptr null, ptr {}", dst_s)
             }
             _ => {
                 let (src_s, src_ty) = resolve_typed(src, ctx);
@@ -1103,6 +1116,65 @@ fn compile_vec_get_i64(
         result, ok_tmp, val_tmp
     ));
     InstCompile::Normal(lines)
+}
+
+// Releasing a vector, lowered inline.
+//
+// `rt_list_free` is a null-guarded `free` of the header word. Left as a call
+// it is a frame plus a call on every release, and an allocation-heavy loop
+// releases once per iteration; worse, the optimizer cannot fold the call away
+// when the pointer is known to be null, because the callee is opaque. A
+// program that re-initialises an owned local each iteration releases a null
+// slot every time and paid a full call to say so.
+//
+// Lowering to a guarded `free` keeps the null check in the module, so a null
+// release costs a compare and nothing else.
+fn compile_vec_free(
+    inst: &MirInst,
+    ctx: &mut LlvmCtx,
+    args: &[MirValue],
+) -> InstCompile {
+    let (vec_s, _) = resolve_typed(&args[0], ctx);
+
+    let null_bb = ctx.next_extra;
+    ctx.next_extra += 1;
+    let free_bb = ctx.next_extra;
+    ctx.next_extra += 1;
+    let done_bb = ctx.next_extra;
+    ctx.next_extra += 1;
+
+    let null_label = format!("bb_free_null_{}", null_bb);
+    let free_label = format!("bb_free_call_{}", free_bb);
+    let done_label = format!("bb_free_done_{}", done_bb);
+
+    let is_null = tmp_extra(ctx, "i1");
+    let mut before = vec![format!(
+        "{} = icmp eq ptr {}, null",
+        is_null, vec_s
+    )];
+    let term = format!(
+        "br i1 {}, label {}, label {}",
+        is_null, null_label, free_label
+    );
+
+    // A list pointer addresses the length word, so the block the PAL owns is
+    // one word below it.
+    let hdr_tmp = tmp_extra(ctx, "ptr");
+    let mut free_lines = vec![format!(
+        "{} = getelementptr ptr, ptr {}, i64 -1",
+        hdr_tmp, vec_s
+    )];
+    free_lines.push(format!("call void @free(ptr {})", hdr_tmp));
+
+    InstCompile::Split {
+        before,
+        term,
+        successors: vec![
+            (null_label, Vec::new(), Some(format!("br label {}", done_label))),
+            (free_label, free_lines, Some(format!("br label {}", done_label))),
+            (done_label, Vec::new(), None),
+        ],
+    }
 }
 
 // `vec::push` for i64 elements, lowered inline instead of calling
