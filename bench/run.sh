@@ -74,6 +74,7 @@ difficulty() {
     list_indexed_read|swap_exchange) echo "easy" ;;
     nested_loops|break_continue|many_locals|trait_dispatch|mixed_int_float) echo "medium" ;;
     string_impl|recursion_ackermann|alloc_pressure) echo "hard" ;;
+    binary_search|matrix_rowmajor|numeric_format|sort_introsort|string_scan|vec_partition) echo "medium" ;;
     *) echo "-" ;;
   esac
 }

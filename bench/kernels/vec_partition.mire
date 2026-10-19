@@ -1,0 +1,36 @@
+// A8: partitioning a vector into two by a predicate. Difficulty: medium.
+// Each round fills a vector, then drains it into an "even" and an "odd" vector,
+// so the timed work is one input allocation plus two output allocations per
+// round. It measures the push path when the destination alternates, which the
+// single-vector kernels do not exercise.
+load mire::vec
+
+pub fn main: () :i32 {
+    set seed = SEED_OPACA mut
+    set round = 0 :i64 mut
+    while round < 40000 {
+        set src = vec::with::capacity::i64(128) mut
+        set k = 0 :i64 mut
+        while k < 128 {
+            set x = k * 7 + round
+            set src = vec::push::i64(src x)
+            set k += 1
+        }
+        set even = vec::with::capacity::i64(128) mut
+        set odd = vec::with::capacity::i64(128) mut
+        set j = 0 :i64 mut
+        while j < 128 {
+            set x = vec::get::i64(src j)
+            if x % 2 == 0 {
+                set even = vec::push::i64(even x)
+            } else {
+                set odd = vec::push::i64(odd x)
+            }
+            set j += 1
+        }
+        set seed = (seed + vec::len(even) + vec::len(odd)) % 1000003
+        set round += 1
+    }
+    dasu(str(seed))
+    return 0 :i32
+}

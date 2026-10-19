@@ -1,0 +1,40 @@
+// A5: 2D access pattern. Difficulty: medium.
+// A flat vector read in row-major order when filling and column-major order
+// when summing, so the second pass strides across cache lines. It measures the
+// vector indexing path under an access pattern that is not linear, which the
+// existing linear-read kernels do not cover.
+load mire::vec
+
+pub fn main: () :i32 {
+    set seed = SEED_OPACA mut
+    set n = 128
+    set round = 0 :i64 mut
+    while round < 800 {
+        set m = vec::with::capacity::i64(n * n) mut
+        set r = 0 :i64 mut
+        while r < n {
+            set c = 0 :i64 mut
+            while c < n {
+                set x = r * n + c + round
+                set m = vec::push::i64(m x)
+                set c += 1
+            }
+            set r += 1
+        }
+        set acc = 0 :i64 mut
+        set c = 0 :i64 mut
+        while c < n {
+            set r = 0 :i64 mut
+            while r < n {
+                set idx = r * n + c
+                set acc += vec::get::i64(m idx)
+                set r += 1
+            }
+            set c += 1
+        }
+        set seed = (seed + acc) % 1000003
+        set round += 1
+    }
+    dasu(str(seed))
+    return 0 :i32
+}

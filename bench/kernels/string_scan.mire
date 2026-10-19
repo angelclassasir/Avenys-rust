@@ -1,0 +1,29 @@
+// A7: substring search over a large text. Difficulty: medium.
+// Builds a long repeated text once and scans it for a short needle many times.
+// The scan is the timed work; the construction is done once so the kernel does
+// not degenerate into a string-building benchmark.
+load mire::str
+
+pub fn main: () :i32 {
+    set seed = SEED_OPACA mut
+    set haystack = str::repeat("the quick brown fox jumps over the lazy dog. " 20000)
+    set needle = "lazy dog"
+    set hlen = str::len(haystack)
+    set round = 0 :i64 mut
+    while round < 20 {
+        set hits = 0 :i64 mut
+        set found = str::index(haystack needle) mut
+        while found >= 0 {
+            set hits += 1
+            set start = found + 1
+            set restlen = hlen - start
+            set rest = str::substr(haystack start restlen)
+            set nxt = str::index(rest needle) mut
+            set found = if nxt >= 0 { start + nxt } else { -1 :i64 }
+        }
+        set seed = (seed + hits) % 1000003
+        set round += 1
+    }
+    dasu(str(seed))
+    return 0 :i32
+}

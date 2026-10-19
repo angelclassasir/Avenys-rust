@@ -1,0 +1,29 @@
+// A6: binary search over a sorted vector. Difficulty: medium.
+// Builds a sorted vector and probes it many times, so the timed work is the
+// search path over resident data rather than the sort. Probes that miss as well
+// as probes that hit keep the branch pattern from being folded.
+load mire::vec
+
+pub fn main: () :i32 {
+    set seed = SEED_OPACA mut
+    set round = 0 :i64 mut
+    while round < 2000 {
+        set v = vec::with::capacity::i64(4096) mut
+        set k = 0 :i64 mut
+        while k < 4096 {
+            set x = k * 2
+            set v = vec::push::i64(v x)
+            set k += 1
+        }
+        set probe = 0 :i64 mut
+        while probe < 256 {
+            set target = (probe * 7 + round) % 8192
+            set idx = vec::binary::search(v target)
+            set seed = (seed + idx + probe) % 1000003
+            set probe += 1
+        }
+        set round += 1
+    }
+    dasu(str(seed))
+    return 0 :i32
+}

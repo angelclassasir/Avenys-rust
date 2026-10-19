@@ -508,7 +508,39 @@ fn missing_symbols_resolve_to_libm(link_error: &str) -> bool {
     link_error
         .lines()
         .filter(|line| line.contains("undefined symbol"))
-        .any(|line| libm_version_tags().any(|tag| line.contains(tag)))
+        .any(|line| {
+            libm_version_tags().any(|tag| line.contains(tag)) || line_names_libm_symbol(line)
+        })
+}
+
+/// Math functions that exist in libm.
+///
+/// tcc, the default linker, does not stamp undefined symbols with `@GLIBC_*`
+/// version tags the way ld does: it reports a bare `undefined symbol 'sinh'`
+/// and nothing else. The function name is then the only signal that libm (and
+/// not some other library) is what is missing. This list is the set
+/// `core/math.c` forwards to libc/libm; the C89 members (`sin`, `sqrt`, ...)
+/// are also provided by glibc's libc, so a program using only those still
+/// links without -lm, but a tcc build that reaches the C99 members
+/// (`sinh`/`erf`/`tgamma`/...) needs it.
+const LIBM_SYMBOLS: &[&str] = &[
+    "sin", "cos", "tan", "asin", "acos", "atan", "atan2", "sinh", "cosh", "tanh", "asinh", "acosh",
+    "atanh", "sqrt", "cbrt", "pow", "exp", "exp2", "expm1", "log", "log2", "log10", "log1p", "erf",
+    "erfc", "tgamma", "lgamma", "hypot", "fabs", "fmod", "remainder", "fma", "copysign", "frexp",
+    "ldexp", "nextafter", "modf", "floor", "ceil", "trunc", "llround", "fmax",
+];
+
+/// Pull the symbol name out of a linker's `undefined symbol 'NAME'` diagnostic
+/// and report whether libm defines it.
+fn line_names_libm_symbol(line: &str) -> bool {
+    let Some(start) = line.find('\'') else {
+        return false;
+    };
+    let rest = &line[start + 1..];
+    let Some(end) = rest.find('\'') else {
+        return false;
+    };
+    LIBM_SYMBOLS.contains(&&rest[..end])
 }
 
 fn libm_version_tags() -> impl Iterator<Item = &'static str> {

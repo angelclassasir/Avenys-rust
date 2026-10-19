@@ -123,6 +123,9 @@ pub fn check_program_types_partial_with_origins(
     checker
         .collect_function_return_signatures(&program.statements)
         .map_err(|err| checker.attach_current_context(err))?;
+    if selection.statement_mask.iter().any(|checked| !checked) {
+        checker.collect_global_bindings(&program.statements, &selection.statement_mask);
+    }
     checker.check_selected_top_level_statements(&mut program.statements, &selection.statement_mask)
 }
 
@@ -327,6 +330,29 @@ impl TypeChecker {
                     self.macro_names.insert(name.clone());
                 }
                 _ => {}
+            }
+        }
+    }
+
+    fn collect_global_bindings(&mut self, statements: &[Statement], statement_mask: &[bool]) {
+        for (statement, checked) in statements.iter().zip(statement_mask.iter()) {
+            if *checked {
+                continue;
+            }
+            if let Statement::Let {
+                name,
+                data_type,
+                value,
+                is_mutable,
+                is_constant,
+                ..
+            } = statement
+            {
+                if *is_constant {
+                    self.insert_constant(name.clone());
+                }
+                self.insert_var(name.clone(), data_type.clone(), *is_mutable);
+                self.refresh_binding_metadata(name, data_type, value.as_ref());
             }
         }
     }

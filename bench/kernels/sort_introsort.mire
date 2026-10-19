@@ -1,0 +1,26 @@
+// A4: sorting. Difficulty: medium.
+// Fills a fresh vector with a pseudo-random sequence and sorts it, so the
+// comparison measures the sort path and the memory traffic it moves. The
+// runtime sorts in place with an insertion sort, so the C and Rust legs use an
+// insertion sort too: comparing three different algorithms would measure the
+// algorithm, not the language.
+load mire::vec
+
+pub fn main: () :i32 {
+    set seed = SEED_OPACA mut
+    set round = 0 :i64 mut
+    while round < 200 {
+        set v = vec::with::capacity::i64(2000) mut
+        set k = 0 :i64 mut
+        while k < 2000 {
+            set x = (k * 2654435761 + round) % 1000003
+            set v = vec::push::i64(v x)
+            set k += 1
+        }
+        vec::sort(v)
+        set seed = (seed + vec::get::i64(v 0) + vec::get::i64(v 1999)) % 1000003
+        set round += 1
+    }
+    dasu(str(seed))
+    return 0 :i32
+}

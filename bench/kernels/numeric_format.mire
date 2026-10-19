@@ -1,0 +1,19 @@
+// A9: number-to-text and back. Difficulty: hard.
+// Formats an integer to a managed string and parses it back every round, so
+// each iteration allocates and frees a short string. It measures the managed
+// string path and the integer formatting path, which no other kernel touches.
+load mire::str
+
+pub fn main: () :i32 {
+    set seed = SEED_OPACA mut
+    set i = 0 :i64 mut
+    while i < 2000000 {
+        set n = (seed + i) % 1000000
+        set s = str::from::i64(n)
+        set back = str::to::i64(s)
+        set seed = (seed + back + str::len(s)) % 1000003
+        set i += 1
+    }
+    dasu(str(seed))
+    return 0 :i32
+}

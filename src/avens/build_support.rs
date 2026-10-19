@@ -478,11 +478,6 @@ pub(super) fn c_object_hash(
     // declaration, so an object built by a TLS-capable compiler must not be
     // reused for a compiler without TLS (and the other way round).
     tcc_supports_tls(tcc_path).hash(&mut hasher);
-    // gcc and tcc can both spell TLS, so the probe above cannot tell them
-    // apart, yet they emit different objects for the same source. Without the
-    // compiler identity a host that once built with tcc keeps reusing its
-    // objects after switching to gcc.
-    tcc_path.hash(&mut hasher);
     hasher.finish()
 }
 
@@ -513,88 +508,6 @@ pub(super) fn find_tcc() -> Option<String> {
     for p in ["/usr/bin/tcc", "/usr/local/bin/tcc", "/opt/bin/tcc"] {
         if std::path::Path::new(p).exists() {
             return Some(p.to_string());
-        }
-    }
-    None
-}
-
-/// The C compiler that builds the runtime and PAL objects.
-///
-/// `tcc` alone is not enough for a performance build. Its `-O3` accepts the
-/// flag and then emits essentially unoptimized code -- every argument spilled
-/// to the stack and reloaded, no cross-function inlining, no tail calls -- so
-/// each vec operation costs a full non-inlined call into a frame built by hand.
-/// Compiling the runtime with gcc instead is worth roughly a factor of two on
-/// the allocation kernels.
-///
-/// tcc stays the linker either way, and remains the compiler when no other one
-/// is available, so a host with only libtcc builds exactly as before.
-/// `MIRE_RUNTIME_CC` overrides the choice; `MIRE_RUNTIME_CC=tcc` forces the
-/// fallback.
-pub(super) fn runtime_c_compiler() -> Option<String> {
-    let forced = std::env::var("MIRE_RUNTIME_CC").unwrap_or_default();
-    let forced = forced.trim().to_string();
-    if !forced.is_empty() {
-        return if forced == "tcc" {
-            find_tcc()
-        } else if std::path::Path::new(&forced).exists() {
-            Some(forced)
-        } else {
-            None
-        };
-    }
-    if let Ok(path_env) = std::env::var("PATH") {
-        for dir in path_env.split(':') {
-            for name in ["gcc", "cc"] {
-                if name.contains("clang") {
-                    continue;
-                }
-                let p = std::path::Path::new(dir).join(name);
-                if p.exists() {
-                    return Some(name.to_string());
-                }
-            }
-        }
-    }
-    find_tcc()
-}
-
-/// Whether the runtime may use real thread-locals.
-///
-/// Both halves have to hold: the C compiler has to be able to spell them, and
-/// the linker has to produce a binary where they work. The second is the one
-/// that catches a TLS-capable compiler feeding tcc, which links without
-/// complaint and then crashes before `main`.
-pub(super) fn runtime_tls_enabled(cc_path: &str) -> bool {
-    tcc_supports_tls(cc_path) && find_tcc().map(|l| probe_linker_tls(&l, cc_path)).unwrap_or(true)
-}
-
-/// Drop the note sections tcc's linker rejects, in place.
-fn strip_linker_note_sections(object: &Path) {
-    for tool in ["objcopy", "llvm-objcopy"] {
-        let Some(tool_path) = which(tool) else { continue };
-        let ok = std::process::Command::new(&tool_path)
-            .arg("--remove-section=.note.GNU-stack")
-            .arg("--remove-section=.note.gnu.property")
-            .arg(object)
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .status()
-            .map(|status| status.success())
-            .unwrap_or(false);
-        if ok {
-            return;
-        }
-    }
-}
-
-fn which(tool: &str) -> Option<String> {
-    if let Ok(path_env) = std::env::var("PATH") {
-        for dir in path_env.split(':') {
-            let p = std::path::Path::new(dir).join(tool);
-            if p.exists() {
-                return Some(p.to_string_lossy().to_string());
-            }
         }
     }
     None
@@ -670,68 +583,6 @@ fn probe_tcc_tls(tcc_path: &str) -> bool {
     ok
 }
 
-/// Whether the linker can produce a binary whose thread-locals actually work.
-///
-/// This is a different question from whether the C compiler can *spell*
-/// `__thread`, and the answer has to be the linker's. tcc accepts TLS objects
-/// and emits a PT_TLS segment for them, but the resulting binary dies in
-/// `_dl_allocate_tls_init` before `main` runs -- so a runtime compiled by a
-/// TLS-capable compiler and linked by tcc builds fine and then segfaults at
-/// startup. Only running the result settles it.
-///
-/// Returns true when the probe cannot be run at all, on the principle that a
-/// missing probe must not silently change how the runtime is built.
-fn probe_linker_tls(linker: &str, cc_path: &str) -> bool {
-    static PROBE_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-    let unique = (std::process::id() as u64)
-        .wrapping_mul(0x9E3779B97F4A7B21)
-        .wrapping_add(PROBE_SEQ.fetch_add(1, Ordering::Relaxed));
-    let dir = std::env::temp_dir().join(format!("mire-tls-link-probe-{unique}"));
-    if fs::create_dir_all(&dir).is_err() {
-        return true;
-    }
-    // Two translation units on purpose: the thread-local lives in one and is
-    // read from the other, which is the shape that actually exercises the
-    // loader. Returning 0 keeps a successful run distinguishable from a crash.
-    let tls_src = dir.join("tls.c");
-    let main_src = dir.join("main.c");
-    let tls_obj = dir.join("tls.o");
-    let main_obj = dir.join("main.o");
-    let exe = dir.join("probe");
-    let wrote = fs::write(&tls_src, "__thread int shared_value = 3;\nint read_it(void){return shared_value;}\n").is_ok()
-        && fs::write(&main_src, "int read_it(void);\nint main(void){return read_it() == 3 ? 0 : 1;}\n").is_ok();
-    if !wrote {
-        let _ = fs::remove_dir(&dir);
-        return true;
-    }
-    let build = |src: &Path, obj: &Path, with_cc: bool| -> bool {
-        let mut cmd = std::process::Command::new(if with_cc { cc_path } else { linker });
-        cmd.args(["-c", "-o"]).arg(obj).arg(src);
-        cmd.stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null());
-        matches!(cmd.status(), Ok(s) if s.success())
-    };
-    let ok = build(&tls_src, &tls_obj, true)
-        && build(&main_src, &main_obj, false)
-        && {
-            let out = std::process::Command::new(linker)
-                .arg("-o")
-                .arg(&exe)
-                .arg(&tls_obj)
-                .arg(&main_obj)
-                .stdout(std::process::Stdio::null())
-                .stderr(std::process::Stdio::null())
-                .status();
-            // The decisive step: a link that succeeds and a program that runs
-            // are both required. Linking alone is what the compiler probe used
-            // to check, and it is exactly what is not enough.
-            matches!(out, Ok(s) if s.success())
-                && matches!(std::process::Command::new(&exe).status(), Ok(s) if s.success())
-        };
-    let _ = fs::remove_dir_all(&dir);
-    ok
-}
-
 pub(super) fn precompile_c_object(
     c_path: &str,
     cache_dir: &Path,
@@ -748,14 +599,14 @@ pub(super) fn precompile_c_object(
     let is_shared = matches!(extra.artifact, super::config::LibType::Shared);
     // Resolve the compiler before hashing: the object key depends on whether
     // that compiler can do thread-local storage.
-    let cc_path = runtime_c_compiler().ok_or_else(|| {
+    let tcc_path = find_tcc().ok_or_else(|| {
         MireError::new(ErrorKind::Runtime {
             span: crate::error::Span::unknown(),
-            message: "No C compiler found for the runtime and PAL objects. Install gcc (preferred) or libtcc, or point MIRE_RUNTIME_CC at a compiler."
+            message: "libtcc (tcc) not found. Install tcc or set the TCC_PATH environment variable. C object compilation (runtime, PAL) requires libtcc."
                 .to_string(),
         })
     })?;
-    let hash = c_object_hash(&content, is_shared, &extra.cflags, opt_level, &cc_path);
+    let hash = c_object_hash(&content, is_shared, &extra.cflags, opt_level, &tcc_path);
     fs::create_dir_all(cache_dir).map_err(|err| {
         MireError::new(ErrorKind::Runtime {
             span: crate::error::Span::unknown(),
@@ -778,26 +629,18 @@ pub(super) fn precompile_c_object(
         .wrapping_mul(0x9E3779B97F4A7C15)
         .wrapping_add(C_PRECOMPILE_SEQ.fetch_add(1, Ordering::Relaxed));
     let tmp_path = cache_dir.join(format!("{:x}.{:016x}.o", hash, unique));
-    let mut cmd = std::process::Command::new(&cc_path);
-    cmd.args(["-c", opt_level.as_opt_flag(), "-fno-strict-aliasing", "-o"])
+    let mut cmd = std::process::Command::new(&tcc_path);
+    cmd.args(["-c", opt_level.as_opt_flag(), "-o"])
         .arg(&tmp_path)
         .arg(c_path);
     if is_shared {
         cmd.arg("-fPIC");
-        // A shared object cannot use local-exec: its TLS block belongs to
-        // whatever ends up loading it.
-        cmd.arg("-ftls-model=initial-exec");
-    } else if runtime_tls_enabled(&cc_path) {
-        // The runtime is linked straight into the executable, so local-exec is
-        // correct and is the cheapest model. It also has to be what
-        // tls_compat.h emits; see the note there.
-        cmd.arg("-DMIRE_TLS_LOCAL_EXEC=1");
     }
     cmd.arg("-I").arg(runtime_base.join("runtime"));
     cmd.arg("-I").arg(runtime_base.join("pal"));
     // tls_compat.h keys off this. See probe_tcc_tls for why it cannot be
     // detected inside the preprocessor.
-    if runtime_tls_enabled(&cc_path) {
+    if tcc_supports_tls(&tcc_path) {
         cmd.arg("-DMIRE_HAVE_TLS=1");
     } else {
         cmd.arg("-DMIRE_HAVE_TLS=0");
@@ -811,22 +654,15 @@ pub(super) fn precompile_c_object(
     let status = cmd.status().map_err(|err| {
         MireError::new(ErrorKind::Runtime {
             span: crate::error::Span::unknown(),
-            message: format!("Failed to run {} for '{}': {}", cc_path, c_path, err),
+            message: format!("Failed to run tcc for '{}': {}", c_path, err),
         })
     })?;
     if !status.success() {
         let _ = fs::remove_file(&tmp_path);
         return Err(MireError::new(ErrorKind::Runtime {
             span: crate::error::Span::unknown(),
-            message: format!("{} -c failed for '{}'", cc_path, c_path),
+            message: format!("tcc -c failed for '{}'", c_path),
         }));
-    }
-    // tcc's linker rejects objects carrying `.note.GNU-stack` or
-    // `.note.gnu.property` with "section type conflict"; gcc emits both by
-    // default and neither carries anything the program needs. tcc-built
-    // objects have no such section and pass through untouched.
-    if !cc_path.ends_with("tcc") {
-        strip_linker_note_sections(&tmp_path);
     }
     // Atomic publish. A sibling compiler may have landed an identical .o in
     // the meantime; rename still atomically replaces it. If rename loses a
