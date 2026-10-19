@@ -20,6 +20,8 @@ pub(crate) struct CommonOptions {
     pub(crate) warn: WarningCliOptions,
     pub(crate) verbose: bool,
     pub(crate) target: Option<String>,
+    /// LLVM CPU for instruction selection (e.g. `native`, `x86-64-v3`).
+    pub(crate) cpu: Option<String>,
     pub(crate) link_dirs: Vec<String>,
     pub(crate) link_libs: Vec<String>,
     pub(crate) runtime: Option<mire::RuntimeTier>,
@@ -109,6 +111,7 @@ pub(crate) fn parse_common_with_file(
     let mut deny_codes = HashSet::new();
     let mut no_warn_cats: Vec<String> = Vec::new();
     let mut target = None;
+    let mut cpu = None;
     let mut link_dirs = Vec::new();
     let mut link_libs = Vec::new();
     let mut runtime = None;
@@ -203,6 +206,14 @@ pub(crate) fn parse_common_with_file(
                 target = Some(
                     args.get(i)
                         .ok_or_else(|| cli_msg("Missing target after --target"))?
+                        .clone(),
+                );
+            }
+            "--cpu" => {
+                i += 1;
+                cpu = Some(
+                    args.get(i)
+                        .ok_or_else(|| cli_msg("Missing cpu after --cpu"))?
                         .clone(),
                 );
             }
@@ -431,6 +442,7 @@ pub(crate) fn parse_common_with_file(
             },
             verbose,
             target,
+            cpu,
             link_dirs,
             link_libs,
             runtime,
@@ -459,6 +471,9 @@ pub(crate) fn parse_common_with_file(
 pub(crate) fn apply_cli_c_defs(defs: &mut mire::CDefs, options: &CommonOptions) {
     if let Some(target) = &options.target {
         defs.target = Some(target.clone());
+    }
+    if let Some(cpu) = &options.cpu {
+        defs.cpu = Some(cpu.clone());
     }
     if let Some(runtime) = options.runtime {
         defs.runtime = runtime;

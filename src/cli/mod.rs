@@ -69,6 +69,7 @@ pub(crate) fn print_help() {
     println!("  -L, --link <path>     Native linker search directory");
     println!("  -l, --link-lib <name> Native library to link");
     println!("  --target <triple>     LLVM/Clang target triple");
+    println!("  --cpu <name>          LLVM CPU for instruction selection (native, x86-64-v3, ...);");
     println!("  --runtime <tier>      minimal|none");
     println!("  --artifact <type>     bin|static|shared");
     println!();

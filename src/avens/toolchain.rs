@@ -198,6 +198,7 @@ pub(super) fn compile_binary_from_ir(
             ir,
             &ir_object,
             c_defs.target.as_deref(),
+            c_defs.cpu.as_deref(),
             opt_level,
             source_filename,
             true,
@@ -258,6 +259,7 @@ pub(super) fn compile_binary_from_ir(
         ir,
         &ir_object,
         c_defs.target.as_deref(),
+        c_defs.cpu.as_deref(),
         opt_level,
         source_filename,
         true,
@@ -505,6 +507,7 @@ fn lower_ir_to_object(
     ir: &str,
     output: &Path,
     target: Option<&str>,
+    cpu: Option<&str>,
     opt_level: OptLevel,
     source_filename: &str,
     position_independent: bool,
@@ -523,6 +526,14 @@ fn lower_ir_to_object(
     }
     if let Some(target) = target {
         command.arg("-mtriple").arg(target);
+    }
+    // Instruction selection. Without this LLVM stays on its generic x86-64
+    // baseline, so a build never emits andn/shrx/rorx/lzcnt or any vector
+    // instruction even on a host that has them. The C leg of the benchmark
+    // suite compiles with -march=native; matching it is the only way the two
+    // numbers mean the same thing.
+    if let Some(cpu) = cpu {
+        command.arg("-mcpu").arg(cpu);
     }
     let mut child = command.spawn().map_err(|err| {
         MireError::runtime(format!("Failed to run llc: {err}"))

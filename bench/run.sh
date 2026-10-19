@@ -50,6 +50,14 @@ RUST_OPT=(-C opt-level=3)
 # cannot silently move all three legs together.
 C_COMPILER=${C_COMPILER:-cc}
 CFLAGS=(-O3 -march=native -std=c11)
+# The C leg tunes for the host with -march=native. Telling LLVM the same
+# thing is the only way the two legs measure the same code: left on its
+# generic x86-64 baseline llc cannot emit andn/shrx/rorx/lzcnt or any
+# vector instruction, which is a handicap the C leg does not carry.
+MIRE_CPU="${MIRE_CPU:-native}"
+# An array, for the same reason RUST_OPT is one: zsh does not split an
+# unquoted scalar into words, so "--cpu native" would arrive as one argument.
+MIRE_CPU_ARGS=(--cpu "$MIRE_CPU")
 
 # Noise floor: results below this value are not meaningful comparisons.
 NOISE_FLOOR_MS=25
@@ -124,7 +132,7 @@ open(dst, 'w').write(text)
 PY
 
   ( cd "$d" && timeout 900 "$MIRE" build code/main.mire --config cfg.toml --release \
-      -O "$opt" --lib-dir "$MIRE_LIB_DIR" ) > "$WORK/logs/mire_$k.log" 2>&1
+      -O "$opt" --lib-dir "$MIRE_LIB_DIR" "${MIRE_CPU_ARGS[@]}" ) > "$WORK/logs/mire_$k.log" 2>&1
   if [[ ! -x "$d/code/bin/release/main" ]]; then
     print -r -- "  $k: Mire failed -> $(grep -oE '╰─ .*|llc: error: .*|error: .*' "$WORK/logs/mire_$k.log" | head -1 | cut -c1-70)"
     return 1
