@@ -1181,7 +1181,7 @@ fn compile_vec_push_i64(
             alloc_size_tmp, mul_tmp
         ));
 
-        // Reallocate: pal_realloc(old_hdr, alloc_size)
+// Reallocate: pal_realloc(old_hdr, alloc_size)
     slow_lines.push(format!(
         "{} = call ptr @pal_realloc(ptr {}, i64 {})",
         new_hdr_tmp, old_hdr_tmp, alloc_size_tmp
@@ -1215,7 +1215,38 @@ fn compile_vec_push_i64(
         "{} = getelementptr ptr, ptr {}, i64 1",
         new_data_tmp, new_hdr_tmp
     ));
+    
+    // Inline memcpy: copy old_len elements from old data to new data
+    // Use llvm.memcpy for efficient copy (LLVM will optimize to vectorized instructions)
+    if old_len_tmp != "0" {
+        let src_data_tmp = tmp_extra(ctx, "ptr");
+        let dst_data_tmp = tmp_extra(ctx, "ptr");
+        let byte_size_tmp = tmp_extra(ctx, "i64");
+        
+        slow_lines.push(format!(
+            "{} = getelementptr ptr, ptr {}, i64 1",
+            src_data_tmp, old_hdr_tmp
+        ));
+        slow_lines.push(format!(
+            "{} = getelementptr ptr, ptr {}, i64 1",
+            dst_data_tmp, new_hdr_tmp
+        ));
+        slow_lines.push(format!(
+            "{} = mul i64 {}, 8",
+            byte_size_tmp, old_len_tmp
+        ));
+        // llvm.memcpy(dst, src, size, align)
+        slow_lines.push(format!(
+            "call void @llvm.memcpy.p0.p0.i64(ptr {}, ptr {}, i64 {}, i1 false)",
+            dst_data_tmp, src_data_tmp, byte_size_tmp
+        ));
+    }
+
     // Compute slot: data + old_len
+    slow_lines.push(format!(
+        "{} = getelementptr ptr, ptr {}, i64 1",
+        new_data_tmp, new_hdr_tmp
+    ));
     slow_lines.push(format!(
         "{} = getelementptr i64, ptr {}, i64 {}",
         new_slot_tmp, new_data_tmp, old_len_tmp

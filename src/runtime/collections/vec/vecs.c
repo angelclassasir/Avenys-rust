@@ -119,7 +119,8 @@ static void *list_grow(void *list_ptr, int64_t elem_size) {
     int64_t old_cap = hdr[0];
     int64_t old_len = hdr[1];
     if (old_cap > INT64_MAX - (old_cap >> 1)) return NULL;
-    int64_t new_cap = old_cap < 4 ? 4 : old_cap + (old_cap >> 1);
+    // Use 2x growth factor instead of 1.5x to reduce reallocation count.
+    int64_t new_cap = old_cap < 4 ? 4 : old_cap * 2;
     size_t allocation_size;
     if (!list_allocation_size(new_cap, elem_size, &allocation_size)) return NULL;
     int64_t *new_ptr = (int64_t *)pal_realloc(hdr, (int64_t)allocation_size);
