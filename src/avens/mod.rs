@@ -15,6 +15,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
+pub(crate) mod build_id;
 mod build_pipeline;
 pub(crate) mod build_support;
 pub(crate) mod config;

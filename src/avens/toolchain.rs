@@ -438,6 +438,16 @@ pub(super) fn compile_binary_from_ir(
         .with_filename(source_filename.to_string()));
     }
 
+    // Give the finished binary the same identity a rustc-built one carries, so
+    // `file` reports a BuildID and a bug report can be matched to a build.
+    // Best effort: an artifact this cannot rewrite (an `ar` archive, a
+    // non-ELF output) is not a reason to fail a link that succeeded.
+    if let Some(id) = crate::avens::build_id::embed_in(binary_path) {
+        if std::env::var("MIRE_QUIET").is_err() {
+            eprintln!("build-id: {}", crate::avens::build_id::to_hex(&id));
+        }
+    }
+
     Ok(())
 }
 
