@@ -13,94 +13,51 @@ strings, collections, math, filesystem, processes, and more.
 
 ## Recent Changes (v4.4.9)
 
-- **IR cache keyed on codegen epoch.** The incremental MIR→IR cache now includes a fingerprint of `src/compiler/mir` sources (emitted via `MIRE_CODEGEN_EPOCH` from build.rs). This prevents a codegen edit from silently reusing IR produced by the previous compiler, which would appear as a no-op. The epoch is overridable with `MIRE_CACHE_EPOCH` for development workflows.
-- **install.sh: package manager + AUR + compiler validation.** `deps_for_pm()` lists gcc as non‑optional (Avenys compiles its own PAL/runtime in C). `install_deps()` adds error capture, AUR tcc installation when a helper is present (paru/yay/pikaur/trizen), and a post‑install check that a C compiler is on PATH. `prereq_missing()` reports the exact missing tool (tcc/cc/gcc/clang or opt/llc). The audit report now shows C compiler status, AUR helper availability, and system library presence.
-- **Vector hot paths.** Append, indexed read, pop, and set now read vector metadata directly rather than calling `rt_list_len` internally. Paired five-run medians improved `alloc_pressure` 791→553 ms, `vec_growth` 779→439 ms, `vec_mixed_reads` 143→94 ms, and `vec_pop_drain` 163→102 ms. The latest full suite measures `alloc_pressure` at 487 ms (18.73x Rust) and `vec_growth` at 423 ms (7.98x Rust); these remain optimization targets. See [the benchmark report](bench/README.md) for the full table and methodology.
-- **String and raw-pointer comparisons are type-correct.** Strings, including borrowed strings, compare by content; opaque pointers compare by address. Byte pointer arithmetic and raw `u32` widths have FFI regression coverage.
-- **Validation.** The release suite passes 260 Rust tests; Clippy passes with warnings denied; all 15 benchmark kernels verify identical outputs.
-- Runtime elapsed-time formatting and standard input now cross the PAL instead
-  of calling host clock and input APIs directly. Runtime standard output/error
-  APIs use PAL writes as well. The WASI PAL can read and write standard
-  streams; readiness and terminal detection are explicitly unavailable there.
-  CI compiles the affected modules with WASI SDK 27.0. The SDK is a contributor
-  and CI tool only; it is not installed by the end-user installer. Panic and
-  safety diagnostics and full managed-arena reservation use PAL operations;
-  WASI does not expose lazy virtual-memory reservation. Filesystem helpers and
-  process creation still have direct host calls under review.
+- **Vector hot paths.** Append, indexed read, pop, and set now read vector
+  metadata directly rather than calling `rt_list_len` internally. Bounds checks,
+  null behavior, and growth fallback are unchanged.
+- **Benchmark suite expanded to 21 kernels.** Six new kernels were added:
+  `sort_introsort` (insertion sort), `matrix_rowmajor` (row-major fill /
+  column-major sum stride), `binary_search` (probes on sorted data),
+  `string_scan` (repeated `str::index`/`str::substr`), `vec_partition`
+  (split into even/odd vectors), and `numeric_format`
+  (`str::from::i64`/`str::to::i64` round-trip). All 21 kernels verify
+  byte-identical output across Mire, Rust, and C. See `bench/README.md`.
+- **Fixed NUL truncation in managed strings.** `rt_managed_is_managed` used
+  `sizeof(MireManagedString)` (alignment-rounded to 32) as the arena offset
+  lower bound, but string data begins at `offsetof(..., data)` (28). The first
+  arena allocation was never recognized as managed, so
+  `rt_managed_ensure_managed` re-copied it through `rt_managed_from_cstr` →
+  `strlen`, truncating at the first embedded NUL. The guard now uses
+  `offsetof(MireManagedString, data)`. `in::all()` + `str::len` now report
+  exact lengths and byte-exact round-trips pass (`tests/std_io.sh`: 22/22).
+- **Native C compilation migrated from clang to tcc/libtcc.** `precompile_c_object`
+  and the native linker now use `tcc` (discovered via `$TCC_PATH`, PATH, or
+  standard locations) instead of `clang`. Runtime C sources (`__int128`) are
+  guarded with `i128_t`/`u128_t` typedefs for tcc compatibility. The
+  clang→tcc transition removes the clang dependency from the C object
+  compilation pipeline; LLVM/Clang remain required only for the LLVM IR
+  pipeline (`opt`, `llc`, `lld`).
+- **IR cache keyed on codegen epoch.** The incremental MIR→IR cache now
+  includes a fingerprint of `src/compiler/mir` sources (emitted via
+  `MIRE_CODEGEN_EPOCH` from build.rs). This prevents a codegen edit from
+  silently reusing IR produced by the previous compiler. The epoch is
+  overridable with `MIRE_CACHE_EPOCH`.
+- **install.sh: package manager + AUR + compiler validation.** `deps_for_pm()`
+  lists gcc as non‑optional (Avenys compiles its own PAL/runtime in C).
+  `install_deps()` adds error capture, AUR tcc installation when a helper is
+  present (paru/yay/pikaur/trizen), and a post‑install check that a C compiler
+  is on PATH.
 
-## Compatibility and design notes
-- **Collection drops use semantic ownership.** Vectors and maps use their own
-  destructors instead of the managed-string free path. Earlier 3.12x numbers
-  were invalidated by a separate vector-push ownership defect; see the current
-  benchmark report for verified results.
-- **Builtin registrations are checked against lowering.** Every registered
-  builtin has an explicit implementation or unsupported disposition, and
-  unsupported calls receive a type-checking diagnostic instead of producing
-  unresolved LLVM symbols. Qualified calls are validated as well.
-- **Binary expression ascriptions are preserved.** The trailing type in
-  `1 + floating :i64` is applied to the whole expression; integer XOR now
-  infers its result from its operands rather than a parser boolean default.
-- **Type documentation uses valid declaration syntax.** Examples use
-  `set name = value :Type`, not the rejected `set name :Type = value` form.
-- **BETA compatibility fixes:** string-reference comparisons, the accidental
-  `/tmp/owl.toml` configuration path, and unitary `main` functions were
-  corrected. These are recorded as compatibility fixes; projects depending on
-  the affected valid frontend forms must continue to pass the ecosystem audit.
+## Important branch note
 
-## Recent Changes (v4.3.11)
-- **Path sandbox**: every absolute-path entry point in the PAL consults one
-  policy before reaching the kernel, instead of trusting a check in the language
-  layer where a program could declare its own extern and call the kernel anyway.
-  The default root is the working directory; three stages run against it —
-  lexical normalisation, a prefix test, and a `realpath(3)` re-check of the
-  deepest existing ancestor — so neither `..` nor a symlink planted inside the
-  root can escape. `pal_proc_shell` is compiled in but denied unless the calling
-  thread has an open unsafe scope, which keeps the capability available to
-  programs that genuinely need it while the default answer is no.
-- **A second authorised root for the tool's own home**: a program can declare one
-  extra writable subtree — `~/.owl`, for the package store — without the sandbox
-  root being widened to the whole home directory. The grant is never read from
-  the environment, so a project cannot widen its own sandbox by setting a
-  variable, and it authorises no execution: a file dropped into the store is
-  inert data that the installer only activates when it matches the registry hash.
-- **`[c]` and `[security]` as CLI flags**: `--c-source`, `--c-include`,
-  `--cflag`, `--c-lib`, `--define`, `--security-mode`, `--extern`,
-  `--extern-lib`, `--allow-macro`, `--allow-unsafe` and `--macro`. An
-  orchestrator now forwards a project's C and security settings directly, with
-  no generated TOML in between, and strict mode is available without a config
-  file at all.
-- **`>>` is an arithmetic shift**: it was lowering to `lshr`, so a negative value
-  shifted right kept its sign bits inverted. `>>>` is the logical shift.
-- **`ptr == 0` no longer segfaults**: a null comparison lowered to `strcmp`
-  against an `inttoptr`'d literal and dereferenced the pointer. `rt_ptr_add` was
-  added alongside it, so pointer arithmetic no longer needs a C helper.
-
-## Recent Changes (v4.3.0)
-- **`bits::<T>(x)` bit-level reinterpretation**: a same-width scalar bitcast
-  lowered to a native LLVM `bitcast`, with no runtime call and no C builtin.
-  Useful for IEEE-754 payload work, where a NaN's bits or a float's exact
-  representation matter and there is no arithmetic that would preserve them.
-  The type checker rejects a non-scalar source, a non-bitcastable target and
-  any width mismatch, pointing at the call site.
-- **Float division no longer folds to `0.0`**: constant folding erased a
-  division between two literals (`1.0 / 2.0` became `0`), because the
-  `SDiv` folding arm ignored its operands. It now folds to a real division.
-- **`mire test` is independent of the artifact**: a test always builds an
-  executable, whatever `[build] artifact` declares, and always gets at least the
-  minimal runtime. Libraries used to produce a shared object with no test entry
-  point, so every test file came back `ok` having run nothing. A failing test
-  file that declares no `@[test]` also now counts as at least one failure
-  instead of being invisible in the totals.
-- **Multi-arch installer**: `install/install.sh` detects the release triple
-  (`--arch` overrides), installs per-arch canonical archives, and adds
-  `--check` (read-only audit), `--build-from-source` (host LLVM build) and
-  `--docker` (toolchain container) paths. Release pipeline builds x86_64 +
-  aarch64 (+ riscv64 via QEMU, experimental) and publishes the toolchain
-  container to GHCR.
-
-See [CHANGELOG.md](CHANGELOG.md) for the full version history.
-
----
+This README documents the `opt/vec-perf` working branch. The `main` branch has
+advanced to **V4.4.16** (inline bump allocator work), which is tracked in a
+separate open issue (`mire-lang/Avenys-rust#34`) covering several confirmed
+defects (2 GiB bump arena SIGSEGV, stale IR cache, vector free list
+corruption, enum address comparison, struct under-allocation, `strlen`-based
+minimal strings, FFI `ptr` coercions, `-l:` with tcc, and CI gaps). Those
+defects are **not** present in this branch; they belong to `main`/V4.4.16.
 
 ## Important: Always Use owl CLI
 
@@ -176,18 +133,6 @@ audit report, then exits 0 when everything is present and 1 otherwise
 curl -fsSL https://raw.githubusercontent.com/mire-lang/Avenys-rust/main/install/install.sh | sh -s -- --check
 ```
 
-```text
-  audit report
-  ------------
-  system : Ubuntu 24.04.4 LTS
-  libc   : glibc 2.39
-  arch   : x86_64-unknown-linux-gnu (detected)
-  pkg mgr: apt
-  llvm   : 18 (need >= 18 for compiles)
-
-  prerequisites check complete - all present.
-```
-
 ### Build the compiler from source
 
 When a release binary does not match the host (older glibc, different libc
@@ -196,7 +141,7 @@ compile the compiler against the host instead:
 
 ```bash
 # Fetches avenys-rust @ main, ensures rustc >= 1.85, builds with the local
-# LLVM (>= 18), installs the compiler. owl/kioto still come from the release.
+# LLVM (>= 22), installs the compiler. owl/kioto still come from the release.
 curl -fsSL https://raw.githubusercontent.com/mire-lang/Avenys-rust/main/install/install.sh \
   | sh -s -- --build-from-source
 # SOURCE_URL / SOURCE_REF override the source location and ref; MIRE_RUSTUP_URL
@@ -268,12 +213,13 @@ libarchive. SDL is a project dependency, not a compiler prerequisite.
 Owl/Avenys schema; neither the installer nor the runtime needs it. Compiler
 release archives preserve the nested `runtime/` and `pal/` source trees, so
 reorganizing runtime modules does not add a host package dependency.
+`tcc` (or `libtcc-dev`) is required to compile the runtime C sources.
 
 Or install them manually:
 
 ```bash
 # Debian/Ubuntu
-sudo apt install curl tar git clang llvm-dev lld cargo pkg-config libssl-dev libsodium-dev zlib1g-dev libzstd-dev libarchive-dev tcc
+sudo apt install curl tar git clang llvm-dev lld cargo pkg-config libssl-dev libsodium-dev zlib1g-dev libzstd-dev libarchive-dev tcc libtcc-dev
 
 # Arch Linux
 sudo pacman -S curl tar git clang llvm lld rust openssl libsodium zlib zstd libarchive tcc
@@ -328,7 +274,7 @@ cd Avenys-rust
 cargo build --release
 
 # Run tests
-cargo test
+cargo test --release
 
 # Install locally (optional)
 cp target/release/mire ~/.local/bin/mire
@@ -419,10 +365,12 @@ LLVM IR generation -> opt (O0-O3) -> LLVM object/archive tools -> artifact
 
 **Stage 2 - MIR:** The AST lowers to a Mid-level Intermediate Representation. Optimization passes run to fixed point: constant folding, copy propagation, dead code elimination, branch folding, block merging, inlining, strength reduction, and more. New in v3.24+: division/remainder inlining (`sdiv`/`srem`), bounds-check inlining, string concat flattening (`MirOp::Concat`), and `MirOp::Drop` for explicit resource management.
 
-**Stage 3 - Codegen:** MIR translates to LLVM IR text. The compiler invokes LLVM's `opt` for further optimization (O1-O3/Os/Oz), then `llc` lowers Mire IR to objects. Static Mire libraries use `llvm-ar`; PAL/runtime C objects remain compiled by the configured C compiler. Clang is retained only as the target-aware CRT/libc/native-library link driver for executables. Runtime tier controls what's linked:
-- `Full` (default): all runtime + PAL symbols
-- `Minimal`: demand-driven - only used `rt_*`/`pal_*` symbols
-- `None`: freestanding - no runtime/PAL, user provides `_start`
+**Stage 3 - Codegen:** MIR translates to LLVM IR text. The compiler invokes LLVM's `opt` for further optimization (O1-O3/Os/Oz), then `llc` lowers Mire IR to objects. Static Mire libraries use `llvm-ar`; PAL/runtime C objects remain compiled by the configured C compiler (tcc by default on this branch). Runtime tier controls what's linked:
+- `minimal` (default): demand-driven - only used `rt_*`/`pal_*` symbols
+- `none`: freestanding - no runtime/PAL, user provides `_start`
+
+The legacy setting `runtime = "full"` is accepted as an alias for `minimal`;
+there is no separate full-runtime build tier.
 
 For `wasm32-wasip1`, Avenys uses the WASI SDK when `WASI_SDK_PATH` or
 `WASI_SYSROOT` is set. `wasm32-unknown-unknown` is a no-libc freestanding
@@ -537,6 +485,7 @@ avenys/
 ├── tests/          # Integration tests + compiler benchmarks
 ├── docs/           # CHANGELOG, error codes, architecture docs
 ├── examples/       # Example programs
+├── bench/          # 21 kernel benchmark suite (Mire / Rust / C)
 └── SYNTAX.md       # Complete language reference
 ```
 
@@ -569,6 +518,38 @@ See `kioto/README.md` for examples.
 
 Dynamic collections (`vec`, `map`) are provided by the `mire` standard library,
 loaded with `load mire::vec` / `load mire::map`. See `mire/README.md`.
+
+### Compatible beta libraries (verified with Avenys v4.4.9-beta)
+
+The following library betas are verified to load and link against this branch
+of Avenys (`opt/vec-perf` / commit `a957435`). They are published to the
+Mire Official Registry (MOR) under `registry/mor/index.toml`.
+
+| Library | Version | Status | Repository | Commit | Notes |
+|---------|---------|--------|------------|--------|-------|
+| `mire` | `2.0.0-beta` | beta | https://github.com/mire-lang/mire-lib.git | `e2f5542` | PAL bindings, nested namespaces, `cons` stream selectors, `vec::binary::search`. Load with `load mire::vec` / `load mire::std` / `load mire::str`. |
+| `kioto` | `3.0.0-beta` | beta | https://github.com/Evelynx-Dev/Kioto-1.git | `ddc2063` | Next-generation stdlib (beta). Follows `kioto 2.5.0`. |
+| `kioto` | `2.5.0` | beta | https://github.com/Evelynx-Dev/Kioto-1.git | `a44b141` | Stable 2.x line, namespaced net API. |
+
+Install via Owl:
+
+```toml
+# owl.toml
+[dependencies]
+    mire = "2.0.0-beta"
+    kioto = "3.0.0-beta"
+```
+
+```mire
+load mire::vec
+load kioto::strings
+
+pub fn main: () {
+    set v = vec::with::capacity::i64(4) mut
+    set v = vec::push::i64(v 42)
+    use dasu(str::upper("hello"))
+}
+```
 
 ### Runtime tiers
 
@@ -623,7 +604,7 @@ owl debug [FILE] [--tokens] [--ast] [--ir] [--run]
 
 # Compiler development only (use mire directly)
 # mire build [file] [--release] [-O<0-3|s|z>]
-# mire run [file] [--release] [-O<0-3|s|z>] [-- <args>]
+# mire run [file] [--release] [-O<0-3|s|z>]
 # mire debug [file] [--tokens] [--ast] [--ir]
 # mire test [paths...] [--no-run] [--verbose] [--show-warn] [-O<0-3|s|z>] [-r] [-d]
 
@@ -701,6 +682,41 @@ Full language reference: [SYNTAX.md](./SYNTAX.md)
 ## Documentation Index
 
 For the full modularized documentation, see [docs/README.md](docs/README.md).
+
+---
+
+## Benchmark suite
+
+The `bench/` directory holds 21 kernels, each implemented in Mire, Rust, and C
+performing the same calculation. `./bench/run.sh verify` compares output before
+`./bench/run.sh measure` reports timings.
+
+| Kernel | Workload |
+|--------|----------|
+| `alloc_pressure` | Eight million short-lived vectors, each pushed eight times |
+| `binary_search` | Repeated binary search probes on a sorted vector |
+| `break_continue` | Branch-heavy loop control |
+| `list_indexed_read` | Repeated indexed reads from a vector |
+| `many_locals` | Live local variables and register pressure |
+| `matrix_rowmajor` | Row-major fill, column-major sum (stride access) |
+| `method_dispatch` | Struct method dispatch |
+| `mixed_int_float` | Interleaved integer and floating-point operations |
+| `nested_loops` | Two nested loops |
+| `numeric_format` | `str::from::i64` / `str::to::i64` round-trip |
+| `recursion_ackermann` | Recursive Ackermann workload |
+| `sort_introsort` | Insertion sort over 2000 elements |
+| `string_impl` | Method delegation through an implementation |
+| `string_scan` | Repeated `str::index` / `str::substr` over text |
+| `swap_exchange` | Value swapping pattern |
+| `trait_dispatch` | Trait/skill method dispatch |
+| `vec_growth` | Vector growth from empty to 2000 elements |
+| `vec_mixed_reads` | Mixed vector read patterns |
+| `vec_partition` | Partition a vector into even/odd |
+| `vec_pop_drain` | Build then drain with pop |
+| `while_counter` | Simple counted while loop |
+
+See `bench/README.md` for the full table, methodology, and measurement caveats
+(noise floor below ~25 ms where startup dominates).
 
 ---
 

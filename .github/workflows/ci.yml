@@ -17,9 +17,13 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq wget ca-certificates pkg-config build-essential libsodium-dev zlib1g-dev libzstd-dev libarchive-dev zsh protobuf-compiler
+          sudo apt-get install -y -qq \
+            wget ca-certificates pkg-config build-essential \
+            libsodium-dev zlib1g-dev libzstd-dev libarchive-dev \
+            zsh protobuf-compiler tcc libtcc-dev gcc
           wget -qO- https://apt.llvm.org/llvm.sh | sudo bash -s -- 22
-          sudo apt-get install -y -qq llvm-22 llvm-22-dev llvm-22-tools clang-22 lld-22 libpolly-22-dev
+          sudo apt-get install -y -qq \
+            llvm-22 llvm-22-dev llvm-22-tools clang-22 lld-22 libpolly-22-dev
           echo "/usr/lib/llvm-22/bin" >> "$GITHUB_PATH"
 
       - name: Install pinned WASI SDK for PAL compile checks
@@ -79,10 +83,17 @@ jobs:
           path: kioto-src
           ref: pr/2.5.0
 
+      - name: Checkout mire stdlib (official mire-lang branch)
+        uses: actions/checkout@v4
+        with:
+          repository: mire-lang/mire-lib
+          path: mire-src
+          ref: beta-stdlib
+
       - name: Setup local mire stdlib for tests
         run: |
           mkdir -p "$HOME/.owl/libs"
-          cp -a "$GITHUB_WORKSPACE/../mire" "$HOME/.owl/libs/mire"
+          cp -a "$GITHUB_WORKSPACE/mire-src" "$HOME/.owl/libs/mire"
           cp -a kioto-src "$HOME/.owl/libs/kioto"
 
       - name: Shim libsodium soname for prebuilt test fixtures
@@ -158,13 +169,6 @@ jobs:
           path: dist/mire/
           retention-days: 7
 
-      - name: Upload benchmark results
-        uses: actions/upload-artifact@v4
-        with:
-          name: bench-results
-          path: bench-results.txt
-          retention-days: 7
-
   build-owl:
     needs: build-and-test
     runs-on: ubuntu-latest
@@ -172,9 +176,12 @@ jobs:
       - name: Install runtime dependencies
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq wget ca-certificates pkg-config libsodium-dev zlib1g-dev libzstd-dev libarchive-dev
+          sudo apt-get install -y -qq \
+            wget ca-certificates pkg-config libsodium-dev zlib1g-dev libzstd-dev \
+            libarchive-dev tcc libtcc-dev gcc
           wget -qO- https://apt.llvm.org/llvm.sh | sudo bash -s -- 22
-          sudo apt-get install -y -qq llvm-22 llvm-22-dev llvm-22-tools clang-22 lld-22 libpolly-22-dev
+          sudo apt-get install -y -qq \
+            llvm-22 llvm-22-dev llvm-22-tools clang-22 lld-22 libpolly-22-dev
           echo "/usr/lib/llvm-22/bin" >> "$GITHUB_PATH"
 
       - name: Download mire artifact
@@ -210,12 +217,12 @@ jobs:
           path: owl-src
           ref: pr/1.2.0
 
-      - name: Checkout mire stdlib (official mire-lang branch, incl. macros + owl_archive_* externs)
+      - name: Checkout mire stdlib (mire@2.0.0-beta, PAL bindings + nested namespaces)
         uses: actions/checkout@v4
         with:
           repository: mire-lang/mire-lib
           path: mire
-          ref: pr/1.0.0
+          ref: beta-stdlib
 
       - name: Setup owl dependencies
         run: |
