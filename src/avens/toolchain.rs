@@ -72,6 +72,9 @@ pub(super) fn optimize_ir(ir: &str, opt_level: OptLevel, source_filename: &str) 
             .with_filename(source_filename.to_string())
         })?;
     }
+    if let Ok(path) = std::env::var("AVENYS_DUMP_IR") {
+        let _ = std::fs::write(&path, ir.as_bytes());
+    }
     let output = child.wait_with_output().map_err(|err| {
         MireError::new(ErrorKind::Runtime {
             span: crate::error::Span::unknown(),
@@ -91,7 +94,11 @@ pub(super) fn optimize_ir(ir: &str, opt_level: OptLevel, source_filename: &str) 
         })
         .with_filename(source_filename.to_string()));
     }
-    Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+    let optimized = String::from_utf8_lossy(&output.stdout).into_owned();
+    if let Ok(path) = std::env::var("MIRE_DUMP_OPT_IR_OUT") {
+        let _ = std::fs::write(&path, optimized.as_bytes());
+    }
+    Ok(optimized)
 }
 
 pub(super) fn compile_binary_from_ir(
@@ -195,6 +202,7 @@ pub(super) fn compile_binary_from_ir(
             ir,
             &ir_object,
             c_defs.target.as_deref(),
+            c_defs.cpu.as_deref(),
             opt_level,
             source_filename,
             true,
@@ -255,6 +263,7 @@ pub(super) fn compile_binary_from_ir(
         ir,
         &ir_object,
         c_defs.target.as_deref(),
+        c_defs.cpu.as_deref(),
         opt_level,
         source_filename,
         true,
@@ -301,12 +310,12 @@ pub(super) fn compile_binary_from_ir(
     // standard runtime dependencies.  Crypto libs (libssl/libcrypto/libsodium)
     // are only linked when PAL files are actually compiled.
     if !is_none_tier {
-        linker.arg("-lm");
-        if link_crypto_libs {
-            linker.arg("-lssl");
-            linker.arg("-lcrypto");
-            linker.arg("-lsodium");
-        }
+        // Neither -lm nor the crypto libraries go on the first attempt. Each
+        // one costs start-up time in the dynamic loader -- mapping and
+        // relocating libm, libmvec, libsodium, libssl and libcrypto, plus
+        // whatever libcrypto drags in -- and a program that prints an integer
+        // needs none of them. Both are added back only if the link says a
+        // symbol is missing.
     }
 
     // Skip C runtime startup files for libraries (shared/static) and when
@@ -380,10 +389,16 @@ pub(super) fn compile_binary_from_ir(
             if let Some(file_name) = native_path.file_name().and_then(|name| name.to_str()) {
                 // Exact filenames may intentionally omit the conventional
                 // `lib` prefix (for example `kioto.so` in test fixtures).
-                linker.arg(format!("-l:{file_name}"));
+                // Pass the full path directly: tcc does not understand the
+                // GNU `-l:filename` syntax, so we hand it the .so/.a path
+                // together with -L<dir> (already added above) so the linker
+                // finds it by basename.
+                linker.arg(format!("-l{}", file_name.trim_start_matches("lib")));
             }
         } else if lib_path.as_str() != clean_name && !lib_path.is_empty() {
-            linker.arg(format!("-l:{}", lib_path));
+            // Pass the path directly rather than `-l:<path>`: tcc does not
+            // accept the GNU `-l:filename` syntax.
+            linker.arg(format!("-l{}", clean_name.trim_start_matches("lib")));
         }
         if !explicit_native {
             linker.arg("-l");
@@ -416,6 +431,30 @@ pub(super) fn compile_binary_from_ir(
     if link_failed_on_gnu_stack_note(&output) {
         output = retry_link_without_gnu_stack_note(&tcc_path, &link_args, &ir_object)?;
     }
+    // Only now add the crypto libraries, and only if the link without them
+    // failed for want of a crypto symbol. `link_crypto_libs` is the caller's
+    // guess that some PAL object might need them; a link that succeeds
+    // without them has proved the guess wrong.
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let mut extra: Vec<&str> = Vec::new();
+        if stderr.contains("undefined symbol") {
+            // Ask which library could define what is missing rather than
+            // guessing: a real error leaves both lists empty and is reported
+            // unchanged below.
+            if missing_symbols_resolve_to_libm(&stderr) {
+                extra.push("-lm");
+            }
+            if link_crypto_libs {
+                extra.extend(crypto_libs_for(&stderr));
+            }
+        }
+        if !extra.is_empty() {
+            let mut retry = link_args.clone();
+            retry.extend(extra.iter().map(|lib| std::ffi::OsString::from(*lib)));
+            output = run_tcc_link(&tcc_path, &retry)?;
+        }
+    }
 
     let _ = std::fs::remove_file(&ir_object);
     if !output.status.success() {
@@ -431,6 +470,16 @@ pub(super) fn compile_binary_from_ir(
             ),
         })
         .with_filename(source_filename.to_string()));
+    }
+
+    // Give the finished binary the same identity a rustc-built one carries, so
+    // `file` reports a BuildID and a bug report can be matched to a build.
+    // Best effort: an artifact this cannot rewrite (an `ar` archive, a
+    // non-ELF output) is not a reason to fail a link that succeeded.
+    if let Some(id) = crate::avens::build_id::embed_in(binary_path) {
+        if std::env::var("MIRE_QUIET").is_err() {
+            eprintln!("build-id: {}", crate::avens::build_id::to_hex(&id));
+        }
     }
 
     Ok(())
@@ -449,6 +498,90 @@ fn run_tcc_link(tcc_path: &str, args: &[std::ffi::OsString]) -> Result<std::proc
                 message: format!("Failed to run tcc: {}", err),
             })
         })
+}
+
+/// Version tags that glibc's libm stamps onto the symbols it provides.
+///
+/// Matching on the tag rather than on symbol names is what separates "needs
+/// libm" from "some other library is missing": an undefined `sqrt` says
+/// nothing about which library should define it, but `@GLIBC_2.29` does,
+/// because every versioned symbol at or above 2.29 lives in libm/libmvec and
+/// the base 2.2.5 set is plain libc.
+fn missing_symbols_resolve_to_libm(link_error: &str) -> bool {
+    if !link_error.contains("undefined symbol") {
+        return false;
+    }
+    link_error
+        .lines()
+        .filter(|line| line.contains("undefined symbol"))
+        .any(|line| {
+            libm_version_tags().any(|tag| line.contains(tag)) || line_names_libm_symbol(line)
+        })
+}
+
+/// Math functions that exist in libm.
+///
+/// tcc, the default linker, does not stamp undefined symbols with `@GLIBC_*`
+/// version tags the way ld does: it reports a bare `undefined symbol 'sinh'`
+/// and nothing else. The function name is then the only signal that libm (and
+/// not some other library) is what is missing. This list is the set
+/// `core/math.c` forwards to libc/libm; the C89 members (`sin`, `sqrt`, ...)
+/// are also provided by glibc's libc, so a program using only those still
+/// links without -lm, but a tcc build that reaches the C99 members
+/// (`sinh`/`erf`/`tgamma`/...) needs it.
+const LIBM_SYMBOLS: &[&str] = &[
+    "sin", "cos", "tan", "asin", "acos", "atan", "atan2", "sinh", "cosh", "tanh", "asinh", "acosh",
+    "atanh", "sqrt", "cbrt", "pow", "exp", "exp2", "expm1", "log", "log2", "log10", "log1p", "erf",
+    "erfc", "tgamma", "lgamma", "hypot", "fabs", "fmod", "remainder", "fma", "copysign", "frexp",
+    "ldexp", "nextafter", "modf", "floor", "ceil", "trunc", "llround", "fmax",
+];
+
+/// Pull the symbol name out of a linker's `undefined symbol 'NAME'` diagnostic
+/// and report whether libm defines it.
+fn line_names_libm_symbol(line: &str) -> bool {
+    let Some(start) = line.find('\'') else {
+        return false;
+    };
+    let rest = &line[start + 1..];
+    let Some(end) = rest.find('\'') else {
+        return false;
+    };
+    LIBM_SYMBOLS.contains(&&rest[..end])
+}
+
+fn libm_version_tags() -> impl Iterator<Item = &'static str> {
+    // libm gained versioned symbols across these releases; the first is
+    // libmvec, the last covers everything since.
+    ["@GLIBC_2.35", "@GLIBC_2.34", "@GLIBC_2.32", "@GLIBC_2.29"]
+        .into_iter()
+}
+
+/// Which libraries the crypto PAL ends up needing, and how to recognise each.
+///
+/// Split rather than "add all three" because the cost is very uneven.
+/// libsodium depends on nothing but libc; libcrypto pulls in libz, libzstd and
+/// four brotli objects, and every one of those has to be mapped and relocated
+/// before `main` runs. Linking -lcrypto for a program whose only undefined
+/// crypto symbol is `sodium_init` costs about 2 ms of start-up for nothing.
+///
+/// `crypto_` is deliberately not a marker: libsodium exports `crypto_hash_*`
+/// and `crypto_sign_*` alongside the `sodium_*` names.
+fn crypto_libs_for(link_error: &str) -> Vec<&'static str> {
+    let mut libs = Vec::new();
+    if ["sodium_", "randombytes_", "argon2_"]
+        .iter()
+        .any(|marker| link_error.contains(marker))
+    {
+        libs.push("-lsodium");
+    }
+    if ["SSL_", "EVP_", "OPENSSL_", "X509_", "BN_"]
+        .iter()
+        .any(|marker| link_error.contains(marker))
+    {
+        libs.push("-lssl");
+        libs.push("-lcrypto");
+    }
+    libs
 }
 
 fn link_failed_on_gnu_stack_note(output: &std::process::Output) -> bool {
@@ -502,6 +635,7 @@ fn lower_ir_to_object(
     ir: &str,
     output: &Path,
     target: Option<&str>,
+    cpu: Option<&str>,
     opt_level: OptLevel,
     source_filename: &str,
     position_independent: bool,
@@ -520,6 +654,14 @@ fn lower_ir_to_object(
     }
     if let Some(target) = target {
         command.arg("-mtriple").arg(target);
+    }
+    // Instruction selection. Without this LLVM stays on its generic x86-64
+    // baseline, so a build never emits andn/shrx/rorx/lzcnt or any vector
+    // instruction even on a host that has them. The C leg of the benchmark
+    // suite compiles with -march=native; matching it is the only way the two
+    // numbers mean the same thing.
+    if let Some(cpu) = cpu {
+        command.arg("-mcpu").arg(cpu);
     }
     let mut child = command.spawn().map_err(|err| {
         MireError::runtime(format!("Failed to run llc: {err}"))

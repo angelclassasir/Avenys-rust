@@ -41,7 +41,7 @@ if [[ ! -d "$MIRE_LIB_DIR" ]]; then
   print -u2 -- "bench: install the packages (owl install) or point MIRE_LIB_DIR at one."
   exit 1
 fi
-MSSEC=5
+MSSEC=7
 # Store options in an array: zsh does not split an unquoted scalar into words,
 # so a string would pass `-C opt-level=3` as one argument.
 RUST_OPT=(-C opt-level=3)
@@ -50,6 +50,14 @@ RUST_OPT=(-C opt-level=3)
 # cannot silently move all three legs together.
 C_COMPILER=${C_COMPILER:-cc}
 CFLAGS=(-O3 -march=native -std=c11)
+# The C leg tunes for the host with -march=native. Telling LLVM the same
+# thing is the only way the two legs measure the same code: left on its
+# generic x86-64 baseline llc cannot emit andn/shrx/rorx/lzcnt or any
+# vector instruction, which is a handicap the C leg does not carry.
+MIRE_CPU="${MIRE_CPU:-native}"
+# An array, for the same reason RUST_OPT is one: zsh does not split an
+# unquoted scalar into words, so "--cpu native" would arrive as one argument.
+MIRE_CPU_ARGS=(--cpu "$MIRE_CPU")
 
 # Noise floor: results below this value are not meaningful comparisons.
 NOISE_FLOOR_MS=25
@@ -66,6 +74,7 @@ difficulty() {
     list_indexed_read|swap_exchange) echo "easy" ;;
     nested_loops|break_continue|many_locals|trait_dispatch|mixed_int_float) echo "medium" ;;
     string_impl|recursion_ackermann|alloc_pressure) echo "hard" ;;
+    binary_search|matrix_rowmajor|numeric_format|sort_introsort|string_scan|vec_partition) echo "medium" ;;
     *) echo "-" ;;
   esac
 }
@@ -98,6 +107,11 @@ build_one() {
   fi
 
   local d="$WORK/$k.$mode.$opt"
+  # Wipe the previous build before compiling. Without this a failed compile
+  # leaves the previous binary in place, the `-x` check below passes, and the
+  # script silently reports timings for code that is no longer the current
+  # source. That is worse than no measurement at all: it looks like data.
+  rm -rf "$d/code/bin"
   mkdir -p "$d/code"
   printf '[security]\nexterns = []\n' > "$d/cfg.toml"
 
@@ -119,9 +133,9 @@ open(dst, 'w').write(text)
 PY
 
   ( cd "$d" && timeout 900 "$MIRE" build code/main.mire --config cfg.toml --release \
-      -O "$opt" --lib-dir "$MIRE_LIB_DIR" ) > "$WORK/logs/mire_$k.log" 2>&1
+      -O "$opt" --lib-dir "$MIRE_LIB_DIR" "${MIRE_CPU_ARGS[@]}" ) > "$WORK/logs/mire_$k.log" 2>&1
   if [[ ! -x "$d/code/bin/release/main" ]]; then
-    print -r -- "  $k: Mire failed -> $(grep -oE '╰─ .*|llc: error: .*' "$WORK/logs/mire_$k.log" | head -1 | cut -c1-60)"
+    print -r -- "  $k: Mire failed -> $(grep -oE '╰─ .*|llc: error: .*|error: .*' "$WORK/logs/mire_$k.log" | head -1 | cut -c1-70)"
     return 1
   fi
   return 0
@@ -143,6 +157,53 @@ time_ms() {
     (( ms < best )) && best=$ms
   done
   print -r -- "$best"
+}
+
+# Time several programs against each other, interleaved.
+#
+# Measuring one leg to completion and then the next compares samples taken
+# minutes apart, and on a shared machine that is the difference between a real
+# regression and someone else's build. Round-robin keeps every leg looking at
+# the same machine state, and the minimum over the rounds is the least
+# contended sample of each.
+#
+# Programs are passed as alternating name/path pairs; the result is a
+# name -> milliseconds mapping printed one `name<TAB>ms` per line.
+time_ms_together() {
+  local round ms s e
+  local -A best
+  local -a names=() paths=()
+  local all=("$@")
+  local i
+  i=1
+  while (( i <= ${#all[@]} )); do
+    names+=("${all[i]}")
+    paths+=("${all[i+1]}")
+    i=$(( i + 2 ))
+  done
+  i=1
+  while (( i <= ${#names[@]} )); do
+    best[${names[i]}]=99999999
+    i=$(( i + 1 ))
+  done
+  for round in $(seq 1 $MSSEC); do
+    i=1
+    while (( i <= ${#names[@]} )); do
+      s=$(date +%s%N)
+      "${paths[i]}" >/dev/null 2>&1
+      e=$(date +%s%N)
+      ms=$(( (e - s) / 1000000 ))
+      if (( ms < ${best[${names[i]}]} )); then
+        best[${names[i]}]=$ms
+      fi
+      i=$(( i + 1 ))
+    done
+  done
+  i=1
+  while (( i <= ${#names[@]} )); do
+    print -r -- "${names[i]}"$'\t'"${best[${names[i]}]}"
+    i=$(( i + 1 ))
+  done
 }
 
 cmd_verify() {
@@ -176,16 +237,42 @@ cmd_measure() {
   print -r -- ""
   printf "  %-19s %-9s %10s %10s %10s %10s %10s\n" KERNEL WORKLOAD "Rust -O3" "C -O3" "Mire -O3" "Mire/C" "Mire/Rust"
   printf "  %-19s %-9s %10s %10s %10s %10s %10s\n" "-------------------" "---------" "----------" "----------" "----------" "--------" "---------"
-  local k d r m c mr mc ratio_c ratio_r flag
+  local k d r m c mr mc ratio_c ratio_r flag failed=0
+  local q j value
+  local -a leg_names leg_paths leg_args timings
   for k in $(kernels); do
     [[ "$k" == "noop" ]] && continue
     [[ -n "$only" && "$k" != "$only" ]] && continue
-    build_one "$k" measure || continue
+    if ! build_one "$k" measure; then
+      printf "  %-19s %-9s %s\n" "$k" "$(difficulty "$k")" "BUILD FAILED - not measured"
+      failed=1
+      continue
+    fi
     d="$WORK/$k.measure.3"
-    r=$(time_ms "$WORK/bin/rust_$k")
-    m=$(time_ms "$d/code/bin/release/main")
-    c="-"
-    [[ -x "$WORK/bin/c_$k" ]] && c=$(time_ms "$WORK/bin/c_$k")
+    # Interleaved: one sample of each leg, then the next round. See
+    # time_ms_together for why the legs are not timed one after another.
+    leg_names=(rust mire)
+    leg_paths=("$WORK/bin/rust_$k" "$d/code/bin/release/main")
+    [[ -x "$WORK/bin/c_$k" ]] && leg_names+=(c) && leg_paths+=("$WORK/bin/c_$k")
+    # time_ms_together wants name/path pairs, not two parallel lists.
+    leg_args=()
+    q=1
+    while (( q <= ${#leg_names[@]} )); do
+      leg_args+=("${leg_names[q]}" "${leg_paths[q]}")
+      q=$(( q + 1 ))
+    done
+    timings=("${(@f)$(time_ms_together "${leg_args[@]}")}")
+    r="-"; m="-"; c="-"
+    j=1
+    while (( j <= ${#leg_names[@]} )); do
+      value="${timings[j]##*$'\t'}"
+      case "${leg_names[j]}" in
+        rust) r="$value" ;;
+        mire) m="$value" ;;
+        c)    c="$value" ;;
+      esac
+      j=$(( j + 1 ))
+    done
     if [[ "$c" == "-" ]]; then
       ratio_c="-"
     else
@@ -198,6 +285,8 @@ cmd_measure() {
   done
   print -r -- ""
   print -r -- "  (noise = below ${NOISE_FLOOR_MS} ms; startup dominates)"
+  (( failed )) && print -r -- "  ** some kernels failed to build and are missing from this table **"
+  return $failed
 }
 
 cmd_curve() {

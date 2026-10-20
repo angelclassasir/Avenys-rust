@@ -17,6 +17,7 @@ pub(crate) fn run_command(cwd: &Path, args: &[String]) -> Result<i32, MireError>
         println!("  -L, --link <dir>      Native linker search directory");
         println!("  -l, --link-lib <name> Native library to link");
         println!("  --target <triple>     LLVM/Clang target triple");
+    println!("  --cpu <name>          LLVM CPU for instruction selection (native, x86-64-v3, ...);");
         println!("  --artifact <bin|static|shared>  Output type");
         return Ok(0);
     }
@@ -76,6 +77,7 @@ pub(crate) fn build_help() {
     println!("  --artifact <type>     Output type: bin|static|shared (default: bin)");
     println!("  --runtime <tier>      Runtime tier: minimal|none");
     println!("  --target <triple>     LLVM/Clang target triple");
+    println!("  --cpu <name>          LLVM CPU for instruction selection (native, x86-64-v3, ...);");
     println!("  -L, --link <dir>      Native linker search directory");
     println!("  -l, --link-lib <name> Native library to link");
     println!("\nWarnings:");
@@ -142,6 +144,7 @@ pub(crate) fn debug_command(cwd: &Path, args: &[String]) -> Result<i32, MireErro
         println!("  -L, --link <dir>      Native linker search directory");
         println!("  -l, --link-lib <name> Native library to link");
         println!("  --target <triple>     LLVM/Clang target triple");
+    println!("  --cpu <name>          LLVM CPU for instruction selection (native, x86-64-v3, ...);");
         return Ok(0);
     }
     let options = parse_debug_options(cwd, args)?;

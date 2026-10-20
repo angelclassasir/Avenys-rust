@@ -5,60 +5,18 @@
 #include <stdint.h>
 
 // Fast list implementation - inline storage
-// Format: [capacity, length, data...]
-
-// ── Small-block free list for vec allocations (≤ 256 bytes) ──────────────
-// Reuses freed vec blocks of the same size instead of round-tripping through
-// malloc/free. Benefits any Mire program that creates and destroys vecs of
-// stable small sizes, which is the dominant pattern in allocation-heavy code.
-// Larger allocations (> 256 bytes) bypass the free list to avoid lookup
-// overhead for sizes that rarely repeat.
-#define MAX_FREE_LIST_SIZE 256
-#define NUM_VEC_SIZE_CLASSES 7
-static void *vec_free_lists[NUM_VEC_SIZE_CLASSES] = {NULL};
-
-static int vec_size_class_index(size_t total_size) {
-    // Size classes for small blocks: 32, 64, 96, 128, 160, 192, 256 bytes.
-    if (total_size <= 32) return 0;
-    if (total_size <= 64) return 1;
-    if (total_size <= 96) return 2;
-    if (total_size <= 128) return 3;
-    if (total_size <= 160) return 4;
-    if (total_size <= 192) return 5;
-    if (total_size <= 256) return 6;
-    return -1; // Too large for free list
-}
-
-static void vec_free_list_add(void *ptr, size_t total_size) {
-    int idx = vec_size_class_index(total_size);
-    if (idx < 0) return; // Too large for free list
-    // Store free list metadata in the data area (after capacity/length header)
-    // Layout: [capacity][length][data0][data1]...
-    // We store: data[0] = total_size, data[1] = next_ptr
-    int64_t *hdr = (int64_t *)ptr;
-    int64_t *data = hdr + 2;  // data starts after capacity and length
-    data[0] = (int64_t)total_size;
-    data[1] = (int64_t)vec_free_lists[idx];
-    vec_free_lists[idx] = ptr;
-}
-
-static void *vec_free_list_find(size_t total_size) {
-    int idx = vec_size_class_index(total_size);
-    if (idx < 0) return NULL; // Too large for free list
-    void *curr = vec_free_lists[idx];
-    void **prev = (void **)&vec_free_lists[idx];
-    while (curr) {
-        int64_t *hdr = (int64_t *)curr;
-        int64_t *data = (int64_t *)curr + 2;  // metadata in data area
-        if ((size_t)data[0] == total_size) {
-            *prev = (void *)data[1];
-            return curr;
-        }
-        prev = (void **)&((int64_t *)curr + 2)[1];
-        curr = (void *)data[1];
-    }
-    return NULL;
-}
+//
+// Layout: a list pointer addresses the length word.
+//   list_ptr[-1] = capacity   list_ptr[0] = length   list_ptr[1..] = data
+// A "header" therefore always means `list_ptr - 1`.
+//
+// Allocation goes straight to the PAL (alloc/realloc/free). An earlier version
+// kept a size-class free list to recycle freed blocks. It was removed: it
+// stored its links in the block's data area, could not distinguish a 32-byte
+// request from a 33-byte one without walking the chain, and was not
+// thread-safe. It also did not pay for itself -- glibc already recycles
+// same-size blocks through its tcache, and a growing vector reallocates via
+// pal_realloc, which can often extend a block in place.
 
 static int list_allocation_size(int64_t capacity, int64_t elem_size, size_t *out) {
     if (capacity < 0 || elem_size <= 0) return 0;
@@ -75,28 +33,6 @@ void *rt_list_create(int64_t initial_cap, int64_t elem_size) {
     if (initial_cap < 4) initial_cap = 4;
     size_t allocation_size;
     if (!list_allocation_size(initial_cap, elem_size, &allocation_size)) return NULL;
-
-    // Try the free list first (general-purpose small-block reuse).
-    void *reused = vec_free_list_find(allocation_size);
-    if (reused) {
-        int64_t *hdr = (int64_t *)reused;
-        int64_t *data = hdr + 2;  // metadata stored in data area
-        int64_t next = data[1];   // save next pointer
-        // Restore free list link
-        int idx = vec_size_class_index(allocation_size);
-        if (idx >= 0) {
-            int64_t *free_list_head = (int64_t *)vec_free_lists[vec_size_class_index(allocation_size)];
-            if (free_list_head) {
-                int64_t *fl_data = free_list_head + 2;
-                fl_data[1] = next;  // restore next pointer in free list head
-            }
-        }
-        // Reinitialize as new vec
-        hdr[0] = initial_cap;
-        hdr[1] = 0;
-        return hdr + 1;
-    }
-
     int64_t *ptr = (int64_t *)pal_alloc((int64_t)allocation_size);
     if (!ptr) return NULL;
     ptr[0] = initial_cap;
@@ -109,22 +45,31 @@ int64_t rt_list_len(void *list_ptr) {
     return ((int64_t *)list_ptr)[0];
 }
 
-static int64_t list_cap(void *list_ptr) {
-    if (!list_ptr) return 0;
-    return ((int64_t *)list_ptr)[-1];
-}
-
 static void *list_grow(void *list_ptr, int64_t elem_size) {
     int64_t *hdr = (int64_t *)list_ptr - 1;
     int64_t old_cap = hdr[0];
     int64_t old_len = hdr[1];
     if (old_cap > INT64_MAX - (old_cap >> 1)) return NULL;
-    // Use 2x growth factor instead of 1.5x to reduce reallocation count.
-    int64_t new_cap = old_cap < 4 ? 4 : old_cap * 2;
+    // 1.5x growth, matching the C reference kernel, so the benchmark compares
+    // like with like instead of paying for a different reallocation schedule.
+    // Every push costs the same amortized work, and the copy volume differs
+    // from C by less than the measurement noise.
+    int64_t new_cap = old_cap < 4 ? 4 : old_cap + (old_cap >> 1);
     size_t allocation_size;
     if (!list_allocation_size(new_cap, elem_size, &allocation_size)) return NULL;
+    // pal_realloc keeps the old contents and can extend the block in place,
+    // which is exactly what the C leg gets from realloc(3).
     int64_t *new_ptr = (int64_t *)pal_realloc(hdr, (int64_t)allocation_size);
-    if (!new_ptr) return NULL;
+    if (!new_ptr) {
+        // realloc failure leaves the old block owned by us. Copy by hand so a
+        // failed growth costs one allocation instead of losing the vector.
+        size_t old_size;
+        if (!list_allocation_size(old_cap, elem_size, &old_size)) return NULL;
+        new_ptr = (int64_t *)pal_alloc((int64_t)allocation_size);
+        if (!new_ptr) return NULL;
+        memcpy(new_ptr, hdr, old_size);
+        pal_free(hdr);
+    }
     new_ptr[0] = new_cap;
     new_ptr[1] = old_len;
     return new_ptr + 1;
@@ -271,15 +216,9 @@ void *rt_list_remove(void *list_ptr, int64_t index) {
 
 void rt_list_free(void *list_ptr) {
     if (!list_ptr) return;
-    int64_t *hdr = (int64_t *)list_ptr - 1;
-    int64_t cap = hdr[0];
-    // Approximate the allocation size from current capacity (elem_size=8 for
-    // i64 vecs, the common case). Good enough to hit the free list for the
-    // dominant allocation pattern; misses fall through to pal_free.
-    size_t approx_size = 16 + (size_t)cap * 8;
-    vec_free_list_add(hdr, approx_size);
-    // Do not pal_free here; the block stays in the free list for reuse.
-    // The entire free list is released at process exit via rt_list_cleanup_all.
+    // The header word is the first word of the block the PAL handed out, so
+    // free the header, not the list pointer.
+    pal_free((int64_t *)list_ptr - 1);
 }
 
 void *rt_list_clear(void *list_ptr) {
@@ -447,6 +386,21 @@ void   *rt_vecs_get_ptr(void *vec, int64_t index) {
     return rt_managed_from_cstr(raw);
 }
 void   *rt_vecs_push_i64(void *vec, int64_t value) { return rt_list_push_i64(vec, value); }
+
+// Slow path for the inlined push: the vector is known to be full here.
+void   *rt_vecs_grow_push_i64(void *vec, int64_t value) {
+    if (!vec) {
+        vec = rt_list_create(4, 8);
+        if (!vec) return NULL;
+    }
+    vec = list_grow(vec, 8);
+    if (!vec) return NULL;
+    int64_t len = ((int64_t *)vec)[0];
+    ((int64_t *)vec)[len + 1] = value;
+    ((int64_t *)vec)[0] = len + 1;
+    return vec;
+}
+
 void   *rt_vecs_push_ptr(void *vec, void *value) { return rt_list_push_ptr(vec, value); }
 void    rt_vecs_set_i64(void *vec, int64_t index, int64_t value) { rt_list_set_i64(vec, index, value); }
 int64_t rt_vecs_pop(void *vec) { return rt_list_pop_i64(vec); }
@@ -682,65 +636,3 @@ int64_t rt_vecs_binary_search(void *vec, int64_t value) {
     return -1;
 }
 
-// ── Bump allocator free list ───────────────────────────────────────────────
-// Provides segregated free list for bump allocator blocks.
-// Blocks are returned to the free list when vecs are freed, allowing reuse
-// without calling the OS allocator. This is crucial for vec_growth performance.
-
-// Size classes for bump allocator free list (same as vec free list)
-#define NUM_BUMP_SIZE_CLASSES 16
-static void *bump_free_lists[NUM_BUMP_SIZE_CLASSES] = {NULL};
-
-static int bump_size_class_index(size_t total_size) {
-    if (total_size <= 32) return 0;
-    if (total_size <= 64) return 1;
-    if (total_size <= 96) return 2;
-    if (total_size <= 128) return 3;
-    if (total_size <= 160) return 4;
-    if (total_size <= 192) return 5;
-    if (total_size <= 256) return 6;
-    if (total_size <= 384) return 7;
-    if (total_size <= 512) return 7;
-    if (total_size <= 1024) return 8;
-    if (total_size <= 2048) return 9;
-    if (total_size <= 4096) return 10;
-    if (total_size <= 8192) return 11;
-    if (total_size <= 16384) return 12;
-    if (total_size <= 32768) return 13;
-    if (total_size <= 65536) return 14;
-    if (total_size <= 131072) return 15;
-    return -1; // Too large for free list
-}
-
-int64_t bump_free_list_find(int64_t size) {
-    int idx = bump_size_class_index((size_t)size);
-    if (idx < 0) return -1;
-    if (bump_free_lists[idx]) return idx;
-    return -1;
-}
-
-void *bump_free_list_pop(int64_t size_class) {
-    if (size_class < 0 || size_class >= NUM_BUMP_SIZE_CLASSES) return NULL;
-    void *curr = bump_free_lists[size_class];
-    if (!curr) return NULL;
-    int64_t *hdr = (int64_t *)curr;
-    int64_t *data = (int64_t *)curr + 2;  // metadata in data area
-    void *next = (void *)data[1];
-    bump_free_lists[size_class] = next;
-    return curr;
-}
-
-void bump_free_list_push(void *ptr, int64_t size_class) {
-    if (size_class < 0 || size_class >= NUM_BUMP_SIZE_CLASSES) return;
-    int64_t *hdr = (int64_t *)ptr;
-    int64_t *data = hdr + 2;  // data area after capacity/length
-    data[0] = bump_free_lists[size_class] ? (int64_t)bump_free_lists[size_class] : 0;
-    data[1] = 0;
-    bump_free_lists[size_class] = ptr;
-}
-
-void bump_free_list_init(void) {
-    for (int i = 0; i < NUM_BUMP_SIZE_CLASSES; i++) {
-        bump_free_lists[i] = NULL;
-    }
-}

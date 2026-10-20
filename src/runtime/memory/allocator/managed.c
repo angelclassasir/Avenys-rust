@@ -95,7 +95,7 @@ static char *free_list_find(size_t need) {
 int rt_managed_is_managed(const char *data_ptr) {
     if (!data_ptr || !arena_base) return 0;
     size_t offset = (size_t)((const char *)data_ptr - arena_base);
-    if (offset < sizeof(MireManagedString) || offset >= arena_pos) return 0;
+    if (offset < offsetof(MireManagedString, data) || offset >= arena_pos) return 0;
     const MireManagedString *hdr = rt_string_header(data_ptr);
     return (hdr->flags & MIRE_STR_MANAGED) != 0;
 }

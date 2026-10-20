@@ -274,11 +274,12 @@ fn compile_file_inner(
         options.opt_level,
         options.emit_binary,
         &format!(
-            "{:x}|artifact={:?}|runtime={:?}|target={:?}|nostartfiles={}|nostdlib={}|cflags={:?}|libs={:?}",
+            "{:x}|artifact={:?}|runtime={:?}|target={:?}|cpu={:?}|nostartfiles={}|nostdlib={}|cflags={:?}|libs={:?}",
             c_sources_hash,
             options.c_defs.artifact,
             options.c_defs.runtime,
             options.c_defs.target,
+            options.c_defs.cpu,
             options.c_defs.nostartfiles,
             options.c_defs.nostdlib,
             options.c_defs.cflags,

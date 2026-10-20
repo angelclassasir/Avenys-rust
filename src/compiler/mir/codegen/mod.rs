@@ -33,15 +33,14 @@ pub(crate) struct LlvmCtx<'a> {
     extern_wrapper_names: HashMap<String, String>,
     struct_types: &'a HashMap<String, Vec<(String, DataType)>>,
     pub(crate) _source_filename: String,
-    // Bump allocator state for inline allocations
-    bump_ptr: Option<String>,
-    bump_end: Option<String>,
-    bump_init_done: bool,
 }
 
 pub fn mir_to_llvm(program: &MirProgram) -> (String, Vec<(String, String)>) {
     mir_to_llvm_with_filename(program, "", RuntimeTier::Minimal)
 }
+
+/// Reallocation helper called by the inlined `vec::push` lowering.
+pub(crate) const VEC_GROW_PUSH_I64: &str = "rt_vecs_grow_push_i64";
 
 pub fn mir_to_llvm_with_filename(
     program: &MirProgram,
@@ -62,6 +61,17 @@ pub fn mir_to_llvm_with_filename(
         let params: Vec<String> = ext.params.iter().map(llvm_type_str).collect();
         let sig = params.join(", ");
         extern_decls.push(format!("declare {} @{}({})", ret, ext.name, sig));
+    }
+    // `vec::push` is lowered inline, so nothing in the program's extern list
+    // mentions the reallocation helper it calls. Declare it here; without this
+    // the module fails to parse with "use of undefined value" the first time
+    // a program pushes into a vector.
+    if !declared.contains(VEC_GROW_PUSH_I64) {
+        declared.insert(VEC_GROW_PUSH_I64.to_string());
+        extern_decls.push(format!(
+            "declare ptr @{}(ptr, i64)",
+            VEC_GROW_PUSH_I64
+        ));
     }
 
     let mut function_irs = Vec::new();
@@ -96,25 +106,8 @@ pub fn mir_to_llvm_with_filename(
         extern_wrapper_names,
         struct_types: &program.struct_types,
         _source_filename: source_filename.to_string(),
-        bump_ptr: Some("@bump_ptr".to_string()),
-        bump_end: Some("@bump_end".to_string()),
-        bump_init_done: true,
     };
-    
-    // Initialize bump allocator: 2GB arena as global variables
-    ctx.strings.push(format!(
-        "@bump_arena = private unnamed_addr global [{} x i8] zeroinitializer, align 16",
-        2u64 * 1024 * 1024 * 1024
-    ));
-    ctx.strings.push(format!(
-        "@bump_ptr = global ptr getelementptr ([{} x i8], ptr @bump_arena, i64 0, i64 0)",
-        2u64 * 1024 * 1024 * 1024
-    ));
-    ctx.strings.push(format!(
-        "@bump_end = global ptr getelementptr ([{} x i8], ptr @bump_arena, i64 0, i64 {})",
-        2u64 * 1024 * 1024 * 1024, 2u64 * 1024 * 1024 * 1024
-    ));
-    
+
     for func in &program.functions {
         let func_ir = compile_function_to_llvm(func, &mut ctx);
         function_irs.push(func_ir);
@@ -157,11 +150,6 @@ pub fn mir_to_llvm_with_filename(
     out.push(String::new());
     out.extend(strings);
     out.extend(function_irs);
-
-    // Add string constants for bump allocator
-    out.push(String::new());
-    out.push("@.str.bump_exhausted = private unnamed_addr constant [25 x i8] c\"Bump allocator exhausted\\00\"".to_string());
-    out.push(String::new());
 
     (out.join("\n"), program.extern_libs.clone())
 }
@@ -279,7 +267,6 @@ pub(crate) fn compile_function_to_llvm(func: &MirFunction, ctx: &mut LlvmCtx) ->
                         }
                     }
                     parts.push(format!("  {}", term));
-                    bb_terminated = true;
                     // Emit each successor block as its own LLVM basic block.
                     for (i, (label, lines, succ_term)) in successors.into_iter().enumerate() {
                         if i > 0 {
@@ -291,11 +278,18 @@ pub(crate) fn compile_function_to_llvm(func: &MirFunction, ctx: &mut LlvmCtx) ->
                                 parts.push(format!("  {}", line));
                             }
                         }
+                        // A successor with no terminator falls through to the
+                        // following MIR instructions, so the current LLVM block
+                        // is still open. Marking it terminated unconditionally
+                        // used to swallow the MIR block terminator whenever the
+                        // split instruction was the last one in the block, which
+                        // emitted a function body with no `ret` and left the
+                        // whole module unparseable.
+                        let falls_through = succ_term.is_none();
                         if let Some(t) = succ_term {
                             parts.push(format!("  {}", t));
                         }
-                        // If succ_term is None, the block falls through to the
-                        // following MIR instructions (emitted next).
+                        bb_terminated = !falls_through;
                     }
                 }
             }

@@ -144,6 +144,12 @@ pub struct CDefs {
     /// Owl may replace it with a target selected by its toolchain resolver.
     #[serde(default)]
     pub target: Option<String>,
+    /// LLVM CPU for instruction selection. `None` keeps LLVM's generic
+    /// x86-64 baseline (SSE2), which is portable but leaves BMI/BMI2/AVX on
+    /// the table. `native` tunes for the build host the way `-march=native`
+    /// does for C.
+    #[serde(default)]
+    pub cpu: Option<String>,
     /// Skip C runtime startup files (crt1.o, crti.o, crtn.o) for true
     /// no-libc freestanding binaries. Requires `runtime = "none"` and
     /// a user-provided entry point (e.g. `_start`).
@@ -167,6 +173,7 @@ impl Default for CDefs {
             libs: Vec::new(),
             runtime: RuntimeTier::default(),
             target: Some("x86_64-unknown-linux-gnu".to_string()),
+            cpu: None,
             nostartfiles: false,
             nostdlib: false,
             artifact: LibType::default(),
